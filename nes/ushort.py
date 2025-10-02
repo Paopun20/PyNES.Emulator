@@ -18,9 +18,14 @@ class ushort:
         Raises:
             UShortError: If value is not int or ushort.
         """
-        if not isinstance(value, (int, ushort)):
-            raise UShortError(f"Expected int or ushort, got {type(value).__name__}")
-        self.value = int(value) & self.MAX_VALUE
+        try:
+            value = int(value)  # แปลงทุกอย่างที่เป็น int-like
+        except Exception:
+            raise UShortError(f"Expected int-like or ushort, got {type(value).__name__}")
+        
+        if isinstance(value, ushort):
+            value = int(value)  # unwrap ushort
+        self.value = value & self.MAX_VALUE
 
     def __int__(self):
         """Convert to native Python int.

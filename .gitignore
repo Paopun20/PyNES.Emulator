@@ -6,3 +6,6 @@ test_nes_files/*
 
 # pycache
 __pycache__/*
+
+# pycache p2
+*.pyc
