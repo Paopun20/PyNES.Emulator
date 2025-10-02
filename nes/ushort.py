@@ -455,3 +455,24 @@ class ushort:
             ushort
         """
         return ushort((self._to_int(other) >> (self.value & 0xF)) & self.MAX_VALUE)
+
+    def __truediv__(self, other):
+        """True division (/). Returns a ushort (integer result)."""
+        other_value = self._to_int(other)
+        if other_value == 0:
+            raise ZeroDivisionError("Division by zero")
+        return ushort(self.value // other_value)
+
+    def __rtruediv__(self, other):
+        """Right-hand true division (other / self)."""
+        if self.value == 0:
+            raise ZeroDivisionError("Division by zero")
+        return ushort(self._to_int(other) // self.value)
+
+    def __itruediv__(self, other):
+        """In-place true division (/=)."""
+        other_value = self._to_int(other)
+        if other_value == 0:
+            raise ZeroDivisionError("Division by zero")
+        self.value = (self.value // other_value) & self.MAX_VALUE
+        return self
