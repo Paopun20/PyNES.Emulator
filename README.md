@@ -1,3 +1,3 @@
-# PyNES (WIP)
+# PyNES
 
-lol, make for Git Version Control for backup
+A NES emulator written in Python.
