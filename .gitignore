@@ -9,3 +9,6 @@ __pycache__/*
 
 # pycache p2
 *.pyc
+
+# manim
+manim/*
