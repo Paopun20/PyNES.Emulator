@@ -14,7 +14,7 @@ print(screen.get_size())
 pygame.display.set_caption("PyNES Emulator")
 
 try:
-    pygame.display.set_icon(pygame.image.load("./icon/icon4096.png"))
+    pygame.display.set_icon(pygame.image.load("./icon/icon128.png"))
 except:
     print("Icon not found, you are deleted the icon folder???????")
 
