@@ -1,0 +1,8 @@
+# 100th Coin | https://www.patreon.com/posts/making-your-nes-137873901
+__PatreonRoms/*
+
+# don't facking shere this files
+test_nes_files/*
+
+# pycache
+__pycache__/*

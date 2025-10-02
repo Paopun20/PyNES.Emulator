@@ -1,0 +1,13 @@
+altgraph==0.17.4
+Cython==3.1.4
+cython-npm==0.2.4
+numpy==2.3.3
+packaging==25.0
+pefile==2023.2.7
+pygame==2.6.1
+pyinstaller==6.11.0
+pyinstaller-hooks-contrib==2024.9
+PyOpenGL==3.1.10
+PyOpenGL-accelerate==3.1.10
+pywin32-ctypes==0.2.3
+setuptools==80.9.0
