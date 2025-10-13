@@ -1,7 +1,5 @@
 import numpy as np
-from nes.byte import Byte as byte
-from nes.ushort import ushort
-from nes.bitmap import Bitmap as bitmap
+from pynes.lib.bitmap import Bitmap as bitmap
 from dataclasses import dataclass
 
 # DATA

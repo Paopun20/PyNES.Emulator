@@ -1,4 +1,4 @@
-from emulator import Emulator
+from pynes.emulator import Emulator
 from pathlib import Path
 import pygame; pygame.init()
 
