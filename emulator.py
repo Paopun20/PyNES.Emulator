@@ -1,8 +1,7 @@
 import numpy as np
 from nes.byte import Byte as byte  # C# code be like
 from nes.ushort import ushort
-from pygame import Surface
-
+from nes.bitmap import Bitmap as bitmap
 
 from dataclasses import dataclass
 
@@ -26,7 +25,6 @@ OpCodeNames = [
     "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC",
 ]
 
-
 @dataclass
 class Flags:  # LOL
     Carry: bool = False
@@ -48,18 +46,14 @@ class Debug:
 
 
 class Emulator:
-    def __init__(self, screen: Surface, scale: int = 1):
-        if not screen and not isinstance(screen, Surface):
-            raise RuntimeError("Screen object not provided or invalid type.")
+    def __init__(self):
         self.filepath: str | None = None
-        self.screen = screen
-        self.scale = scale
-
-        # self.screen.__setattr__ = lambda: print("lol")
+        self._events = {}
 
         # RAM and Rom
         self.RAM = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
         self.ROM = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
+        self.CHRROM = np.zeros(0x2000, dtype=np.uint8) # 8KB CHR ROM
 
         # Debug
         self.logging = True
@@ -102,6 +96,22 @@ class Emulator:
             + f"{'C' if self.flag.Carry else 'c'}"
         )
         self.tracelog.append(line)
+
+    def on(self, event_name):
+        """Instance-level decorator for events."""
+
+        def decorator(callback):
+            if not hasattr(self, "_events"):
+                self._events = {}
+            self._events.setdefault(event_name, []).append(callback)
+            return callback
+
+        return decorator
+
+    def _emit(self, event_name, *args, **kwargs):
+        """Emit an event to all registered callbacks."""
+        for cb in self._events.get(event_name, []):
+            cb(*args, **kwargs)
 
     def Read(self, Address: ushort):
         addr = int(Address)  # unwrap ushort to Python int
@@ -246,7 +256,10 @@ class Emulator:
 
     def Reset(self):
         HeaderedROM: byte = np.fromfile(self.filepath, dtype=np.uint8)
+        
         self.ROM[0:0x8000] = HeaderedROM[0x10 : 0x10 + 0x8000]
+        bitmap_data = bitmap(256, 128)
+        
         Header = HeaderedROM[:0x10]
         PCL = int(self.Read(0xFFFC))  # PC low byte
         PCH = int(self.Read(0xFFFD))  # PC high byte
@@ -257,6 +270,10 @@ class Emulator:
 
     def Run(self):
         while not self.CPU_Halted:
+            self.Emulate_CPU()
+    
+    def Run1Cycle(self):
+        if not self.CPU_Halted:
             self.Emulate_CPU()
 
     def Emulate_CPU(self):
@@ -269,9 +286,7 @@ class Emulator:
                 print(self.tracelog[-1])  # get & print
 
             self.cycles += 1
-
         else:
-
             match self.opcode:
                 case 0x00:  # BRK
                     self.ProgramCounter = ushort(int(self.ProgramCounter) + 1)

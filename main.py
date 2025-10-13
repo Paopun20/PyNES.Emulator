@@ -18,9 +18,20 @@ try:
 except:
     print("Icon not found, you are deleted the icon folder???????")
 
-emulator_vm = Emulator(screen, SCALE)
-emulator_vm.filepath = Path(__file__).parent / "__PatreonRoms" / "6_Instructions2.nes"
+emulator_vm = Emulator()
+emulator_vm.filepath = Path(__file__).parent / "__PatreonRoms" / "7_Graphics.nes"
 emulator_vm.debug.Debug = True
 emulator_vm.debug.GetUnknownOpcodeAndImmediatelyStopExecutionBecauseContinuingWouldCauseIrreversibleAndUnrecoverableDamageToTheVirtualCPUStateAndPotentiallyConfuseTheDeveloperWhoForgotToHandleThisInstructionAndThereforeWeMustAbortAllProcessingActivitiesDisplayALongAndTerrifyingErrorMessageDumpTheRegistersMemoryAndStackContentsForDebuggingPurposesAndFinallyExitTheProgramWithExtremePrejudiceBecauseThisSituationRepresentsACompleteAndTotalFailureOfTheEmulationPipelineAndShouldNeverUnderAnyCircumstancesBeAllowedToContinueRunningEvenForADebugFrameOtherwiseTheUniverseMightCollapseIntoAnInfiniteLoopOfUnimplementedInstructions = False
+
+@emulator_vm.on("gen_frame")
+def gen_frame(frame):
+    """Draws framebuffer onto pygame window"""
+    surf = pygame.surfarray.make_surface(frame.swapaxes(0, 1))  # numpy (H, W, 3)
+    surf = pygame.transform.scale(surf, (NES_WIDTH * SCALE, NES_HEIGHT * SCALE))
+    screen.blit(surf, (0, 0))
+    pygame.display.flip()
+
 emulator_vm.Reset()
-emulator_vm.Run()
+
+while True:
+    emulator_vm.Run1Cycle()
