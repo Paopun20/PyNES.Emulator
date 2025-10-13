@@ -1,5 +1,11 @@
 class Byte:
-    def __init__(self, value):
+    def __init__(self, value: int | "Byte"):
+        if value is None:
+            raise ValueError("Value cannot be None.")
+        
+        if isinstance(value, Byte):
+            self._value = value._value
+
         if not isinstance(value, int):
             raise TypeError("Value must be an integer.")
         self._value = value & 0xFF  # automatically wrap 0-255
