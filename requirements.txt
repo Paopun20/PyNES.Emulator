@@ -1,8 +1,11 @@
 altgraph==0.17.4
+cachetools==6.2.1
 colorama==0.4.6
 Cython==3.1.4
 cython-npm==0.2.4
 iniconfig==2.1.0
+llvmlite==0.45.1
+numba==0.62.1
 numpy==2.3.3
 packaging==25.0
 pefile==2023.2.7

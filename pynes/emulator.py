@@ -5,16 +5,30 @@ from string import Template
 from dataclasses import dataclass
 
 from concurrent.futures import ProcessPoolExecutor
+import multiprocessing as mp
 
 from numba import njit
 
 # cache
-from functools import lru_cache as cache
+from functools import lru_cache
+from cachetools import TTLCache
 
 # DATA
 OpCodeNames: list[str] = [
     "BRK", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "ANC", "NOP", "ORA", "ASL", "SLO", "BPL", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", "JSR", "AND", "HLT", "RLA", "BIT", "AND", "ROL", "RLA", "PLP", "AND", "ROL", "ANC", "BIT", "AND", "ROL", "RLA", "BMI", "AND", "HLT", "RLA", "NOP", "AND", "ROL", "RLA", "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", "RTI", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "PHA", "EOR", "LSR", "ALR", "JMP", "EOR", "LSR", "SRE", "BVC", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", "RTS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "PLA", "ADC", "ROR", "ARR", "JMP", "ADC", "ROR", "RRA", "BVS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", "DEY", "NOP", "TXA", "ANE", "STY", "STA", "STX", "SAX", "BCC", "STA", "HLT", "SHA", "STY", "STA", "STX", "SAX", "TYA", "STA", "TXS", "SHS", "SHY", "STA", "SHX", "SHA", "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", "TAY", "LDA", "TAX", "LXA", "LDY", "LDA", "LDX", "LAX", "BCS", "LDA", "HLT", "LAX", "LDY", "LDA", "LDX", "LAX", "CLV", "LDA", "TSX", "LAE", "LDY", "LDA", "LDX", "LAX", "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", "INY", "CMP", "DEX", "AXS", "CPY", "CMP", "DEC", "DCP", "BNE", "CMP", "HLT", "DCP", "NOP", "CMP", "DEC", "DCP", "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", "CPX", "SBC", "NOP", "ISC", "CPX", "SBC", "INC", "ISC", "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISC", "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC",
 ]
+
+class EmulatorProcess:
+    def __init__(self):
+        self.executor = None
+
+    def __enter__(self):
+        self.executor = ProcessPoolExecutor(max_workers=mp.cpu_count())
+        return self.executor
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.executor.shutdown(wait=True)
+        self.executor = None
 
 @dataclass
 class Flags:
@@ -108,6 +122,9 @@ class Emulator:
         self.PPUDataBuffer = 0
         self.FrameBuffer = np.zeros((240, 256, 3), dtype=np.uint8)
         self.NMI_Pending = False
+        
+        #cache
+        self._cache = TTLCache(maxsize=100, ttl=300)  # 100 items, 5 mins
 
     def Tracelogger(self, opcode: int):
         TEMPLATE = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
@@ -295,6 +312,7 @@ class Emulator:
             increment = 32 if (self.PPUCTRL & 0x04) else 1
             self.PPUADDR = (self.PPUADDR + increment) & 0xFFFF
 
+    #@lru_cache(maxsize=None)
     def ReadOperands_AbsoluteAddressed(self):
         """Read 16-bit absolute address (little endian)."""
         low = self.Read(self.ProgramCounter)
@@ -303,6 +321,7 @@ class Emulator:
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         self.addressBus = (high << 8) | low
 
+    #@lru_cache(maxsize=None)
     def ReadOperands_AbsoluteAddressed_XIndexed(self):
         """Read absolute address and add X (X is NOT modified)."""
         low = self.Read(self.ProgramCounter)
@@ -312,6 +331,7 @@ class Emulator:
         base_addr = (high << 8) | low
         self.addressBus = (base_addr + self.X) & 0xFFFF
 
+    #@lru_cache(maxsize=None)
     def ReadOperands_AbsoluteAddressed_YIndexed(self):
         """Read absolute address and add Y (Y is NOT modified)."""
         low = self.Read(self.ProgramCounter)
@@ -321,23 +341,27 @@ class Emulator:
         base_addr = (high << 8) | low
         self.addressBus = (base_addr + self.Y) & 0xFFFF
 
+    #@lru_cache(maxsize=None)
     def ReadOperands_ZeroPage(self):
         """Read zero page address."""
         self.addressBus = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
 
+    #@lru_cache(maxsize=None)
     def ReadOperands_ZeroPage_XIndexed(self):
         """Read zero page address and add X."""
         addr = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         self.addressBus = (addr + self.X) & 0xFF
 
+    #@lru_cache(maxsize=None)
     def ReadOperands_ZeroPage_YIndexed(self):
         """Read zero page address and add Y."""
         addr = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         self.addressBus = (addr + self.Y) & 0xFF
 
+    #@lru_cache(maxsize=None)
     def ReadOperands_IndirectAddressed_YIndexed(self):
         """Indirect indexed addressing (zero page),Y."""
         zp_addr = self.Read(self.ProgramCounter)
@@ -347,6 +371,7 @@ class Emulator:
         base_addr = (high << 8) | low
         self.addressBus = (base_addr + self.Y) & 0xFFFF
 
+    #@lru_cache(maxsize=None)
     def ReadOperands_IndirectAddressed_XIndexed(self):
         """Indexed indirect addressing (zero page,X)."""
         zp_addr = (self.Read(self.ProgramCounter) + self.X) & 0xFF
@@ -569,16 +594,12 @@ class Emulator:
         """
         if controller_id not in (1, 2):
             raise ValueError("Invalid controller ID. Use 1 or 2.")
-        
-        # Validate button names
         valid_buttons = {"A", "B", "Select", "Start", "Up", "Down", "Left", "Right"}
         if not all(key in valid_buttons for key in buttons):
             raise ValueError(f"Invalid button names. Must be one of: {valid_buttons}")
-        
-        # Update controller state
         self.controllers[controller_id].buttons.update(buttons)
         if self.controllers[controller_id].strobe:
-            self.controllers[controller_id].latch()  # Update shift register if strobe is high
+            self.controllers[controller_id].latch()
 
     def _step(self):
         try:
@@ -1998,9 +2019,13 @@ class Emulator:
 
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
 
-    @cache(maxsize=1024, typed=True)
     def NESPaletteToRGB(self, color_idx: int) -> np.ndarray:
         """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
+        idx = color_idx & 0x3F
+        
+        if idx in self._cache:
+            return self._cache[idx]
+        
         nes_palette = np.array([
             (84, 84, 84), (0, 30, 116), (8, 16, 144), (48, 0, 136),
             (68, 0, 100), (92, 0, 48), (84, 4, 0), (60, 24, 0),
@@ -2022,6 +2047,6 @@ class Emulator:
             (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180),
             (160, 214, 228), (160, 162, 160), (0, 0, 0), (0, 0, 0),
         ], dtype=np.uint8)
-    
-        idx = color_idx & 0x3F  # wrap around every 64 colors
+        
+        self._cache[idx] = nes_palette[idx]
         return nes_palette[idx]
