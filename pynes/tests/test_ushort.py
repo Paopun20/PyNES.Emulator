@@ -1,5 +1,5 @@
 import pytest
-from nes.ushort import ushort, UShortError   # สมมุติว่า class อยู่ในไฟล์ ushort.py
+from pynes.lib.ushort import ushort, UShortError   # สมมุติว่า class อยู่ในไฟล์ ushort.py
 
 def test_init_and_int():
     assert int(ushort(123)) == 123
