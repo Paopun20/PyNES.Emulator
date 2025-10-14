@@ -37,7 +37,7 @@ The emulator can run simple NES ROMs like "Super Mario Bros.nes" and "AccuracyCo
 
 ## Fix for me? ( Contributing )
 
-Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes, and pls test your code and submit with a detailed description of the changes and screenshots of test results.
+Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes. Please test your code and submit it with a detailed description of the changes and screenshots of the test results.
 
 ## License
 
