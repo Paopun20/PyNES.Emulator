@@ -47,6 +47,7 @@ KEY_MAPPING = {
 emulator_vm = Emulator()
 emulator_vm.filepath = Path(__file__).parent / "AccuracyCoin.nes"
 # emulator_vm.filepath = Path(__file__).parent / "__PatreonRoms" / "7_Graphics.nes"
+# emulator_vm.filepath = Path(__file__).parent / "test_nes_files" / "Super Mario Bros.nes"
 emulator_vm.debug.Debug = False
 emulator_vm.debug.halt_on_unknown_opcode = False
 
