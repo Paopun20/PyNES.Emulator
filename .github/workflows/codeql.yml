@@ -1,0 +1,67 @@
+name: "CodeQL Dynamic Analysis"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  detect-languages:
+    name: Detect languages
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - id: set-matrix
+        run: |
+          # ตรวจสอบไฟล์เพื่อดูว่ามีภาษาอะไร
+          LANGS=""
+          if [ -n "$(find . -name '*.py' -print -quit)" ]; then
+            LANGS="$LANGS python"
+          fi
+          if [ -n "$(find . -name '*.swift' -print -quit)" ]; then
+            LANGS="$LANGS swift"
+          fi
+          if [ -n "$(find . -name '*.js' -o -name '*.ts' -print -quit)" ]; then
+            LANGS="$LANGS javascript"
+          fi
+
+          # แปลงเป็น JSON array สำหรับ matrix
+          MATRIX_JSON=$(echo $LANGS | jq -R 'split(" ") | map({language: .})')
+          echo "Matrix JSON: $MATRIX_JSON"
+          echo "::set-output name=matrix::$MATRIX_JSON"
+
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    needs: detect-languages
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect-languages.outputs.matrix) }}
+
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4.30.8
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4.30.8
+        with:
+          category: "/language:${{matrix.language}}"
