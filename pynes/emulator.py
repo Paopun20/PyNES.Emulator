@@ -281,6 +281,34 @@ class Debug:
     Debug: bool = False
     halt_on_unknown_opcode: bool = False
 
+@dataclass
+class Controller:
+    """Represents an NES controller state and shift register."""
+    buttons: dict[str, bool]  # Current button states
+    shift_register: int = 0  # 8-bit shift register for reading
+    strobe: bool = False  # Strobe state for latching buttons
+
+    def latch(self):
+        """Latch current button states into shift register."""
+        self.shift_register = 0
+        self.shift_register |= (1 << 0) if self.buttons.get("A", False) else 0
+        self.shift_register |= (1 << 1) if self.buttons.get("B", False) else 0
+        self.shift_register |= (1 << 2) if self.buttons.get("Select", False) else 0
+        self.shift_register |= (1 << 3) if self.buttons.get("Start", False) else 0
+        self.shift_register |= (1 << 4) if self.buttons.get("Up", False) else 0
+        self.shift_register |= (1 << 5) if self.buttons.get("Down", False) else 0
+        self.shift_register |= (1 << 6) if self.buttons.get("Left", False) else 0
+        self.shift_register |= (1 << 7) if self.buttons.get("Right", False) else 0
+
+    def read(self) -> int:
+        """Read one bit from the shift register."""
+        if self.strobe:
+            self.latch()  # Re-latch if strobe is high
+            return self.shift_register & 1
+        bit = self.shift_register & 1
+        self.shift_register >>= 1
+        self.shift_register |= 0x80  # Set high bit to 1 after 8 reads
+        return bit
 
 class Emulator:
     def __init__(self):
@@ -293,6 +321,10 @@ class Emulator:
         self.CHRROM = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
         self.logging = True
         self.tracelog = []
+        self.controllers = {
+            1: Controller(buttons={}),  # Controller 1
+            2: Controller(buttons={})   # Controller 2
+        }
         self.ProgramCounter = 0
         self.stackPointer = 0
         self.addressBus = 0
@@ -306,7 +338,7 @@ class Emulator:
         self.debug = Debug()
         self.CPU_Halted = False
 
-        # PPU initialization
+        # PPU initialization (unchanged)
         self.VRAM = np.zeros(0x2000, dtype=np.uint8)
         self.OAM = np.zeros(256, dtype=np.uint8)
         self.PaletteRAM = np.zeros(0x20, dtype=np.uint8)
@@ -387,6 +419,10 @@ class Emulator:
                 if self.apu.noise["length_counter"] > 0:
                     status |= 0x08
                 return status
+            elif addr == 0x4016:  # Controller 1
+                return self.controllers[1].read()
+            elif addr == 0x4017:  # Controller 2
+                return self.controllers[2].read()
             return 0
 
         # ROM ($8000-$FFFF)
@@ -410,7 +446,15 @@ class Emulator:
 
         # APU and I/O registers
         elif 0x4000 <= addr <= 0x4017:
-            self.apu.write_register(addr, val)
+            if addr == 0x4016:  # Controller strobe
+                strobe = bool(val & 0x01)
+                self.controllers[1].strobe = strobe
+                self.controllers[2].strobe = strobe
+                if strobe:
+                    self.controllers[1].latch()
+                    self.controllers[2].latch()
+            else:
+                self.apu.write_register(addr, val)
 
         # ROM area (some mappers allow writing here)
         elif addr >= 0x8000:
@@ -762,6 +806,27 @@ class Emulator:
 
         print(f"ROM Header: {HeaderedROM[:0x10]}")
         print(f"Reset Vector: ${self.ProgramCounter:04X}")
+    
+    def Input(self, controller_id: int, buttons: dict[str, bool]):
+        """Update the button states for the specified controller.
+        
+        Args:
+            controller_id: 1 for Controller 1, 2 for Controller 2.
+            buttons: Dictionary with button names (A, B, Select, Start, Up, Down, Left, Right)
+                     and boolean values (True = pressed, False = released).
+        """
+        if controller_id not in (1, 2):
+            raise ValueError("Invalid controller ID. Use 1 or 2.")
+        
+        # Validate button names
+        valid_buttons = {"A", "B", "Select", "Start", "Up", "Down", "Left", "Right"}
+        if not all(key in valid_buttons for key in buttons):
+            raise ValueError(f"Invalid button names. Must be one of: {valid_buttons}")
+        
+        # Update controller state
+        self.controllers[controller_id].buttons.update(buttons)
+        if self.controllers[controller_id].strobe:
+            self.controllers[controller_id].latch()  # Update shift register if strobe is high
 
     def _step(self):
         if self.CPU_Halted: return
@@ -2178,72 +2243,28 @@ class Emulator:
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
 
     def NESPaletteToRGB(self, color_idx: int) -> np.ndarray:
-        """Convert NES palette index to RGB array."""
-        nes_palette = {
-            0x00: (84, 84, 84),
-            0x01: (0, 30, 116),
-            0x02: (8, 16, 144),
-            0x03: (48, 0, 136),
-            0x04: (68, 0, 100),
-            0x05: (92, 0, 48),
-            0x06: (84, 4, 0),
-            0x07: (60, 24, 0),
-            0x08: (32, 42, 0),
-            0x09: (8, 58, 0),
-            0x0A: (0, 64, 0),
-            0x0B: (0, 60, 0),
-            0x0C: (0, 50, 60),
-            0x0D: (0, 0, 0),
-            0x0E: (0, 0, 0),
-            0x0F: (0, 0, 0),
-            0x10: (152, 150, 152),
-            0x11: (8, 76, 196),
-            0x12: (48, 50, 236),
-            0x13: (92, 30, 228),
-            0x14: (136, 20, 176),
-            0x15: (160, 20, 100),
-            0x16: (152, 34, 32),
-            0x17: (120, 60, 0),
-            0x18: (84, 90, 0),
-            0x19: (40, 114, 0),
-            0x1A: (8, 124, 0),
-            0x1B: (0, 118, 40),
-            0x1C: (0, 102, 120),
-            0x1D: (0, 0, 0),
-            0x1E: (0, 0, 0),
-            0x1F: (0, 0, 0),
-            0x20: (236, 238, 236),
-            0x21: (76, 154, 236),
-            0x22: (120, 124, 236),
-            0x23: (176, 98, 236),
-            0x24: (228, 84, 236),
-            0x25: (236, 88, 180),
-            0x26: (236, 106, 100),
-            0x27: (212, 136, 32),
-            0x28: (160, 170, 0),
-            0x29: (116, 196, 0),
-            0x2A: (76, 208, 32),
-            0x2B: (56, 204, 108),
-            0x2C: (56, 180, 204),
-            0x2D: (60, 60, 60),
-            0x2E: (0, 0, 0),
-            0x2F: (0, 0, 0),
-            0x30: (236, 238, 236),
-            0x31: (168, 204, 236),
-            0x32: (188, 188, 236),
-            0x33: (212, 178, 236),
-            0x34: (236, 174, 236),
-            0x35: (236, 174, 212),
-            0x36: (236, 180, 176),
-            0x37: (228, 196, 144),
-            0x38: (204, 210, 120),
-            0x39: (180, 222, 120),
-            0x3A: (168, 226, 144),
-            0x3B: (152, 226, 180),
-            0x3C: (160, 214, 228),
-            0x3D: (160, 162, 160),
-            0x3E: (0, 0, 0),
-            0x3F: (0, 0, 0),
-        }
-        rgb = nes_palette.get(color_idx & 0x3F, (0, 0, 0))
-        return np.array(rgb, dtype=np.uint8)
+        """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
+        nes_palette = np.array([
+            (84, 84, 84), (0, 30, 116), (8, 16, 144), (48, 0, 136),
+            (68, 0, 100), (92, 0, 48), (84, 4, 0), (60, 24, 0),
+            (32, 42, 0), (8, 58, 0), (0, 64, 0), (0, 60, 0),
+            (0, 50, 60), (0, 0, 0), (0, 0, 0), (0, 0, 0),
+
+            (152, 150, 152), (8, 76, 196), (48, 50, 236), (92, 30, 228),
+            (136, 20, 176), (160, 20, 100), (152, 34, 32), (120, 60, 0),
+            (84, 90, 0), (40, 114, 0), (8, 124, 0), (0, 118, 40),
+            (0, 102, 120), (0, 0, 0), (0, 0, 0), (0, 0, 0),
+
+            (236, 238, 236), (76, 154, 236), (120, 124, 236), (176, 98, 236),
+            (228, 84, 236), (236, 88, 180), (236, 106, 100), (212, 136, 32),
+            (160, 170, 0), (116, 196, 0), (76, 208, 32), (56, 204, 108),
+            (56, 180, 204), (60, 60, 60), (0, 0, 0), (0, 0, 0),
+
+            (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236),
+            (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144),
+            (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180),
+            (160, 214, 228), (160, 162, 160), (0, 0, 0), (0, 0, 0),
+        ], dtype=np.uint8)
+    
+        idx = color_idx & 0x3F  # wrap around every 64 colors
+        return nes_palette[idx]

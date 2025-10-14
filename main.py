@@ -24,87 +24,31 @@ clock = pygame.time.Clock()
 controller_state = {
     'A': False,
     'B': False,
-    'SELECT': False,
-    'START': False,
-    'UP': False,
-    'DOWN': False,
-    'LEFT': False,
-    'RIGHT': False
+    'Select': False,
+    'Start': False,
+    'Up': False,
+    'Down': False,
+    'Left': False,
+    'Right': False
 }
 
 KEY_MAPPING = {
     pygame.K_x: 'A',        # X = A button
     pygame.K_z: 'B',        # Z = B button
-    pygame.K_RSHIFT: 'SELECT',
-    pygame.K_RETURN: 'START',
-    pygame.K_UP: 'UP',
-    pygame.K_DOWN: 'DOWN',
-    pygame.K_LEFT: 'LEFT',
-    pygame.K_RIGHT: 'RIGHT'
+    pygame.K_RSHIFT: 'Select',
+    pygame.K_RETURN: 'Start',
+    pygame.K_UP: 'Up',
+    pygame.K_DOWN: 'Down',
+    pygame.K_LEFT: 'Left',
+    pygame.K_RIGHT: 'Right'
 }
-
-def get_controller_byte():
-    """Convert controller state to NES controller byte format"""
-    byte = 0
-    if controller_state['A']:      byte |= 0x01
-    if controller_state['B']:      byte |= 0x02
-    if controller_state['SELECT']: byte |= 0x04
-    if controller_state['START']:  byte |= 0x08
-    if controller_state['UP']:     byte |= 0x10
-    if controller_state['DOWN']:   byte |= 0x20
-    if controller_state['LEFT']:   byte |= 0x40
-    if controller_state['RIGHT']:  byte |= 0x80
-    return byte
 
 # === EMULATOR SETUP ===
 emulator_vm = Emulator()
 emulator_vm.filepath = Path(__file__).parent / "AccuracyCoin.nes"
+# emulator_vm.filepath = Path(__file__).parent / "__PatreonRoms" / "7_Graphics.nes"
 emulator_vm.debug.Debug = False
 emulator_vm.debug.halt_on_unknown_opcode = False
-
-# Controller registers
-controller_strobe = False
-controller_shift = 0
-
-def write_controller(address, value):
-    """Handle controller strobe writes ($4016)"""
-    global controller_strobe, controller_shift
-    if address == 0x4016:
-        if value & 0x01:
-            controller_strobe = True
-        else:
-            if controller_strobe:
-                # Latch controller state
-                controller_shift = get_controller_byte()
-            controller_strobe = False
-
-def read_controller(address):
-    """Handle controller reads ($4016/$4017)"""
-    global controller_shift
-    if address == 0x4016:
-        # Return lowest bit and shift
-        result = controller_shift & 0x01
-        controller_shift >>= 1
-        return result | 0x40  # Open bus high bits
-    return 0x40
-
-# Hook into emulator memory system
-original_write = emulator_vm.Write
-original_read = emulator_vm.Read
-
-def enhanced_write(address, value):
-    if address == 0x4016:
-        write_controller(address, value)
-    else:
-        original_write(address, value)
-
-def enhanced_read(address):
-    if address == 0x4016 or address == 0x4017:
-        return read_controller(address)
-    return original_read(address)
-
-emulator_vm.Write = enhanced_write
-emulator_vm.Read = enhanced_read
 
 # === FRAME RENDERING ===
 @emulator_vm.on("gen_frame")
@@ -170,7 +114,25 @@ while running:
         elif event.type == pygame.KEYUP:
             if event.key in KEY_MAPPING:
                 controller_state[KEY_MAPPING[event.key]] = False
-    
+
+    # Prevent simultaneous opposite directions
+    if controller_state['Up'] and controller_state['Down']:
+        controller_state['Up'] = controller_state['Down'] = False
+    if controller_state['Left'] and controller_state['Right']:
+        controller_state['Left'] = controller_state['Right'] = False
+
+    # Update emulator input for Controller 1
+    emulator_vm.Input(1, {
+        'A': controller_state['A'],
+        'B': controller_state['B'],
+        'Select': controller_state['Select'],
+        'Start': controller_state['Start'],
+        'Up': controller_state['Up'],
+        'Down': controller_state['Down'],
+        'Left': controller_state['Left'],
+        'Right': controller_state['Right']
+    })
+
     # === EMULATION ===
     if not paused:
         emulator_vm.FrameComplete = False
