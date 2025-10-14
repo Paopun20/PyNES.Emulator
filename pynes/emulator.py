@@ -1,6 +1,6 @@
 import numpy as np
 from pynes.lib.bitmap import Bitmap as bitmap
-from pynes.channel import APU
+from pynes.apu import APU
 from string import Template
 from dataclasses import dataclass
 
@@ -89,7 +89,7 @@ class Emulator:
         self.PPUDATA = 0
         self.AddressLatch = False
         self.PPUDataBuffer = 0
-        self.FrameBuffer = bitmap(256, 240)
+        self.FrameBuffer = np.zeros((240, 256, 3), dtype=np.uint8)
         self.NMI_Pending = False
 
     def Tracelogger(self, opcode: int):
@@ -114,9 +114,9 @@ class Emulator:
         
         self.tracelog.append(line)
 
-    def on(self, event_name):
+    def on(self, event_name: str) -> callable:
         """Instance-level decorator for events."""
-        def decorator(callback):
+        def decorator(callback: callable) -> callable:
             if not hasattr(self, "_events"):
                 self._events = {}
             self._events.setdefault(event_name, []).append(callback)
@@ -131,19 +131,31 @@ class Emulator:
     def Read(self, Address: int) -> int:
         """Read from CPU or PPU memory with proper mirroring."""
         addr = int(Address) & 0xFFFF
-        
+
         # RAM with mirroring ($0000-$07FF mirrors to $0800-$1FFF)
         if addr < 0x2000:
             return int(self.RAM[addr & 0x07FF])
-        
+
         # PPU registers ($2000-$2007 mirrors to $2008-$3FFF)
         elif addr < 0x4000:
             return self.ReadPPURegister(0x2000 + (addr & 0x07))
-        
+
+        # APU and I/O registers
+        elif 0x4000 <= addr <= 0x4017:
+            if addr == 0x4015:
+                # APU Status register
+                status = 0
+                if self.apu.pulse1['length_counter'] > 0: status |= 0x01
+                if self.apu.pulse2['length_counter'] > 0: status |= 0x02
+                if self.apu.triangle['length_counter'] > 0: status |= 0x04
+                if self.apu.noise['length_counter'] > 0: status |= 0x08
+                return status
+            return 0
+
         # ROM ($8000-$FFFF)
         elif addr >= 0x8000:
             return int(self.ROM[addr - 0x8000])
-        
+
         return 0
 
     def Write(self, Address: int, Value: int):
@@ -159,13 +171,13 @@ class Emulator:
         elif addr < 0x4000:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
         
-        # ROM area
-        elif addr >= 0x8000:
-            self.ROM[addr - 0x8000] = val
-        
+        # APU and I/O registers
         elif 0x4000 <= addr <= 0x4017:
             self.apu.write_register(addr, val)
-            return
+        
+        # ROM area (some mappers allow writing here)
+        elif addr >= 0x8000:
+            self.ROM[addr - 0x8000] = val
 
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers."""
@@ -513,42 +525,43 @@ class Emulator:
         
         print(f"ROM Header: {HeaderedROM[:0x10]}")
         print(f"Reset Vector: ${self.ProgramCounter:04X}")
+    
+    def _step(self):
+        self.Emulate_CPU()
+        
+        # PPU runs 3 cycles per CPU cycle
+        for _ in range(3):
+            self.Emulate_PPU()
+        
+        # APU runs at CPU speed
+        self.apu.step()
+        
+        if self.NMI_Pending:
+            self.NMI()
+            self.NMI_Pending = False
 
     def Run(self):
         """Run CPU and PPU together."""
         while not self.CPU_Halted:
-            self.Emulate_CPU()
-            # PPU runs 3 cycles per CPU cycle
-            for _ in range(3):
-                self.Emulate_PPU()
-            if self.NMI_Pending:
-                self.NMI()
-                self.NMI_Pending = False
+            self._step()
 
     def Run1Cycle(self):
         """Run one CPU cycle and corresponding PPU cycles."""
         if not self.CPU_Halted:
-            self.Emulate_CPU()
-            for _ in range(3):
-                self.Emulate_PPU()
-            if self.NMI_Pending:
-                self.NMI()
-                self.NMI_Pending = False
+            self._step()
 
     def Emulate_CPU(self):
-        """Execute one CPU cycle."""
-        if self.cycles == 0:
-            self.opcode = self.Read(self.ProgramCounter)
-            self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+        if self.cycles > 0:
+            self.cycles -= 1
+            return
 
-            if self.logging:
-                self.Tracelogger(self.opcode)
-                # print(self.tracelog[-1])
+        self.opcode = self.Read(self.ProgramCounter)
+        self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
 
-            self.cycles += 1
-        else:
-            self.ExecuteOpcode()
-            self.cycles = 0
+        if self.logging:
+            self.Tracelogger(self.opcode)
+
+        self.ExecuteOpcode()
 
     def ExecuteOpcode(self):
         """Execute the current opcode."""
