@@ -16,12 +16,10 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
       - id: set-matrix
         run: |
-          # ตรวจสอบไฟล์เพื่อดูว่ามีภาษาอะไร
           LANGS=""
           if [ -n "$(find . -name '*.py' -print -quit)" ]; then
             LANGS="$LANGS python"
@@ -33,10 +31,13 @@ jobs:
             LANGS="$LANGS javascript"
           fi
 
-          # แปลงเป็น JSON array สำหรับ matrix
-          MATRIX_JSON=$(echo $LANGS | jq -R 'split(" ") | map({language: .})')
-          echo "Matrix JSON: $MATRIX_JSON"
-          echo "::set-output name=matrix::$MATRIX_JSON"
+          if [ -z "$LANGS" ]; then
+            MATRIX_JSON='[]'
+          else
+            MATRIX_JSON=$(echo $LANGS | jq -R 'split(" ") | map({language: .})')
+          fi
+
+          echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
 
   analyze:
     name: Analyze (${{ matrix.language }})
