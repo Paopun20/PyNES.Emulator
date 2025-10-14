@@ -11,7 +11,6 @@ on:
 
 jobs:
   detect-languages:
-    name: Detect languages
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -21,6 +20,7 @@ jobs:
       - id: set-matrix
         run: |
           LANGS=""
+          # ตรวจสอบไฟล์ภาษา
           if [ -n "$(find . -name '*.py' -print -quit)" ]; then
             LANGS="$LANGS python"
           fi
@@ -31,12 +31,15 @@ jobs:
             LANGS="$LANGS javascript"
           fi
 
+          # แปลง LANGS เป็น JSON array ของ object {language: "xxx"}
           if [ -z "$LANGS" ]; then
             MATRIX_JSON='[]'
           else
-            MATRIX_JSON=$(echo $LANGS | jq -R 'split(" ") | map({language: .})')
+            # ลบ space หน้า/หลัง และสร้าง JSON
+            MATRIX_JSON=$(echo $LANGS | xargs | jq -R 'split(" ") | map({language: .})')
           fi
 
+          # เขียนลง GitHub output อย่างถูกต้อง (ไม่มี space รอบ =)
           echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
 
   analyze:
