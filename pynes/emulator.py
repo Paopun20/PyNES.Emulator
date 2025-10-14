@@ -4,264 +4,16 @@ from pynes.apu import APU
 from string import Template
 from dataclasses import dataclass
 
+from concurrent.futures import ProcessPoolExecutor
+
+from numba import njit
+
+# cache
+from functools import lru_cache as cache
+
 # DATA
-OpCodeNames = [
-    "BRK",
-    "ORA",
-    "HLT",
-    "SLO",
-    "NOP",
-    "ORA",
-    "ASL",
-    "SLO",
-    "PHP",
-    "ORA",
-    "ASL",
-    "ANC",
-    "NOP",
-    "ORA",
-    "ASL",
-    "SLO",
-    "BPL",
-    "ORA",
-    "HLT",
-    "SLO",
-    "NOP",
-    "ORA",
-    "ASL",
-    "SLO",
-    "CLC",
-    "ORA",
-    "NOP",
-    "SLO",
-    "NOP",
-    "ORA",
-    "ASL",
-    "SLO",
-    "JSR",
-    "AND",
-    "HLT",
-    "RLA",
-    "BIT",
-    "AND",
-    "ROL",
-    "RLA",
-    "PLP",
-    "AND",
-    "ROL",
-    "ANC",
-    "BIT",
-    "AND",
-    "ROL",
-    "RLA",
-    "BMI",
-    "AND",
-    "HLT",
-    "RLA",
-    "NOP",
-    "AND",
-    "ROL",
-    "RLA",
-    "SEC",
-    "AND",
-    "NOP",
-    "RLA",
-    "NOP",
-    "AND",
-    "ROL",
-    "RLA",
-    "RTI",
-    "EOR",
-    "HLT",
-    "SRE",
-    "NOP",
-    "EOR",
-    "LSR",
-    "SRE",
-    "PHA",
-    "EOR",
-    "LSR",
-    "ALR",
-    "JMP",
-    "EOR",
-    "LSR",
-    "SRE",
-    "BVC",
-    "EOR",
-    "HLT",
-    "SRE",
-    "NOP",
-    "EOR",
-    "LSR",
-    "SRE",
-    "CLI",
-    "EOR",
-    "NOP",
-    "SRE",
-    "NOP",
-    "EOR",
-    "LSR",
-    "SRE",
-    "RTS",
-    "ADC",
-    "HLT",
-    "RRA",
-    "NOP",
-    "ADC",
-    "ROR",
-    "RRA",
-    "PLA",
-    "ADC",
-    "ROR",
-    "ARR",
-    "JMP",
-    "ADC",
-    "ROR",
-    "RRA",
-    "BVS",
-    "ADC",
-    "HLT",
-    "RRA",
-    "NOP",
-    "ADC",
-    "ROR",
-    "RRA",
-    "SEI",
-    "ADC",
-    "NOP",
-    "RRA",
-    "NOP",
-    "ADC",
-    "ROR",
-    "RRA",
-    "NOP",
-    "STA",
-    "NOP",
-    "SAX",
-    "STY",
-    "STA",
-    "STX",
-    "SAX",
-    "DEY",
-    "NOP",
-    "TXA",
-    "ANE",
-    "STY",
-    "STA",
-    "STX",
-    "SAX",
-    "BCC",
-    "STA",
-    "HLT",
-    "SHA",
-    "STY",
-    "STA",
-    "STX",
-    "SAX",
-    "TYA",
-    "STA",
-    "TXS",
-    "SHS",
-    "SHY",
-    "STA",
-    "SHX",
-    "SHA",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "TAY",
-    "LDA",
-    "TAX",
-    "LXA",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "BCS",
-    "LDA",
-    "HLT",
-    "LAX",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "CLV",
-    "LDA",
-    "TSX",
-    "LAE",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "CPY",
-    "CMP",
-    "NOP",
-    "DCP",
-    "CPY",
-    "CMP",
-    "DEC",
-    "DCP",
-    "INY",
-    "CMP",
-    "DEX",
-    "AXS",
-    "CPY",
-    "CMP",
-    "DEC",
-    "DCP",
-    "BNE",
-    "CMP",
-    "HLT",
-    "DCP",
-    "NOP",
-    "CMP",
-    "DEC",
-    "DCP",
-    "CLD",
-    "CMP",
-    "NOP",
-    "DCP",
-    "NOP",
-    "CMP",
-    "DEC",
-    "DCP",
-    "CPX",
-    "SBC",
-    "NOP",
-    "ISC",
-    "CPX",
-    "SBC",
-    "INC",
-    "ISC",
-    "INX",
-    "SBC",
-    "NOP",
-    "SBC",
-    "CPX",
-    "SBC",
-    "INC",
-    "ISC",
-    "BEQ",
-    "SBC",
-    "HLT",
-    "ISC",
-    "NOP",
-    "SBC",
-    "INC",
-    "ISC",
-    "SED",
-    "SBC",
-    "NOP",
-    "ISC",
-    "NOP",
-    "SBC",
-    "INC",
-    "ISC",
+OpCodeNames: list[str] = [
+    "BRK", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "ANC", "NOP", "ORA", "ASL", "SLO", "BPL", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", "JSR", "AND", "HLT", "RLA", "BIT", "AND", "ROL", "RLA", "PLP", "AND", "ROL", "ANC", "BIT", "AND", "ROL", "RLA", "BMI", "AND", "HLT", "RLA", "NOP", "AND", "ROL", "RLA", "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", "RTI", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "PHA", "EOR", "LSR", "ALR", "JMP", "EOR", "LSR", "SRE", "BVC", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", "RTS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "PLA", "ADC", "ROR", "ARR", "JMP", "ADC", "ROR", "RRA", "BVS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", "DEY", "NOP", "TXA", "ANE", "STY", "STA", "STX", "SAX", "BCC", "STA", "HLT", "SHA", "STY", "STA", "STX", "SAX", "TYA", "STA", "TXS", "SHS", "SHY", "STA", "SHX", "SHA", "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", "TAY", "LDA", "TAX", "LXA", "LDY", "LDA", "LDX", "LAX", "BCS", "LDA", "HLT", "LAX", "LDY", "LDA", "LDX", "LAX", "CLV", "LDA", "TSX", "LAE", "LDY", "LDA", "LDX", "LAX", "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", "INY", "CMP", "DEX", "AXS", "CPY", "CMP", "DEC", "DCP", "BNE", "CMP", "HLT", "DCP", "NOP", "CMP", "DEC", "DCP", "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", "CPX", "SBC", "NOP", "ISC", "CPX", "SBC", "INC", "ISC", "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISC", "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC",
 ]
 
 @dataclass
@@ -767,7 +519,7 @@ class Emulator:
 
         HeaderedROM = np.fromfile(self.filepath, dtype=np.uint8)
         if len(HeaderedROM) < 0x8010:
-            raise ValueError("ROM file too small or invalid")
+            raise ValueError("Invalid ROM file")
 
         # Load PRG ROM
         self.ROM[0:0x8000] = HeaderedROM[0x10 : 0x10 + 0x8000]
@@ -829,19 +581,22 @@ class Emulator:
             self.controllers[controller_id].latch()  # Update shift register if strobe is high
 
     def _step(self):
-        if self.CPU_Halted: return
-        self.Emulate_CPU()
+        try:
+            if self.CPU_Halted: return
+            self.Emulate_CPU()
 
-        # PPU runs 3 cycles per CPU cycle
-        for _ in range(3):
-            self.Emulate_PPU()
+            # PPU runs 3 cycles per CPU cycle
+            for _ in range(3):
+                self.Emulate_PPU()
 
-        # APU runs at CPU speed
-        self.apu.step()
+            # APU runs at CPU speed
+            self.apu.step()
 
-        if self.NMI_Pending:
-            self.NMI()
-            self.NMI_Pending = False
+            if self.NMI_Pending:
+                self.NMI()
+                self.NMI_Pending = False
+        except Exception as e:
+            print(e)
 
     def Run(self):
         """Run CPU and PPU together."""
@@ -2071,6 +1826,7 @@ class Emulator:
 
             case _:  # Unknown opcode
                 print(f"Unknown opcode: ${self.opcode:02X} at PC=${self.ProgramCounter-1:04X}")
+                
                 if self.debug.halt_on_unknown_opcode:
                     self.CPU_Halted = True
                     raise Exception(
@@ -2242,6 +1998,7 @@ class Emulator:
 
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
 
+    @cache(maxsize=1024, typed=True)
     def NESPaletteToRGB(self, color_idx: int) -> np.ndarray:
         """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
         nes_palette = np.array([
