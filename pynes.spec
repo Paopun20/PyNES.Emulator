@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon/icon128.ico'  # <-- ไอคอนต้องเป็น string path
+    icon='icon128.ico'
 )
