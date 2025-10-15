@@ -5,7 +5,7 @@ a = Analysis(
     datas=[
         ('pynes', 'pynes'),        # โฟลเดอร์ pynes
         ('icon', 'icon'),          # โฟลเดอร์ icon
-        ('icon/icon128.ico', 'icon/icon128.ico')  # ไฟล์ icon
+        ('icon/icon128.png', 'icon/icon128.png')  # ไฟล์ icon
     ],
     hiddenimports=[],
     hookspath=[],
