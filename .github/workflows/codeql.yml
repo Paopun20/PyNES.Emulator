@@ -58,7 +58,7 @@ jobs:
       with:
         category: "/language:python"
 
-    - name: Upload CodeQL results (optional)
+    - name: Upload CodeQL results
       if: always()
       uses: actions/upload-artifact@v4
       with:
