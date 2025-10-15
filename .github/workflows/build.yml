@@ -35,7 +35,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libxrender1 libgomp1
+        sudo apt-get install -y libgl1 libglib2.0-0 libxrender1 libgomp1
 
     - name: Install system dependencies (macOS)
       if: matrix.os == 'macos-latest'
