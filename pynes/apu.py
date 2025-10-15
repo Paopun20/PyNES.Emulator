@@ -288,7 +288,7 @@ class APU:
             audio_int16 = (self.audio_buffer * 32767).astype(np.int16)
             sound = mixer.Sound(audio_int16)
             sound.play()
-        except:
+        except Exception:
             pass  # Ignore audio errors
 
     def reset(self):
