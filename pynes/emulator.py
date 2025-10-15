@@ -175,7 +175,7 @@ class Emulator:
             return self.ReadPPURegister(0x2000 + (addr & 0x07))
 
         # APU and I/O registers
-        elif 0x4000 <= addr <= 0x4017:
+        elif addr <= 0x4017:
             if addr == 0x4015:
                 # APU Status register
                 status = 0
@@ -214,7 +214,7 @@ class Emulator:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
 
         # APU and I/O registers
-        elif 0x4000 <= addr <= 0x4017:
+        elif addr <= 0x4017:
             if addr == 0x4016:  # Controller strobe
                 strobe = bool(val & 0x01)
                 self.controllers[1].strobe = strobe
