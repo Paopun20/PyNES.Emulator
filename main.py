@@ -14,7 +14,7 @@ pygame.display.set_caption("PyNES Emulator")
 
 try:
     pygame.display.set_icon(pygame.image.load("./icon/icon128.png"))
-except:
+except Exception:
     print("Icon not found")
 
 clock = pygame.time.Clock()
