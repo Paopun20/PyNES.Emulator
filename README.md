@@ -6,9 +6,11 @@ This project aims to emulate the 8-bit NES CPU (6502) and PPU (Picture Processin
 
 ## Accuracy ( freeze out )
 
-try to fix 84/125 bug ( NMI OVERLAP BRK )
+try to fix 84/125 bug freeze ( NMI OVERLAP BRK )
 
-here screenshot of pynes:
+Not suitable for speedrunning at this time—please wait for future updates before using PyNES for these purposes.
+
+here screenshot of emulator:
 
 <div style="display: flex; gap: 10px;">
     <img src="./assets/screenshot/Screenshot 2025-10-15 180105.jpg" alt="PyNES Screenshot" width="400"/>
