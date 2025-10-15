@@ -1,4 +1,4 @@
-from pynes.emulator import Emulator
+from pynes.emulator import Emulator, ProcessPoolExecutor
 from pathlib import Path
 import pygame
 import threading
@@ -46,9 +46,9 @@ KEY_MAPPING = {
 
 # === EMULATOR SETUP ===
 emulator_vm = Emulator()
-emulator_vm.filepath = Path(__file__).parent / "AccuracyCoin.nes"
+# emulator_vm.filepath = Path(__file__).parent / "AccuracyCoin.nes"
 # emulator_vm.filepath = Path(__file__).parent / "__PatreonRoms" / "7_Graphics.nes"
-# emulator_vm.filepath = Path(__file__).parent / "test_nes_files" / "Super Mario Bros.nes"
+emulator_vm.filepath = Path(__file__).parent / "test_nes_files" / "Super Mario Bros.nes"
 emulator_vm.debug.Debug = True  # Enable debug mode
 emulator_vm.debug.halt_on_unknown_opcode = False
 
@@ -132,7 +132,10 @@ def subpro():
     print("Sub-loop stopped.")
 
 # เริ่ม thread ที่รัน emulator loop
-threading.Thread(target=subpro, daemon=True).start()
+with ProcessPoolExecutor() as executor: # run at max cpu count
+    subpro_thread = threading.Thread(target=subpro, daemon=True)
+    subpro_thread.start()
+# subpro_thread.join() # don't
 
 # === MAIN LOOP (UI / EVENT) ===
 while running:

@@ -4,15 +4,15 @@ A NES (Nintendo Entertainment System) emulator written in 100% Python.
 
 This project aims to emulate the 8-bit NES CPU (6502) and PPU (Picture Processing Unit) in pure Python. Currently, it's a work-in-progress (WIP), and not all CPU instructions or PPU features are implemented yet.
 
-## Accuracy
+## Accuracy ( freeze out )
 
-0/125: pynes not responding.
+try to fix 84/125 bug ( NMI OVERLAP BRK )
 
 here screenshot of pynes:
 
 <div style="display: flex; gap: 10px;">
-    <img src="./assets/screenshot/Screenshot 2025-10-15 005000.jpg" alt="PyNES Screenshot" width="400"/>
-    <img src="./assets/screenshot/Screenshot 2025-10-15 005257.jpg" width="400"/>
+    <img src="./assets/screenshot/Screenshot 2025-10-15 180105.jpg" alt="PyNES Screenshot" width="400"/>
+    <img src="./assets/screenshot/Screenshot 2025-10-15 180238.jpg" width="400"/>
 </div>
 
 ## Features (some work in progress)

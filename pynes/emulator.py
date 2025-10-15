@@ -131,7 +131,6 @@ class Emulator:
         self.PPUDataBuffer = 0
         self.FrameBuffer = np.zeros((240, 256, 3), dtype=np.uint8)
         self.NMI_Pending = False
-        self.IRQ_Pending = False
         
         #cache
         self._cache = TTLCache(maxsize=100, ttl=300)  # 100 items, 5 mins
@@ -630,13 +629,9 @@ class Emulator:
             # APU runs at CPU speed
             self.apu.step()
 
-            # Interrupt priority: NMI > IRQ
             if self.NMI_Pending:
                 self.NMI()
                 self.NMI_Pending = False
-            elif self.IRQ_Pending and not self.flag.InterruptDisable:
-                self.IRQ()
-                self.IRQ_Pending = False
 
             # Update FPS counter
             self.frame_count += 1
@@ -1510,6 +1505,64 @@ class Emulator:
                 self.flag.Carry = self.flag.Negative
                 self.cycles = 2
 
+            case 0x2B:  # ANC imm (variant)
+                val = self.Read(self.ProgramCounter)
+                self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+                self.Op_AND(val)
+                self.flag.Carry = self.flag.Negative
+                self.cycles = 2
+
+            case 0x4B:  # ALR imm (AND then LSR A)
+                val = self.Read(self.ProgramCounter)
+                self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+                self.A = self.A & val
+                self.flag.Carry = (self.A & 0x01) != 0
+                self.A = (self.A >> 1) & 0xFF
+                self.UpdateZeroNegativeFlags(self.A)
+                self.cycles = 2
+
+            case 0x6B:  # ARR imm (AND then ROR A) with flag quirks simplified
+                val = self.Read(self.ProgramCounter)
+                self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+                self.A = self.A & val
+                carry_in = 0x80 if self.flag.Carry else 0
+                result_before = self.A
+                self.flag.Carry = (self.A & 0x01) != 0
+                self.A = ((self.A >> 1) | carry_in) & 0xFF
+                # Overflow bit is XOR of bits 5 and 6 of result (common approximation)
+                self.flag.Overflow = ((self.A ^ (self.A << 1)) & 0x40) != 0
+                self.UpdateZeroNegativeFlags(self.A)
+                self.cycles = 2
+
+            case 0x8B:  # ANE imm (unstable) approx: A = X & imm
+                val = self.Read(self.ProgramCounter)
+                self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+                self.A = self.X & val
+                self.UpdateZeroNegativeFlags(self.A)
+                self.cycles = 2
+
+            case 0xAB:  # LAX imm (unofficial)
+                val = self.Read(self.ProgramCounter)
+                self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+                self.A = self.X = val & 0xFF
+                self.UpdateZeroNegativeFlags(self.A)
+                self.cycles = 2
+
+            case 0xCB:  # AXS imm (aka SAX imm): X = (A & X) - imm
+                val = self.Read(self.ProgramCounter)
+                self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+                tmp = (self.A & self.X) - val
+                self.flag.Carry = tmp >= 0
+                self.X = tmp & 0xFF
+                self.UpdateZeroNegativeFlags(self.X)
+                self.cycles = 2
+
+            case 0xEB:  # SBC imm (alias of 0xE9)
+                value = self.Read(self.ProgramCounter)
+                self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+                self.Op_SBC(value)
+                self.cycles = 2
+
             # SLO
             case 0x03:  # SLO (ind,X)
                 self.ReadOperands_IndirectAddressed_XIndexed()
@@ -1756,6 +1809,14 @@ class Emulator:
                 self.ReadOperands_AbsoluteAddressed()
                 self.Write(self.addressBus, self.A & self.X)
                 self.cycles = 4
+            case 0x83:  # SAX (ind,X)
+                self.ReadOperands_IndirectAddressed_XIndexed()
+                self.Write(self.addressBus, self.A & self.X)
+                self.cycles = 6
+            case 0x97:  # SAX zp,Y
+                self.ReadOperands_ZeroPage_YIndexed()
+                self.Write(self.addressBus, self.A & self.X)
+                self.cycles = 4
 
             # LAX
             case 0xA3:  # LAX (ind,X)
@@ -1792,6 +1853,40 @@ class Emulator:
                 self.ReadOperands_AbsoluteAddressed_YIndexed()
                 value = self.Read(self.addressBus)
                 self.A = self.X = value
+                self.UpdateZeroNegativeFlags(self.A)
+                self.cycles = 4
+
+            # AHX/SHX/SHY/TAS/LAS (approximations sufficient for many test ROMs)
+            case 0x93:  # AHX (ind),Y -> store A & X & (HB+1)
+                self.ReadOperands_IndirectAddressed_YIndexed()
+                hb1 = ((self.addressBus >> 8) + 1) & 0xFF
+                self.Write(self.addressBus, (self.A & self.X & hb1) & 0xFF)
+                self.cycles = 6
+            case 0x9F:  # AHX abs,Y
+                self.ReadOperands_AbsoluteAddressed_YIndexed()
+                hb1 = ((self.addressBus >> 8) + 1) & 0xFF
+                self.Write(self.addressBus, (self.A & self.X & hb1) & 0xFF)
+                self.cycles = 5
+            case 0x9C:  # SHY abs,X -> store Y & (HB+1)
+                self.ReadOperands_AbsoluteAddressed_XIndexed()
+                hb1 = ((self.addressBus >> 8) + 1) & 0xFF
+                self.Write(self.addressBus, (self.Y & hb1) & 0xFF)
+                self.cycles = 5
+            case 0x9E:  # SHX abs,Y -> store X & (HB+1)
+                self.ReadOperands_AbsoluteAddressed_YIndexed()
+                hb1 = ((self.addressBus >> 8) + 1) & 0xFF
+                self.Write(self.addressBus, (self.X & hb1) & 0xFF)
+                self.cycles = 5
+            case 0x9B:  # TAS (aka SHS) abs,Y -> SP = A & X; store SP & (HB+1)
+                self.ReadOperands_AbsoluteAddressed_YIndexed()
+                self.stackPointer = self.A & self.X
+                hb1 = ((self.addressBus >> 8) + 1) & 0xFF
+                self.Write(self.addressBus, (self.stackPointer & hb1) & 0xFF)
+                self.cycles = 5
+            case 0xBB:  # LAS abs,Y -> A,X,SP = mem & SP
+                self.ReadOperands_AbsoluteAddressed_YIndexed()
+                value = self.Read(self.addressBus) & self.stackPointer
+                self.A = self.X = self.stackPointer = value & 0xFF
                 self.UpdateZeroNegativeFlags(self.A)
                 self.cycles = 4
 
@@ -1905,17 +2000,6 @@ class Emulator:
         self.flag.InterruptDisable = True
         low = self.Read(0xFFFA)
         high = self.Read(0xFFFB)
-        self.ProgramCounter = (high << 8) | low
-        self.cycles = 7
-
-    def IRQ(self):
-        """Handle maskable IRQ (from APU or mappers)."""
-        self.Push(self.ProgramCounter >> 8)
-        self.Push(self.ProgramCounter & 0xFF)
-        self.Push(self.GetProcessorStatus() & ~0x10)
-        self.flag.InterruptDisable = True
-        low = self.Read(0xFFFE)
-        high = self.Read(0xFFFF)
         self.ProgramCounter = (high << 8) | low
         self.cycles = 7
 

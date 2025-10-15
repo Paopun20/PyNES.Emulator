@@ -76,7 +76,6 @@ class APU:
         # Frame counter
         self.frame_counter = 0
         self.frame_mode = 0  # 0 = 4-step, 1 = 5-step
-        self.frame_irq_inhibit = False  # $4017 bit 6
         
         # Duty cycle patterns
         self.duty_patterns = [
@@ -186,9 +185,6 @@ class APU:
         # Frame counter ($4017)
         elif address == 0x4017:
             self.frame_mode = (value >> 7) & 0x01
-            self.frame_irq_inhibit = bool(value & 0x40)
-            # Writing $4017 resets the frame counter
-            self.frame_counter = 0
 
     def clock_pulse(self, channel):
         """Clock a pulse channel"""
@@ -265,7 +261,6 @@ class APU:
     def step(self):
         """Step APU forward one CPU cycle"""
         self.cycle_counter += 1
-        self.frame_counter = (self.frame_counter + 1) % 14915  # approx CPU cycles per frame sequence
         
         # Clock channels
         self.clock_pulse(self.pulse1)
@@ -273,12 +268,6 @@ class APU:
         self.clock_triangle()
         self.clock_noise()
         
-        # Frame counter IRQ (very simplified timing)
-        if self.frame_mode == 0 and not self.frame_irq_inhibit:
-            # 4-step mode fires IRQ near end of sequence (~14914 cycles)
-            if self.frame_counter == 14914:
-                self.emu.IRQ_Pending = True
-
         # Generate audio sample
         if self.cycle_counter >= self.cycles_per_sample:
             self.cycle_counter -= self.cycles_per_sample
