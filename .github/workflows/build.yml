@@ -1,0 +1,156 @@
+name: Build PyNES Emulator
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.11', '3.12', '3.13']
+        exclude:
+          # Exclude some combinations to reduce build time
+          - os: macos-latest
+            python-version: '3.11'
+          - os: ubuntu-latest
+            python-version: '3.11'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libxrender1 libgomp1
+
+    - name: Install system dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install libomp
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Create build directory
+      run: mkdir -p dist
+
+    - name: Build executable with PyInstaller
+      run: |
+        pyinstaller pynes.spec --clean --noconfirm
+
+    - name: Test executable (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Just check if the executable was created successfully
+        if (Test-Path "dist\pynes.exe") {
+          Write-Host "Build successful: pynes.exe created"
+          # Get file size for verification
+          $size = (Get-Item "dist\pynes.exe").Length
+          Write-Host "File size: $size bytes"
+        } else {
+          Write-Error "Build failed: pynes.exe not found"
+          exit 1
+        }
+
+    - name: Test executable (macOS/Linux)
+      if: matrix.os != 'windows-latest'
+      run: |
+        # Just check if the executable was created successfully
+        if [ -f "dist/pynes" ]; then
+          echo "Build successful: pynes executable created"
+          # Get file size for verification
+          size=$(stat -f%z "dist/pynes" 2>/dev/null || stat -c%s "dist/pynes")
+          echo "File size: $size bytes"
+        else
+          echo "Build failed: pynes executable not found"
+          exit 1
+        fi
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
+        path: |
+          dist/pynes*
+        retention-days: 30
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create release archive
+      run: |
+        mkdir -p release
+        # Organize artifacts by OS
+        for artifact in artifacts/*/; do
+          os_name=$(basename "$artifact")
+          mkdir -p "release/$os_name"
+          cp -r "$artifact"/* "release/$os_name/"
+        done
+        
+        # Create zip files for each OS
+        cd release
+        for os_dir in */; do
+          os_name=$(basename "$os_dir")
+          zip -r "../PyNES-$os_name.zip" "$os_name"
+        done
+
+    - name: Upload release files
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: PyNES-ubuntu-latest-py3.13.zip
+        asset_name: PyNES-Linux.zip
+        asset_content_type: application/zip
+
+    - name: Upload Windows release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: PyNES-windows-latest-py3.13.zip
+        asset_name: PyNES-Windows.zip
+        asset_content_type: application/zip
+
+    - name: Upload macOS release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: PyNES-macos-latest-py3.13.zip
+        asset_name: PyNES-macOS.zip
+        asset_content_type: application/zip

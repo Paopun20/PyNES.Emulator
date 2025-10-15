@@ -12,3 +12,7 @@ __pycache__/*
 
 # manim
 manim/*
+
+# build
+build/*
+dist/*

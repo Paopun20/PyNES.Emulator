@@ -1,5 +1,6 @@
 from pynes.emulator import Emulator, ProcessPoolExecutor
 from pathlib import Path
+from tkinter import filedialog
 import pygame
 import threading
 
@@ -14,7 +15,8 @@ pygame.display.set_caption("PyNES Emulator")
 font = pygame.font.Font(None, 20)
 
 try:
-    pygame.display.set_icon(pygame.image.load("./icon/icon128.png"))
+    icon_path = Path(__file__).parent / "icon" / "icon128.png"
+    pygame.display.set_icon(pygame.image.load(icon_path))
 except Exception:
     print("Icon not found")
 
@@ -46,9 +48,9 @@ KEY_MAPPING = {
 
 # === EMULATOR SETUP ===
 emulator_vm = Emulator()
-emulator_vm.filepath = Path(__file__).parent / "AccuracyCoin.nes"
-# emulator_vm.filepath = Path(__file__).parent / "__PatreonRoms" / "7_Graphics.nes"
-# emulator_vm.filepath = Path(__file__).parent / "test_nes_files" / "Super Mario Bros.nes"
+nes_path = filedialog.askopenfilename(filetypes=[("NES files", "*.nes")])
+emulator_vm.filepath = nes_path
+
 emulator_vm.debug.Debug = True  # Enable debug mode
 emulator_vm.debug.halt_on_unknown_opcode = False
 

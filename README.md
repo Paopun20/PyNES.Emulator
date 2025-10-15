@@ -30,12 +30,18 @@ here screenshot of emulator:
 
 The emulator can run simple NES ROMs like "Super Mario Bros.nes" and "AccuracyCoin.nes" (included for testing; "Super Mario Bros." is git-ignored due to copyright, only "AccuracyCoin.nes" is included). More complex games may not run correctly due to incomplete CPU and PPU implementations.
 
-## Running the Emulator ( it only load AccuracyCoin.nes file for testing )
+## Running the Emulator
 
-1. Ensure you have Python 3.x installed.
-2. Install Pygame: `pip install -r requirements.txt`
-3. Run the emulator: `python main.py`
-4. Done for what
+1. Ensure you have Python 3.8 or higher installed.
+2. Install the required dependencies using:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Start the emulator with:
+   ```bash
+   python main.py
+   ```
+4. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
 ## Fix for me? ( Contributing )
 
