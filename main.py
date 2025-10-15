@@ -1,7 +1,6 @@
 from pynes.emulator import Emulator
 from pathlib import Path
 import pygame
-import numpy as np
 
 NES_WIDTH = 256
 NES_HEIGHT = 240
