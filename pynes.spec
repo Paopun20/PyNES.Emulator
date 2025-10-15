@@ -1,13 +1,21 @@
+from PyInstaller.utils.hooks import collect_all
+from PyInstaller.building.build_main import Analysis
+from PyInstaller.building.api import PYZ
+from PyInstaller.building.api import EXE
+
+# Collect everything from NumPy
+datas_np, binaries_np, hiddenimports_np = collect_all('numpy')
+
+# Include your own folders and the NumPy data/binaries/hiddenimports
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
-    datas=[
-        ('pynes', 'pynes'),        # โฟลเดอร์ pynes
-        ('icon', 'icon'),          # โฟลเดอร์ icon
-        ('icon/icon128.png', 'icon/icon128.png')  # ไฟล์ icon
+    binaries=binaries_np,  # include NumPy binaries
+    datas=datas_np + [
+        ('pynes', 'pynes'),        # pynes core module
+        ('icon', 'icon'),          # icon folder
     ],
-    hiddenimports=[],
+    hiddenimports=hiddenimports_np,  # include NumPy hidden imports
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -35,5 +43,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon128.ico'
+    icon='icon.ico'
 )
