@@ -13,6 +13,15 @@ from numba import njit
 from functools import lru_cache
 from cachetools import TTLCache
 
+# debugger
+import time # for fps
+
+# rich
+from rich.traceback import install; install() # for cool traceback
+
+# traceback
+import traceback
+
 # DATA
 OpCodeNames: list[str] = [
     "BRK", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "ANC", "NOP", "ORA", "ASL", "SLO", "BPL", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", "JSR", "AND", "HLT", "RLA", "BIT", "AND", "ROL", "RLA", "PLP", "AND", "ROL", "ANC", "BIT", "AND", "ROL", "RLA", "BMI", "AND", "HLT", "RLA", "NOP", "AND", "ROL", "RLA", "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", "RTI", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "PHA", "EOR", "LSR", "ALR", "JMP", "EOR", "LSR", "SRE", "BVC", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", "RTS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "PLA", "ADC", "ROR", "ARR", "JMP", "ADC", "ROR", "RRA", "BVS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", "DEY", "NOP", "TXA", "ANE", "STY", "STA", "STX", "SAX", "BCC", "STA", "HLT", "SHA", "STY", "STA", "STX", "SAX", "TYA", "STA", "TXS", "SHS", "SHY", "STA", "SHX", "SHA", "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", "TAY", "LDA", "TAX", "LXA", "LDY", "LDA", "LDX", "LAX", "BCS", "LDA", "HLT", "LAX", "LDY", "LDA", "LDX", "LAX", "CLV", "LDA", "TSX", "LAE", "LDY", "LDA", "LDX", "LAX", "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", "INY", "CMP", "DEX", "AXS", "CPY", "CMP", "DEC", "DCP", "BNE", "CMP", "HLT", "DCP", "NOP", "CMP", "DEC", "DCP", "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", "CPX", "SBC", "NOP", "ISC", "CPX", "SBC", "INC", "ISC", "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISC", "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC",
@@ -122,9 +131,15 @@ class Emulator:
         self.PPUDataBuffer = 0
         self.FrameBuffer = np.zeros((240, 256, 3), dtype=np.uint8)
         self.NMI_Pending = False
+        self.IRQ_Pending = False
         
         #cache
         self._cache = TTLCache(maxsize=100, ttl=300)  # 100 items, 5 mins
+        
+        # debugger
+        self.fps = 0
+        self.frame_count = 0
+        self.last_fps_time = time.time()
 
     def Tracelogger(self, opcode: int):
         TEMPLATE = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
@@ -603,7 +618,9 @@ class Emulator:
 
     def _step(self):
         try:
-            if self.CPU_Halted: return
+            if self.CPU_Halted: 
+                return
+
             self.Emulate_CPU()
 
             # PPU runs 3 cycles per CPU cycle
@@ -613,11 +630,26 @@ class Emulator:
             # APU runs at CPU speed
             self.apu.step()
 
+            # Interrupt priority: NMI > IRQ
             if self.NMI_Pending:
                 self.NMI()
                 self.NMI_Pending = False
+            elif self.IRQ_Pending and not self.flag.InterruptDisable:
+                self.IRQ()
+                self.IRQ_Pending = False
+
+            # Update FPS counter
+            self.frame_count += 1
+            current_time = time.time()
+            if current_time - self.last_fps_time >= 1.0:
+                self.fps = self.frame_count
+                self.frame_count = 0
+                self.last_fps_time = current_time
+
         except Exception as e:
-            print(e)
+            print(f"Step error: {e}")
+            traceback.print_exc()
+            self.CPU_Halted = True
 
     def Run(self):
         """Run CPU and PPU together."""
@@ -1844,6 +1876,15 @@ class Emulator:
                 self.Write(self.addressBus, value)
                 self.Op_SBC(value)
                 self.cycles = 7
+            
+            case 0x17:  # SLO zp,X (unofficial)
+                self.ReadOperands_ZeroPage_XIndexed()
+                value = self.Read(self.addressBus)
+                self.flag.Carry = (value & 0x80) != 0
+                value = (value << 1) & 0xFF
+                self.Write(self.addressBus, value)
+                self.Op_ORA(value)
+                self.cycles = 6
 
             case _:  # Unknown opcode
                 print(f"Unknown opcode: ${self.opcode:02X} at PC=${self.ProgramCounter-1:04X}")
@@ -1867,6 +1908,17 @@ class Emulator:
         self.ProgramCounter = (high << 8) | low
         self.cycles = 7
 
+    def IRQ(self):
+        """Handle maskable IRQ (from APU or mappers)."""
+        self.Push(self.ProgramCounter >> 8)
+        self.Push(self.ProgramCounter & 0xFF)
+        self.Push(self.GetProcessorStatus() & ~0x10)
+        self.flag.InterruptDisable = True
+        low = self.Read(0xFFFE)
+        high = self.Read(0xFFFF)
+        self.ProgramCounter = (high << 8) | low
+        self.cycles = 7
+
     def Emulate_PPU(self):
         """Emulate one PPU cycle."""
         self.PPUCycles += 1
@@ -1882,12 +1934,15 @@ class Emulator:
                 if self.PPUCTRL & 0x80:  # NMI enabled
                     self.NMI_Pending = True
 
-            # Scanline 261: Pre-render, clear VBlank
+            # Scanline 261: End of frame
             elif self.Scanline >= 262:
-                self.Scanline = 0
+                self.Scanline = -1  # Pre-render scanline
                 self.PPUSTATUS &= 0x7F  # Clear VBlank flag
                 self.FrameComplete = True
-                self._emit("gen_frame", self.FrameBuffer)
+
+                # Emit frame event
+                if hasattr(self, '_events') and 'gen_frame' in self._events:
+                    self._emit("gen_frame", self.FrameBuffer)
                 self.FrameComplete = False
 
             # Visible scanlines (0-239)
@@ -1920,7 +1975,9 @@ class Emulator:
         for x in range(256):
             # Calculate tile position
             tile_x = ((x + scroll_x) // 8) & 31
-            tile_y = (y // 8) & 29
+            # Nametable มี 30 แถว (0-29); ห้ามใช้ bitwise AND กับ 29 เพราะจะทำให้ wrap ไม่ถูกต้อง
+            # ใช้โมดูลัส 30 เพื่อให้เลื่อนสกรอลล์ข้ามขอบทำงานถูกต้อง
+            tile_y = (y // 8) % 30
 
             # Get tile index from nametable
             tile_offset = tile_y * 32 + tile_x

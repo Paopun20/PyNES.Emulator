@@ -5,6 +5,8 @@ Cython==3.1.4
 cython-npm==0.2.4
 iniconfig==2.1.0
 llvmlite==0.45.1
+markdown-it-py==4.0.0
+mdurl==0.1.2
 numba==0.62.1
 numpy==2.3.3
 packaging==25.0
@@ -18,4 +20,5 @@ PyOpenGL==3.1.10
 PyOpenGL-accelerate==3.1.10
 pytest==8.4.2
 pywin32-ctypes==0.2.3
+rich==14.2.0
 setuptools==80.9.0
