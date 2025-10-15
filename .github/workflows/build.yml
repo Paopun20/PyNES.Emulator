@@ -14,20 +14,14 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.11', '3.12', '3.13']
-        exclude:
-          # Exclude some combinations to reduce build time
-          - os: macos-latest
-            python-version: '3.11'
-          - os: ubuntu-latest
-            python-version: '3.11'
+        python-version: ['3.13']
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -43,7 +37,7 @@ jobs:
         brew install libomp
 
     - name: Cache pip dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v4.3.0
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -91,66 +85,10 @@ jobs:
         fi
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v4.6.2
+      if: always()
       with:
         name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
         path: |
           dist/pynes*
         retention-days: 30
-
-  create-release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'release'
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-
-    - name: Create release archive
-      run: |
-        mkdir -p release
-        # Organize artifacts by OS
-        for artifact in artifacts/*/; do
-          os_name=$(basename "$artifact")
-          mkdir -p "release/$os_name"
-          cp -r "$artifact"/* "release/$os_name/"
-        done
-        
-        # Create zip files for each OS
-        cd release
-        for os_dir in */; do
-          os_name=$(basename "$os_dir")
-          zip -r "../PyNES-$os_name.zip" "$os_name"
-        done
-
-    - name: Upload release files
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: PyNES-ubuntu-latest-py3.13.zip
-        asset_name: PyNES-Linux.zip
-        asset_content_type: application/zip
-
-    - name: Upload Windows release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: PyNES-windows-latest-py3.13.zip
-        asset_name: PyNES-Windows.zip
-        asset_content_type: application/zip
-
-    - name: Upload macOS release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: PyNES-macos-latest-py3.13.zip
-        asset_name: PyNES-macOS.zip
-        asset_content_type: application/zip
