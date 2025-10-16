@@ -240,8 +240,9 @@ class Emulator:
                 self.apu.write_register(addr, val)
 
         # ROM area (some mappers allow writing here)
-        elif addr >= 0x8000:
-            self.ROM[addr - 0x8000] = val
+        elif addr >= 0x8000: # rom is not writable # fix
+            # self.ROM[addr - 0x8000] = val
+            pass
 
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers."""
