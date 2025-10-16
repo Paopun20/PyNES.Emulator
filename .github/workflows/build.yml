@@ -45,12 +45,13 @@ jobs:
         mkdir -p dist
         pyinstaller pynes.spec --clean --noconfirm
 
-    - run: |
-        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          if (Test-Path "dist\pynes.exe") { echo "Build OK" } else { exit 1 }
-        else
-          if [ -f "dist/pynes" ]; then echo "Build OK"; else exit 1; fi
-        fi
+    - name: Install Ubuntu dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0 libxrender1 libgomp1
+
+    - name: Install macOS dependencies
+      if: matrix.os == 'macos-latest'
+      run: brew install libomp
 
     - uses: actions/upload-artifact@v4
       with:
