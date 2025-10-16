@@ -112,6 +112,8 @@ class Emulator:
         self.flag = Flags()
         self.debug = Debug()
         self.CPU_Halted = False
+        # Open bus (last value seen on CPU data bus)
+        self.open_bus = 0
 
         # PPU initialization (unchanged)
         self.VRAM = np.zeros(0x2000, dtype=np.uint8)
@@ -182,11 +184,15 @@ class Emulator:
 
         # RAM with mirroring ($0000-$07FF mirrors to $0800-$1FFF)
         if addr < 0x2000:
-            return int(self.RAM[addr & 0x07FF])
+            val = int(self.RAM[addr & 0x07FF])
+            self.open_bus = val
+            return val
 
         # PPU registers ($2000-$2007 mirrors to $2008-$3FFF)
         elif addr < 0x4000:
-            return self.ReadPPURegister(0x2000 + (addr & 0x07))
+            val = self.ReadPPURegister(0x2000 + (addr & 0x07))
+            self.open_bus = val
+            return val
 
         # APU and I/O registers
         elif addr <= 0x4017:
@@ -201,18 +207,27 @@ class Emulator:
                     status |= 0x04
                 if self.apu.noise["length_counter"] > 0:
                     status |= 0x08
+                self.open_bus = status
                 return status
             elif addr == 0x4016:  # Controller 1
-                return self.controllers[1].read()
+                val = self.controllers[1].read()
+                self.open_bus = val
+                return val
             elif addr == 0x4017:  # Controller 2
-                return self.controllers[2].read()
-            return 0
+                val = self.controllers[2].read()
+                self.open_bus = val
+                return val
+            # unmapped APU/I-O registers return open bus
+            return self.open_bus
 
         # ROM ($8000-$FFFF)
         elif addr >= 0x8000:
-            return int(self.ROM[addr - 0x8000])
+            val = int(self.ROM[addr - 0x8000])
+            self.open_bus = val
+            return val
 
-        return 0
+        # Unmapped reads return the open bus value
+        return self.open_bus
 
     def Write(self, Address: int, Value: int):
         """Write to CPU or PPU memory with proper mirroring."""
@@ -222,10 +237,12 @@ class Emulator:
         # RAM with mirroring
         if addr < 0x2000:
             self.RAM[addr & 0x07FF] = val
+            self.open_bus = val
 
         # PPU registers
         elif addr < 0x4000:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
+            self.open_bus = val
 
         # APU and I/O registers
         elif addr <= 0x4017:
@@ -238,11 +255,14 @@ class Emulator:
                     self.controllers[2].latch()
             else:
                 self.apu.write_register(addr, val)
+            self.open_bus = val
 
         # ROM area
         elif addr >= 0x8000: # rom is not writable # fix
             # self.ROM[addr - 0x8000] = val
             pass
+            # writes to ROM still place value on open bus
+            self.open_bus = val
 
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers."""
@@ -344,7 +364,13 @@ class Emulator:
         high = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         base_addr = (high << 8) | low
-        self.addressBus = (base_addr + self.X) & 0xFFFF
+        final_addr = (base_addr + self.X) & 0xFFFF
+        # Always perform a dummy read when indexing
+        _ = self.Read((base_addr & 0xFF00) | ((base_addr + self.X) & 0xFF))
+        # If page boundary crossed, CPU does an extra read cycle
+        if (base_addr & 0xFF00) != (final_addr & 0xFF00):
+            self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+        self.addressBus = final_addr
 
     #@lru_cache(maxsize=None)
     def ReadOperands_AbsoluteAddressed_YIndexed(self):
@@ -354,7 +380,13 @@ class Emulator:
         high = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         base_addr = (high << 8) | low
-        self.addressBus = (base_addr + self.Y) & 0xFFFF
+        final_addr = (base_addr + self.Y) & 0xFFFF
+        # Always perform a dummy read when indexing
+        _ = self.Read((base_addr & 0xFF00) | ((base_addr + self.Y) & 0xFF))
+        # If page boundary crossed, CPU does an extra read cycle
+        if (base_addr & 0xFF00) != (final_addr & 0xFF00):
+            self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+        self.addressBus = final_addr
 
     #@lru_cache(maxsize=None)
     def ReadOperands_ZeroPage(self):
@@ -384,7 +416,13 @@ class Emulator:
         low = self.Read(zp_addr)
         high = self.Read((zp_addr + 1) & 0xFF)
         base_addr = (high << 8) | low
-        self.addressBus = (base_addr + self.Y) & 0xFFFF
+        final_addr = (base_addr + self.Y) & 0xFFFF
+        # Always perform a dummy read when indexing
+        _ = self.Read((base_addr & 0xFF00) | ((base_addr + self.Y) & 0xFF))
+        # If page boundary crossed, CPU does an extra read cycle
+        if (base_addr & 0xFF00) != (final_addr & 0xFF00):
+            self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+        self.addressBus = final_addr
 
     #@lru_cache(maxsize=None)
     def ReadOperands_IndirectAddressed_XIndexed(self):
@@ -414,7 +452,7 @@ class Emulator:
         status |= 0x02 if self.flag.Zero else 0
         status |= 0x04 if self.flag.InterruptDisable else 0
         status |= 0x08 if self.flag.Decimal else 0
-        status |= 0x10  # Break flag
+        status |= 0x10 if self.flag.Break else 0  # Break flag reflects flag.Break when pushing
         status |= 0x20  # Unused (always 1)
         status |= 0x40 if self.flag.Overflow else 0
         status |= 0x80 if self.flag.Negative else 0
@@ -426,6 +464,10 @@ class Emulator:
         self.flag.Zero = bool(status & 0x02)
         self.flag.InterruptDisable = bool(status & 0x04)
         self.flag.Decimal = bool(status & 0x08)
+        # Break flag is loaded from the status byte on PLP/RTI
+        self.flag.Break = bool(status & 0x10)
+        # Unused bit is ignored in flags but should be considered set
+        self.flag.Unused = True
         self.flag.Overflow = bool(status & 0x40)
         self.flag.Negative = bool(status & 0x80)
 
@@ -438,22 +480,36 @@ class Emulator:
 
     def Op_ASL(self, Address: int, Input: int):
         """Arithmetic Shift Left."""
+        # First perform a dummy read
+        _ = self.Read(Address)
+        # Then do a dummy write of the original value
+        self.Write(Address, Input)
+        # Calculate result
         self.flag.Carry = (Input & 0x80) != 0
         result = (Input << 1) & 0xFF
         self.UpdateZeroNegativeFlags(result)
+        # Finally write the actual new value
         self.Write(Address, result)
         return result
 
     def Op_LSR(self, Address: int, Input: int):
         """Logical Shift Right."""
+        # First perform a dummy read
+        _ = self.Read(Address)
+        # Then do a dummy write of the original value
+        self.Write(Address, Input)
+        # Calculate result
         self.flag.Carry = (Input & 0x01) != 0
         result = (Input >> 1) & 0xFF
         self.UpdateZeroNegativeFlags(result)
+        # Finally write the actual new value
         self.Write(Address, result)
         return result
 
     def Op_ROL(self, Address: int, Input: int):
         """Rotate Left."""
+        # Dummy read for RMW timing / open bus behavior
+        _ = self.Read(Address)
         carry_in = 1 if self.flag.Carry else 0
         self.flag.Carry = (Input & 0x80) != 0
         result = ((Input << 1) | carry_in) & 0xFF
@@ -463,6 +519,8 @@ class Emulator:
 
     def Op_ROR(self, Address: int, Input: int):
         """Rotate Right."""
+        # Dummy read for RMW timing / open bus behavior
+        _ = self.Read(Address)
         carry_in = 0x80 if self.flag.Carry else 0
         self.flag.Carry = (Input & 0x01) != 0
         result = ((Input >> 1) | carry_in) & 0xFF
@@ -472,12 +530,16 @@ class Emulator:
 
     def Op_INC(self, Address: int, Input: int):
         """Increment memory."""
+        # Dummy read for RMW timing / open bus behavior
+        _ = self.Read(Address)
         result = (Input + 1) & 0xFF
         self.Write(Address, result)
         self.UpdateZeroNegativeFlags(result)
 
     def Op_DEC(self, Address: int, Input: int):
         """Decrement memory."""
+        # Dummy read for RMW timing / open bus behavior
+        _ = self.Read(Address)
         result = (Input - 1) & 0xFF
         self.Write(Address, result)
         self.UpdateZeroNegativeFlags(result)
@@ -499,20 +561,84 @@ class Emulator:
 
     def Op_ADC(self, Input: int):
         """Add with carry."""
-        carry = 1 if self.flag.Carry else 0
-        result = self.A + Input + carry
-
-        # Overflow if sign of result differs from both operands
-        self.flag.Overflow = (~(self.A ^ Input) & (self.A ^ result) & 0x80) != 0
-        self.flag.Carry = result > 0xFF
-
-        self.A = result & 0xFF
-        self.UpdateZeroNegativeFlags(self.A)
+        if not self.flag.Decimal:  # Binary mode
+            carry = 1 if self.flag.Carry else 0
+            result = self.A + Input + carry
+            # Overflow if sign of result differs from both operands
+            self.flag.Overflow = (~(self.A ^ Input) & (self.A ^ result) & 0x80) != 0
+            self.flag.Carry = result > 0xFF
+            self.A = result & 0xFF
+            self.UpdateZeroNegativeFlags(self.A)
+        else:  # BCD mode
+            carry = 1 if self.flag.Carry else 0
+            # Convert to BCD
+            a_lo = self.A & 0x0F
+            a_hi = (self.A >> 4) & 0x0F
+            in_lo = Input & 0x0F
+            in_hi = (Input >> 4) & 0x0F
+            
+            # Add lower digits
+            temp = a_lo + in_lo + carry
+            if temp > 9:
+                temp -= 10
+                carry = 1
+            else:
+                carry = 0
+            result_lo = temp
+            
+            # Add upper digits
+            temp = a_hi + in_hi + carry
+            if temp > 9:
+                temp -= 10
+                self.flag.Carry = True
+            else:
+                self.flag.Carry = False
+            result_hi = temp
+            
+            # Combine results
+            result = (result_hi << 4) | result_lo
+            # Set overflow if sign bit changed
+            self.flag.Overflow = ((self.A ^ result) & 0x80) and not ((self.A ^ Input) & 0x80)
+            self.A = result & 0xFF
+            self.UpdateZeroNegativeFlags(self.A)
 
     def Op_SBC(self, Input: int):
         """Subtract with carry."""
-        # SBC is ADC with inverted input
-        self.Op_ADC(Input ^ 0xFF)
+        if not self.flag.Decimal:  # Binary mode
+            # SBC is ADC with inverted input in binary mode
+            self.Op_ADC(Input ^ 0xFF)
+        else:  # BCD mode
+            borrow = 0 if self.flag.Carry else 1
+            # Convert to BCD
+            a_lo = self.A & 0x0F
+            a_hi = (self.A >> 4) & 0x0F
+            in_lo = Input & 0x0F
+            in_hi = (Input >> 4) & 0x0F
+            
+            # Subtract lower digits
+            temp = a_lo - in_lo - borrow
+            if temp < 0:
+                temp += 10
+                borrow = 1
+            else:
+                borrow = 0
+            result_lo = temp
+            
+            # Subtract upper digits
+            temp = a_hi - in_hi - borrow
+            if temp < 0:
+                temp += 10
+                self.flag.Carry = False
+            else:
+                self.flag.Carry = True
+            result_hi = temp
+            
+            # Combine results
+            result = (result_hi << 4) | result_lo
+            # Set overflow if sign bit changed unexpectedly 
+            self.flag.Overflow = ((self.A ^ result) & 0x80) and ((self.A ^ Input) & 0x80)
+            self.A = result & 0xFF
+            self.UpdateZeroNegativeFlags(self.A)
 
     def Op_CMP(self, Input: int):
         """Compare accumulator."""
@@ -547,8 +673,12 @@ class Emulator:
             # Sign extend the offset
             if offset & 0x80:
                 offset = offset - 0x100
+            old_pc = self.ProgramCounter
             self.ProgramCounter = (self.ProgramCounter + offset) & 0xFFFF
-            self.cycles = 3  # Branch taken
+            # 1 extra cycle for branch taken, and +1 if page crossed
+            self.cycles = 3
+            if (old_pc & 0xFF00) != (self.ProgramCounter & 0xFF00):
+                self.cycles += 1
         else:
             self.cycles = 2  # Branch not taken
 
@@ -674,6 +804,11 @@ class Emulator:
             self.Tracelogger(self.opcode)
 
         self.ExecuteOpcode()
+        # Apply any extra cycles recorded during operand fetch (page-cross, dummy reads)
+        extra = getattr(self, '_cycles_extra', 0)
+        if extra:
+            self.cycles += extra
+            self._cycles_extra = 0
 
     def ExecuteOpcode(self):
         """Execute the current opcode."""
@@ -1899,7 +2034,10 @@ class Emulator:
             # DCP
             case 0xC3:  # DCP (ind,X)
                 self.ReadOperands_IndirectAddressed_XIndexed()
-                value = (self.Read(self.addressBus) - 1) & 0xFF
+                orig = self.Read(self.addressBus)
+                # Dummy write of original value
+                self.Write(self.addressBus, orig)
+                value = (orig - 1) & 0xFF
                 self.Write(self.addressBus, value)
                 self.Op_CMP(value)
                 self.cycles = 8
@@ -1911,7 +2049,10 @@ class Emulator:
                 self.cycles = 5
             case 0xCF:  # DCP abs
                 self.ReadOperands_AbsoluteAddressed()
-                value = (self.Read(self.addressBus) - 1) & 0xFF
+                orig = self.Read(self.addressBus)
+                # Dummy write of original value
+                self.Write(self.addressBus, orig)
+                value = (orig - 1) & 0xFF
                 self.Write(self.addressBus, value)
                 self.Op_CMP(value)
                 self.cycles = 6
@@ -1943,7 +2084,10 @@ class Emulator:
             # ISC
             case 0xE3:  # ISC (ind,X)
                 self.ReadOperands_IndirectAddressed_XIndexed()
-                value = (self.Read(self.addressBus) + 1) & 0xFF
+                orig = self.Read(self.addressBus)
+                # Dummy write of original value
+                self.Write(self.addressBus, orig)
+                value = (orig + 1) & 0xFF
                 self.Write(self.addressBus, value)
                 self.Op_SBC(value)
                 self.cycles = 8
@@ -1955,7 +2099,10 @@ class Emulator:
                 self.cycles = 5
             case 0xEF:  # ISC abs
                 self.ReadOperands_AbsoluteAddressed()
-                value = (self.Read(self.addressBus) + 1) & 0xFF
+                orig = self.Read(self.addressBus)
+                # Dummy write of original value
+                self.Write(self.addressBus, orig)
+                value = (orig + 1) & 0xFF
                 self.Write(self.addressBus, value)
                 self.Op_SBC(value)
                 self.cycles = 6
@@ -1980,9 +2127,11 @@ class Emulator:
             
             case 0x17:  # SLO zp,X (unofficial)
                 self.ReadOperands_ZeroPage_XIndexed()
-                value = self.Read(self.addressBus)
-                self.flag.Carry = (value & 0x80) != 0
-                value = (value << 1) & 0xFF
+                orig = self.Read(self.addressBus)
+                # Dummy write of original value
+                self.Write(self.addressBus, orig)
+                self.flag.Carry = (orig & 0x80) != 0
+                value = (orig << 1) & 0xFF
                 self.Write(self.addressBus, value)
                 self.Op_ORA(value)
                 self.cycles = 6
