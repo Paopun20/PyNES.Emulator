@@ -4,10 +4,8 @@ A NES (Nintendo Entertainment System) emulator written in 100% Python.
 
 ## Accuracy
 
-and tests:
-
 <div style="display: flex; gap: 10px;">
-    <img src="./assets/screenshot/testshot 2025-10-16 091937.png" width="400"/>
+    <img src="./assets/screenshot/testshot 2025-10-16 091937.png" width="400" alt="PyNES Test"/>
 </div>
 
 Not suitable for speedrunning at this time—please wait for future updates before using PyNES for these purposes.
@@ -30,7 +28,20 @@ here screenshot of emulator:
 
 ## Current Status
 
-The emulator can run simple NES ROMs like "Super Mario Bros.nes" and "AccuracyCoin.nes" (included for testing; "Super Mario Bros." is git-ignored due to copyright, only "AccuracyCoin.nes" is included). More complex games may not run correctly due to incomplete CPU and PPU implementations.
+- CPU: ~( IDK )% of instructions implemented.
+- PPU: Basic rendering, but many features are incomplete.
+- APU: Work in progress.
+- Input: Basic keyboard mapping.
+- Performance: Not optimized for speed; primarily for educational purposes.
+- **Debugger**:
+    - Dump RAM
+    - Dump ROM
+    - Dump VRAM
+    - Dump OAM
+    - Dump Palette RAM
+    - Dump Frame Buffer
+
+## Installation
 
 ## Running the Emulator
 
