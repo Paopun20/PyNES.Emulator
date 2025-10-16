@@ -1,6 +1,7 @@
 from pynes.emulator import Emulator, ProcessPoolExecutor
 from pathlib import Path
 from tkinter import filedialog
+from datetime import datetime
 import pygame
 import threading
 
@@ -14,8 +15,12 @@ screen = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE))
 pygame.display.set_caption("PyNES Emulator")
 font = pygame.font.Font(None, 20)
 
+dump_path = Path(__file__).parent / "debug" / "dump"
+dump_path.mkdir(parents=True, exist_ok=True)
+tab_pressed = False
+
 try:
-    icon_path = Path(__file__).parent / "icon" / "icon128.png"
+    icon_path = Path(__file__).parent / "icon.ico"
     pygame.display.set_icon(pygame.image.load(icon_path))
 except Exception:
     print("Icon not found")
@@ -53,12 +58,6 @@ emulator_vm.filepath = nes_path
 
 emulator_vm.debug.Debug = True  # Enable debug mode
 emulator_vm.debug.halt_on_unknown_opcode = False
-
-# Memory viewer settings
-show_memory_view = False
-memory_start_addr = 0x0000
-memory_rows = 16
-memory_cols = 16
 
 # === FRAME RENDERING ===
 @emulator_vm.on("gen_frame")
@@ -116,31 +115,40 @@ print("  Right Shift - Select")
 print("  P - Pause/Unpause")
 print("  D - Toggle Debug Overlay")
 print("  R - Reset")
-print("  Tab - Toggle Memory View")
 print("  ESC - Quit")
+print("Debug:")
+print("  TAB + 0 - Dump RAM")
+print("  TAB + 1 - Dump ROM")
+print("  TAB + 2 - Dump VRAM")
+print("  TAB + 3 - Dump OAM")
+print("  TAB + 4 - Dump Palette RAM")
+print("  TAB + 5 - Dump Frame Buffer")
+print("  TAB + A - Dump All")
 print("=====================\n")
 
 # new subpro
 def subpro():
     global running, paused, frame_count
-    """Sub-thread: run emulator loop"""
-    while running:
-        if not paused:
+    with ProcessPoolExecutor() as executor: # run at max cpu count
+        """Sub-thread: run emulator loop"""
+        while running:
+            if paused: continue # skip
+            
             emulator_vm.FrameComplete = False
             while not emulator_vm.FrameComplete and running:
                 emulator_vm.Run1Cycle()
             frame_count += 1
-        clock.tick(60)  # limit to 60fps (rough)
-    print("Sub-loop stopped.")
+            clock.tick(60)  # limit to 60fps (rough)
+        print("Sub-loop stopped.")
 
 # เริ่ม thread ที่รัน emulator loop
-with ProcessPoolExecutor() as executor: # run at max cpu count
-    subpro_thread = threading.Thread(target=subpro, daemon=True)
-    subpro_thread.start()
+subpro_thread = threading.Thread(target=subpro, daemon=True)
+subpro_thread.start()
 # subpro_thread.join() # don't
 
 # === MAIN LOOP (UI / EVENT) ===
 while running:
+    tab_pressed = pygame.key.get_pressed()[pygame.K_TAB]
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -155,21 +163,57 @@ while running:
                 print(f"{'Paused' if paused else 'Resumed'}")
             elif event.key == pygame.K_d:
                 show_debug = not show_debug
-            elif event.key == pygame.K_TAB:
-                show_memory_view = not show_memory_view
+
             elif event.key == pygame.K_r:
                 print("Resetting emulator...")
                 emulator_vm.Reset()
                 frame_count = 0
-            # Memory viewer navigation
-            elif event.key == pygame.K_PAGEUP and show_memory_view:
-                memory_start_addr = max(0, memory_start_addr - memory_rows * memory_cols)
-            elif event.key == pygame.K_PAGEDOWN and show_memory_view:
-                memory_start_addr = min(0xFFFF - memory_rows * memory_cols, memory_start_addr + memory_rows * memory_cols)
 
         elif event.type == pygame.KEYUP:
             if event.key in KEY_MAPPING:
                 controller_state[KEY_MAPPING[event.key]] = False
+    
+        if event.type == pygame.KEYDOWN: # debug
+            if tab_pressed:
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                if event.key == pygame.K_0:
+                    file_path = dump_path / f"ram-{timestamp}.dmp"
+                    with open(file_path, "wb") as file:
+                        file.write(emulator_vm.RAM.tobytes())
+                elif event.key == pygame.K_1:
+                    file_path = dump_path / f"rom-{timestamp}.dmp"
+                    with open(file_path, "wb") as file:
+                        file.write(emulator_vm.ROM.tobytes())
+                elif event.key == pygame.K_2:
+                    file_path = dump_path / f"vrom-{timestamp}.dmp"
+                    with open(file_path, "wb") as file:
+                        file.write(emulator_vm.VRAM.tobytes())
+                elif event.key == pygame.K_3:
+                    file_path = dump_path / f"oam-{timestamp}.dmp"
+                    with open(file_path, "wb") as file:
+                        file.write(emulator_vm.VRAM.tobytes())
+                elif event.key == pygame.K_4:
+                    file_path = dump_path / f"pram-{timestamp}.dmp"
+                    with open(file_path, "wb") as file:
+                        file.write(emulator_vm.VRAM.tobytes())
+                elif event.key == pygame.K_5:
+                    file_path = dump_path / f"frameBuffer-{timestamp}.dmp"
+                    with open(file_path, "wb") as file:
+                        file.write(emulator_vm.FrameBuffer.tobytes())
+                elif event.key == pygame.K_a:
+                    # Dump All
+                    with open(dump_path / f"ram-{timestamp}.dmp", "wb") as file:
+                        file.write(emulator_vm.RAM.tobytes())
+                    with open(dump_path / f"rom-{timestamp}.dmp", "wb") as file:
+                        file.write(emulator_vm.ROM.tobytes())
+                    with open(dump_path / f"vram-{timestamp}.dmp", "wb") as file:
+                        file.write(emulator_vm.VRAM.tobytes())
+                    with open(dump_path / f"oam-{timestamp}.dmp", "wb") as file:
+                        file.write(emulator_vm.OAM.tobytes())
+                    with open(dump_path / f"pram-{timestamp}.dmp", "wb") as file:
+                        file.write(emulator_vm.PaletteRAM.tobytes())
+                    with open(dump_path / f"frameBuffer-{timestamp}.dmp", "wb") as file:
+                        file.write(emulator_vm.FrameBuffer.tobytes())
 
     # ป้องกันปุ่มทิศตรงข้ามพร้อมกัน
     if controller_state['Up'] and controller_state['Down']:
@@ -179,49 +223,7 @@ while running:
 
     # ส่งสถานะปุ่มเข้า emulator
     emulator_vm.Input(1, controller_state)
-
-    # Draw memory viewer if enabled
-    if show_memory_view:
-        memory_surface = pygame.Surface((NES_WIDTH * SCALE, NES_HEIGHT * SCALE))
-        memory_surface.set_alpha(200)
-        memory_surface.fill((0, 0, 0))
-        
-        y_pos = 5
-        # Header
-        header = f"Memory View - {memory_start_addr:04X}-{min(0xFFFF, memory_start_addr + memory_rows * memory_cols - 1):04X}"
-        text_surface = font.render(header, True, (255, 255, 255))
-        memory_surface.blit(text_surface, (5, y_pos))
-        y_pos += 25
-
-        # Memory contents
-        for row in range(memory_rows):
-            addr = memory_start_addr + row * memory_cols
-            if addr > 0xFFFF:
-                break
-                
-            # Address
-            line = f"{addr:04X}: "
-            
-            # Hex values
-            for col in range(memory_cols):
-                if addr + col <= 0xFFFF:
-                    value = emulator_vm.Read(addr + col)
-                    line += f"{value:02X} "
-                
-            # ASCII representation
-            line += "  |"
-            for col in range(memory_cols):
-                if addr + col <= 0xFFFF:
-                    value = emulator_vm.Read(addr + col)
-                    line += chr(value) if 32 <= value <= 126 else "."
-            line += "|"
-            
-            text_surface = font.render(line, True, (255, 255, 255))
-            memory_surface.blit(text_surface, (5, y_pos))
-            y_pos += 20
-            
-        screen.blit(memory_surface, (0, 0))
-
+    
     title = f"PyNES Emulator"
     if paused:
         title += " [PAUSED]"

@@ -629,10 +629,6 @@ class Emulator:
             # APU runs at CPU speed
             self.apu.step()
 
-            if self.NMI_Pending:
-                self.NMI()
-                self.NMI_Pending = False
-
             # Update FPS counter
             self.frame_count += 1
             current_time = time.time()
@@ -657,6 +653,15 @@ class Emulator:
             self._step()
 
     def Emulate_CPU(self):
+        # If an interrupt (NMI) was requested, handle it before fetching
+        # the next opcode. This ensures NMI fires between instructions and
+        # prevents overlap with other interrupt sequences (BRK/IRQ) that
+        # could otherwise cause hangs or incorrect return addresses.
+        if self.NMI_Pending:
+            self.NMI_Pending = False
+            self.NMI()
+            return
+
         if self.cycles > 0:
             self.cycles -= 1
             return

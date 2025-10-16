@@ -16,3 +16,6 @@ manim/*
 # build
 build/*
 dist/*
+
+# debug
+debug/*
