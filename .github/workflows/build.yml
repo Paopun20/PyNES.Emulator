@@ -57,6 +57,6 @@ jobs:
       with:
         name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
         path: |
-          dist/pynes*
+          dist/*
           icon.ico
         retention-days: 30
