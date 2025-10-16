@@ -20,8 +20,8 @@ here screenshot of emulator:
 ## Features (some work in progress)
 
 - **CPU Emulation**: Partial implementation of the 6502 CPU instruction set.
-- **PPU Emulation**: Basic PPU functionality for rendering graphics.
-- **APU Emulation**: Basic sound emulation (work in progress).
+- **PPU Emulation**: Basic PPU functionality for rendering graphics ( BUG ).
+- **APU Emulation**: Basic sound emulation ( WIP ).
 - **Input Handling**: Keyboard input mapped to NES controller buttons.
 - **ROM Loading**: Supports `.nes` ROM files.
 - **Debugging**: Basic FPS and CPU register display.
@@ -55,6 +55,27 @@ here screenshot of emulator:
    python main.py
    ```
 4. When prompted by the emulator, choose a `.nes` ROM file to load and play.
+
+# Controls
+- Arrow Keys - D-Pad
+- Z - B Button
+- X - A Button
+- Enter - Start
+- Right Shift - Select
+- P - Pause/Unpause
+- D - Toggle Debug Overlay
+- R - Reset
+- ESC - Quit
+
+# Debug
+
+- TAB + 0 - Dump RAM
+- TAB + 1 - Dump ROM
+- TAB + 2 - Dump VRAM
+- TAB + 3 - Dump OAM
+- TAB + 4 - Dump Palette RAM
+- TAB + 5 - Dump Frame Buffer
+- TAB + A - Dump All
 
 ## Fix for me? ( Contributing )
 

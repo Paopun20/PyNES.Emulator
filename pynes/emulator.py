@@ -1,5 +1,4 @@
 import numpy as np
-from pynes.lib.bitmap import Bitmap as bitmap
 from pynes.apu import APU
 from string import Template
 from dataclasses import dataclass
@@ -8,6 +7,7 @@ from concurrent.futures import ProcessPoolExecutor
 import multiprocessing as mp
 
 from numba import njit
+from numba.experimental import jitclass
 
 # cache
 from functools import lru_cache
@@ -16,16 +16,38 @@ from cachetools import TTLCache
 # debugger
 import time # for fps
 
-# rich
-from rich.traceback import install; install() # for cool traceback
-
 # traceback
 import traceback
+
+# cart
+from pynes.cartridge import Cartridge
 
 # DATA
 OpCodeNames: list[str] = [
     "BRK", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "ANC", "NOP", "ORA", "ASL", "SLO", "BPL", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", "JSR", "AND", "HLT", "RLA", "BIT", "AND", "ROL", "RLA", "PLP", "AND", "ROL", "ANC", "BIT", "AND", "ROL", "RLA", "BMI", "AND", "HLT", "RLA", "NOP", "AND", "ROL", "RLA", "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", "RTI", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "PHA", "EOR", "LSR", "ALR", "JMP", "EOR", "LSR", "SRE", "BVC", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", "RTS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "PLA", "ADC", "ROR", "ARR", "JMP", "ADC", "ROR", "RRA", "BVS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", "DEY", "NOP", "TXA", "ANE", "STY", "STA", "STX", "SAX", "BCC", "STA", "HLT", "SHA", "STY", "STA", "STX", "SAX", "TYA", "STA", "TXS", "SHS", "SHY", "STA", "SHX", "SHA", "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", "TAY", "LDA", "TAX", "LXA", "LDY", "LDA", "LDX", "LAX", "BCS", "LDA", "HLT", "LAX", "LDY", "LDA", "LDX", "LAX", "CLV", "LDA", "TSX", "LAE", "LDY", "LDA", "LDX", "LAX", "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", "INY", "CMP", "DEX", "AXS", "CPY", "CMP", "DEC", "DCP", "BNE", "CMP", "HLT", "DCP", "NOP", "CMP", "DEC", "DCP", "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", "CPX", "SBC", "NOP", "ISC", "CPX", "SBC", "INC", "ISC", "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISC", "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC",
 ]
+
+nes_palette = np.array([
+    (84, 84, 84), (0, 30, 116), (8, 16, 144), (48, 0, 136),
+    (68, 0, 100), (92, 0, 48), (84, 4, 0), (60, 24, 0),
+    (32, 42, 0), (8, 58, 0), (0, 64, 0), (0, 60, 0),
+    (0, 50, 60), (0, 0, 0), (0, 0, 0), (0, 0, 0),
+
+    (152, 150, 152), (8, 76, 196), (48, 50, 236), (92, 30, 228),
+    (136, 20, 176), (160, 20, 100), (152, 34, 32), (120, 60, 0),
+    (84, 90, 0), (40, 114, 0), (8, 124, 0), (0, 118, 40),
+    (0, 102, 120), (0, 0, 0), (0, 0, 0), (0, 0, 0),
+
+    (236, 238, 236), (76, 154, 236), (120, 124, 236), (176, 98, 236),
+    (228, 84, 236), (236, 88, 180), (236, 106, 100), (212, 136, 32),
+    (160, 170, 0), (116, 196, 0), (76, 208, 32), (56, 204, 108),
+    (56, 180, 204), (60, 60, 60), (0, 0, 0), (0, 0, 0),
+
+    (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236),
+    (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144),
+    (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180),
+    (160, 214, 228), (160, 162, 160), (0, 0, 0), (0, 0, 0),
+], dtype=np.uint8)
 
 class EmulatorProcess:
     def __init__(self):
@@ -88,7 +110,7 @@ class Controller:
 class Emulator:
     def __init__(self):
         # CPU initialization
-        self.filepath: str | None = None
+        self.cartridge: Cartridge = None
         self._events = {}
         self.apu = APU(self)
         self.RAM = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
@@ -115,7 +137,7 @@ class Emulator:
         # Open bus (last value seen on CPU data bus)
         self.open_bus = 0
 
-        # PPU initialization (unchanged)
+        # PPU initialization
         self.VRAM = np.zeros(0x2000, dtype=np.uint8)
         self.OAM = np.zeros(256, dtype=np.uint8)
         self.PaletteRAM = np.zeros(0x20, dtype=np.uint8)
@@ -510,10 +532,14 @@ class Emulator:
         """Rotate Left."""
         # Dummy read for RMW timing / open bus behavior
         _ = self.Read(Address)
+        # Then do a dummy write of the original value
+        self.Write(Address, Input)
+        # Calculate result
         carry_in = 1 if self.flag.Carry else 0
         self.flag.Carry = (Input & 0x80) != 0
         result = ((Input << 1) | carry_in) & 0xFF
         self.UpdateZeroNegativeFlags(result)
+        # Finally write the actual new value
         self.Write(Address, result)
         return result
 
@@ -521,10 +547,14 @@ class Emulator:
         """Rotate Right."""
         # Dummy read for RMW timing / open bus behavior
         _ = self.Read(Address)
+        # Then do a dummy write of the original value
+        self.Write(Address, Input)
+        # Calculate result
         carry_in = 0x80 if self.flag.Carry else 0
         self.flag.Carry = (Input & 0x01) != 0
         result = ((Input >> 1) | carry_in) & 0xFF
         self.UpdateZeroNegativeFlags(result)
+        # Finally write the actual new value
         self.Write(Address, result)
         return result
 
@@ -532,14 +562,27 @@ class Emulator:
         """Increment memory."""
         # Dummy read for RMW timing / open bus behavior
         _ = self.Read(Address)
+        # Then do a dummy write of the original value
+        self.Write(Address, Input)
+        # Calculate result
         result = (Input + 1) & 0xFF
-        self.Write(Address, result)
         self.UpdateZeroNegativeFlags(result)
+        # Finally write the actual new value
+        self.Write(Address, result)
+        return result
 
     def Op_DEC(self, Address: int, Input: int):
         """Decrement memory."""
         # Dummy read for RMW timing / open bus behavior
         _ = self.Read(Address)
+        # Then do a dummy write of the original value
+        self.Write(Address, Input)
+        # Calculate result
+        result = (Input - 1) & 0xFF
+        self.UpdateZeroNegativeFlags(result)
+        # Finally write the actual new value
+        self.Write(Address, result)
+        return result
         result = (Input - 1) & 0xFF
         self.Write(Address, result)
         self.UpdateZeroNegativeFlags(result)
@@ -684,20 +727,12 @@ class Emulator:
 
     def Reset(self):
         """Reset the emulator state."""
-        if self.filepath is None:
-            raise ValueError("No ROM file specified")
-
-        HeaderedROM = np.fromfile(self.filepath, dtype=np.uint8)
-        if len(HeaderedROM) < 0x8010:
-            raise ValueError("Invalid ROM file")
-
-        # Load PRG ROM
-        self.ROM[0:0x8000] = HeaderedROM[0x10 : 0x10 + 0x8000]
-
-        # Load CHR ROM if present
-        if len(HeaderedROM) > 0x8010:
-            chr_size = min(0x2000, len(HeaderedROM) - 0x8010)
-            self.CHRROM[:chr_size] = HeaderedROM[0x8010 : 0x8010 + chr_size]
+        if self.cartridge is None:
+            raise ValueError("load cartridge first and then reset the emulator")
+        
+        self.ROM = self.cartridge.ROM
+        self.CHRROM = self.cartridge.CHRROM
+        self.PRGROM = self.cartridge.PRGROM
 
         # Reset CPU
         self.A = 0
@@ -726,8 +761,8 @@ class Emulator:
         self.FrameComplete = False
         self.NMI_Pending = False
 
-        print(f"ROM Header: {HeaderedROM[:0x10]}")
-        print(f"Reset Vector: ${self.ProgramCounter:04X}")
+        # print(f"ROM Header: {self.cartridge.HeaderedROM[:0x10]}")
+        # print(f"Reset Vector: ${self.ProgramCounter:04X}")
     
     def Input(self, controller_id: int, buttons: dict[str, bool]):
         """Update the button states for the specified controller.
@@ -802,6 +837,7 @@ class Emulator:
 
         if self.logging:
             self.Tracelogger(self.opcode)
+            self._emit("tracelogger", self.tracelog[-1])
 
         self.ExecuteOpcode()
         # Apply any extra cycles recorded during operand fetch (page-cross, dummy reads)
@@ -1666,14 +1702,15 @@ class Emulator:
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 self.A = self.A & val
+                # ROR A
                 carry_in = 0x80 if self.flag.Carry else 0
-                result_before = self.A
                 self.flag.Carry = (self.A & 0x01) != 0
                 self.A = ((self.A >> 1) | carry_in) & 0xFF
-                # Overflow bit is XOR of bits 5 and 6 of result (common approximation)
-                self.flag.Overflow = ((self.A ^ (self.A << 1)) & 0x40) != 0
+                # Special flag handling for ARR
+                self.flag.Overflow = ((self.A & 0x40) != 0)
                 self.UpdateZeroNegativeFlags(self.A)
                 self.cycles = 2
+
 
             case 0x8B:  # ANE imm (unstable) approx: A = X & imm
                 val = self.Read(self.ProgramCounter)
@@ -1753,13 +1790,14 @@ class Emulator:
                 self.Write(self.addressBus, value)
                 self.Op_ORA(value)
                 self.cycles = 7
-            case 0x2F:  # SLO abs
+            case 0x2F:  # RLA AVSOLUTE
                 self.ReadOperands_AbsoluteAddressed()
                 value = self.Read(self.addressBus)
+                carry_in = 1 if self.flag.Carry else 0
                 self.flag.Carry = (value & 0x80) != 0
-                value = (value << 1) & 0xFF
+                value = ((value << 1) | carry_in) & 0xFF
                 self.Write(self.addressBus, value)
-                self.Op_ORA(value)
+                self.Op_AND(value)
                 self.cycles = 6
 
             # RLA
@@ -1998,29 +2036,28 @@ class Emulator:
                 self.cycles = 4
 
             # AHX/SHX/SHY/TAS/LAS (approximations sufficient for many test ROMs)
-            case 0x93:  # AHX (ind),Y -> store A & X & (HB+1)
+            case 0x93:  # SHA INDIRECT, Y
                 self.ReadOperands_IndirectAddressed_YIndexed()
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
-                self.Write(self.addressBus, (self.A & self.X & hb1) & 0xFF)
-                self.cycles = 6
+                self.Write(self.addressBus, (self.A & hb1) & 0xFF)
+                self.cycles = 5
             case 0x9F:  # AHX abs,Y
                 self.ReadOperands_AbsoluteAddressed_YIndexed()
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
-                self.Write(self.addressBus, (self.A & self.X & hb1) & 0xFF)
+                self.Write(self.addressBus, (self.A & hb1) & 0xFF)
                 self.cycles = 5
             case 0x9C:  # SHY abs,X -> store Y & (HB+1)
                 self.ReadOperands_AbsoluteAddressed_XIndexed()
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                 self.Write(self.addressBus, (self.Y & hb1) & 0xFF)
                 self.cycles = 5
-            case 0x9E:  # SHX abs,Y -> store X & (HB+1)
+            case 0x9E:  # SHX abs,Y
                 self.ReadOperands_AbsoluteAddressed_YIndexed()
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                 self.Write(self.addressBus, (self.X & hb1) & 0xFF)
                 self.cycles = 5
-            case 0x9B:  # TAS (aka SHS) abs,Y -> SP = A & X; store SP & (HB+1)
-                self.ReadOperands_AbsoluteAddressed_YIndexed()
-                self.stackPointer = self.A & self.X
+            case 0x9B:  # SHS abs, y
+                self.ReadOperands_AbsoluteAddressed()
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                 self.Write(self.addressBus, (self.stackPointer & hb1) & 0xFF)
                 self.cycles = 5
@@ -2315,34 +2352,13 @@ class Emulator:
 
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
 
+    @lru_cache(maxsize=((len(nes_palette) + 1) * 3))
     def NESPaletteToRGB(self, color_idx: int) -> np.ndarray:
         """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
         idx = color_idx & 0x3F
         
         if idx in self._cache:
             return self._cache[idx]
-        
-        nes_palette = np.array([
-            (84, 84, 84), (0, 30, 116), (8, 16, 144), (48, 0, 136),
-            (68, 0, 100), (92, 0, 48), (84, 4, 0), (60, 24, 0),
-            (32, 42, 0), (8, 58, 0), (0, 64, 0), (0, 60, 0),
-            (0, 50, 60), (0, 0, 0), (0, 0, 0), (0, 0, 0),
-
-            (152, 150, 152), (8, 76, 196), (48, 50, 236), (92, 30, 228),
-            (136, 20, 176), (160, 20, 100), (152, 34, 32), (120, 60, 0),
-            (84, 90, 0), (40, 114, 0), (8, 124, 0), (0, 118, 40),
-            (0, 102, 120), (0, 0, 0), (0, 0, 0), (0, 0, 0),
-
-            (236, 238, 236), (76, 154, 236), (120, 124, 236), (176, 98, 236),
-            (228, 84, 236), (236, 88, 180), (236, 106, 100), (212, 136, 32),
-            (160, 170, 0), (116, 196, 0), (76, 208, 32), (56, 204, 108),
-            (56, 180, 204), (60, 60, 60), (0, 0, 0), (0, 0, 0),
-
-            (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236),
-            (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144),
-            (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180),
-            (160, 214, 228), (160, 162, 160), (0, 0, 0), (0, 0, 0),
-        ], dtype=np.uint8)
         
         self._cache[idx] = nes_palette[idx]
         return nes_palette[idx]
