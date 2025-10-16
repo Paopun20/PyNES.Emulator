@@ -4,7 +4,7 @@ A NES (Nintendo Entertainment System) emulator written in 100% Python.
 
 ## Accuracy
 
-and tests (untest = take too long or freeze out):
+and tests:
 
 <div style="display: flex; gap: 10px;">
     <img src="./assets/screenshot/testshot 2025-10-16 091937.png" width="400"/>
