@@ -38,6 +38,7 @@ a = Analysis(
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
+    optimize=1, # do try 2 if it can't run it errors by numpy.
 )
 
 pyz = PYZ(

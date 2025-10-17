@@ -36,14 +36,21 @@ jobs:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
 
+    - name: Install UPX
+      uses: crazy-max/ghaction-upx@v3
+      with:
+          install-only: true
+
     - run: |
         pip install --upgrade pip
         pip install -r requirements.txt
         pip install git+https://github.com/pyinstaller/pyinstaller.git
 
-    - run: |
+    - name: Build PyNES
+      shell: bash
+      run: |
         mkdir -p dist
-        pyinstaller pynes.spec --clean --noconfirm
+        pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(which upx | xargs dirname)"
 
     - name: Install Ubuntu dependencies
       if: matrix.os == 'ubuntu-latest'
