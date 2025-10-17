@@ -45,6 +45,10 @@ jobs:
           brew install upx
         elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
           winget install --id=UPX.UPX -e --accept-source-agreements --accept-package-agreements
+          echo "Refreshing PATH..."
+          export PATH="$PATH:/c/Program Files/UPX"
+          which upx || echo "UPX not found in PATH, manually setting..."
+          dir "/c/Program Files/UPX" || true
         else
           echo "Unsupported OS: ${{ matrix.os }}"
           exit 1
@@ -59,10 +63,27 @@ jobs:
       shell: bash
       run: |
         mkdir -p dist
-        if (( $(which upx) )); then
-          pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(which upx | xargs dirname)"
+    
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          # Try to find UPX installed via winget
+          upx_path="$(where upx 2>/dev/null | head -n 1 || true)"
+          if [[ -n "$upx_path" ]]; then
+            pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "$upx_path")"
+          elif [[ -d "/c/Program Files/UPX" ]]; then
+            pyinstaller pynes.spec --clean --noconfirm --upx-dir "/c/Program Files/UPX"
+          else
+            echo "UPX not found, building without compression"
+            pyinstaller pynes.spec --clean --noconfirm
+          fi
+    
         else
-          pyinstaller pynes.spec --clean --noconfirm
+          # Linux / macOS
+          if command -v upx >/dev/null 2>&1; then
+            pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "$(command -v upx)")"
+          else
+            echo "UPX not found, building without compression"
+            pyinstaller pynes.spec --clean --noconfirm
+          fi
         fi
 
     - name: Install Ubuntu dependencies
