@@ -12,7 +12,7 @@ class Cartridge:
     def from_file(cls, filepath: str) -> "Cartridge":
         HeaderedROM = np.fromfile(filepath, dtype=np.uint8)
         if len(HeaderedROM) < 0x8010:
-            raise ValueError("Invalid ROM file")
+            return False, "Invalid ROM file"
 
         # Load PRG ROM
         ROM = np.zeros(0x8000, dtype=np.uint8)
@@ -27,4 +27,4 @@ class Cartridge:
             CHRROM[:chr_size] = HeaderedROM[0x8010 : 0x8010 + chr_size]
 
         # คืน instance
-        return cls(ROM=ROM, PRGROM=PRGROM, CHRROM=CHRROM, HeaderedROM=HeaderedROM)
+        return True, cls(ROM=ROM, PRGROM=PRGROM, CHRROM=CHRROM, HeaderedROM=HeaderedROM)

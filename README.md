@@ -5,17 +5,10 @@ A NES (Nintendo Entertainment System) emulator written in 100% Python.
 ## Accuracy
 
 <div style="display: flex; gap: 10px;">
-    <img src="./assets/screenshot/testshot 2025-10-16 091937.png" width="400" alt="PyNES Test"/>
+    <img src="./assets/screenshot/testshot 2025-10-17 195053.png" width="400" alt="PyNES Test"/>
 </div>
 
 Not suitable for speedrunning at this time—please wait for future updates before using PyNES for these purposes.
-
-here screenshot of emulator:
-
-<div style="display: flex; gap: 10px;">
-    <img src="./assets/screenshot/Screenshot 2025-10-15 180105.jpg" alt="PyNES Screenshot" width="400"/>
-    <img src="./assets/screenshot/Screenshot 2025-10-15 180238.jpg" width="400"/>
-</div>
 
 ## Features (some work in progress)
 

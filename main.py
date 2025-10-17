@@ -6,7 +6,7 @@ from rich.traceback import install; install() # for cool traceback
 from pynes.emulator import Emulator, OpCodeNames
 from pynes.cartridge import Cartridge
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import Tk, filedialog, messagebox
 from datetime import datetime
 
 import time
@@ -29,13 +29,13 @@ pygame.init()
 screen = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE))
 pygame.display.set_caption("PyNES Emulator")
 font = pygame.font.Font(None, 20)
+icon_path = Path(__file__).parent / "icon.ico"
 
 dump_path = Path(__file__).parent / "debug" / "dump"
 dump_path.mkdir(parents=True, exist_ok=True)
 tab_pressed = False
 
 try:
-    icon_path = Path(__file__).parent / "icon.ico"
     pygame.display.set_icon(pygame.image.load(icon_path))
 except Exception:
     console.print("[bold yellow]⚠️ Icon not found[/bold yellow]")
@@ -66,12 +66,25 @@ KEY_MAPPING = {
 
 emulator_vm = Emulator()
 
-while True:
-    nes_path = filedialog.askopenfilename(filetypes=[("NES file", "*.nes")])
-    if nes_path:
-        break
+root = Tk()
+root.withdraw()
+root.iconbitmap(str(icon_path))
 
-load_cartridge = Cartridge.from_file(nes_path)
+while True:
+    nes_path = filedialog.askopenfilename(title="Select a NES file", filetypes=[("NES file", "*.nes")])
+    if nes_path:
+        if not nes_path.endswith(".nes"):
+            messagebox.showerror("Error", "Invalid file type, please select a NES file")
+            continue
+        break
+    else:
+        messagebox.showerror("Error", "No NES file selected, please select a NES file")
+        continue
+
+valid, load_cartridge = Cartridge.from_file(nes_path)
+if not valid:
+    messagebox.showerror("Error", load_cartridge)
+    exit(1)
 
 emulator_vm.cartridge = load_cartridge
 emulator_vm.logging = True
@@ -98,8 +111,8 @@ table.add_row("ESC", "Quit")
 
 console.print(table)
 
-console.print("[bold magenta]Debug Dumps (hold TAB + key):[/bold magenta]")
-console.print("  0=RAM  1=ROM  2=VRAM  3=OAM  4=Palette  5=Frame  A=All\n")
+# console.print("[bold magenta]Debug Dumps (hold TAB + key):[/bold magenta]")
+# console.print("  0=RAM  1=ROM  2=VRAM  3=OAM  4=Palette  5=Frame  A=All\n")
 
 # === EMU LOOP ===
 emulator_vm.Reset()
