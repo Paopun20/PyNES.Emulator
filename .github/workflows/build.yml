@@ -37,9 +37,18 @@ jobs:
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
 
     - name: Install UPX
-      uses: crazy-max/ghaction-upx@v3
-      with:
-          install-only: true
+      shell: bash
+      run: |
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          sudo apt-get update && sudo apt-get install -y upx
+        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+          brew install upx
+        elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          winget install upx
+        else
+          echo "Unsupported OS: ${{ matrix.os }}"
+          exit 1
+        fi
 
     - run: |
         pip install --upgrade pip
@@ -50,7 +59,11 @@ jobs:
       shell: bash
       run: |
         mkdir -p dist
-        pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(which upx | xargs dirname)"
+        if (( $(which upx) )); then
+          pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(which upx | xargs dirname)"
+        else
+          pyinstaller pynes.spec --clean --noconfirm
+        fi
 
     - name: Install Ubuntu dependencies
       if: matrix.os == 'ubuntu-latest'
