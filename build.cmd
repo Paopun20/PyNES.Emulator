@@ -1,1 +1,1 @@
-for /f "delims=" %i in ('where upx') do pyinstaller pynes.spec --clean --noconfirm --upx-dir "%~dpi"
+powershell -Command "& {Get-Command upx | Select-Object -ExpandProperty Path}" | ForEach-Object { pyinstaller pynes.spec --clean --noconfirm --upx-dir (Split-Path $_ -Parent) }
