@@ -44,7 +44,7 @@ jobs:
         elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
           brew install upx
         elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          winget install upx
+          winget install --id=UPX.UPX -e --accept-source-agreements --accept-package-agreements
         else
           echo "Unsupported OS: ${{ matrix.os }}"
           exit 1
