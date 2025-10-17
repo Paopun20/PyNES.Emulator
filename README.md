@@ -26,28 +26,38 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 - APU: Work in progress.
 - Input: Basic keyboard mapping.
 - Performance: Not optimized for speed; primarily for educational purposes.
-- **Debugger**:
-    - Dump RAM
-    - Dump ROM
-    - Dump VRAM
-    - Dump OAM
-    - Dump Palette RAM
-    - Dump Frame Buffer
 
 ## Installation
 
 ## Running the Emulator
 
+### Run emulator from source code
+
 1. Ensure you have Python 3.8 or higher installed.
-2. Install the required dependencies using:
+2. Clone this repository.
+   ```
+    git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
+   ```
+3. Install the required dependencies using:
    ```bash
    pip install -r requirements.txt
    ```
-3. Start the emulator with:
+4. Start the emulator with:
    ```bash
    python main.py
    ```
-4. When prompted by the emulator, choose a `.nes` ROM file to load and play.
+5. When prompted by the emulator, choose a `.nes` ROM file to load and play.
+
+### Run emulator from pre-built executable
+
+If you want to use a ready-made executable:
+
+1. Go to the "Actions" tab on this repository's GitHub page.
+2. Find and select the "Build PyNES Emulator" workflow.
+3. Download the most recent artifact for your operating system (Windows, Mac, or Linux).
+4. Unzip the downloaded file.
+5. Run the executable inside.
+6. When the emulator starts, select a `.nes` ROM file when prompted.
 
 # Controls
 - Arrow Keys - D-Pad
@@ -59,16 +69,6 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 - D - Toggle Debug Overlay
 - R - Reset
 - ESC - Quit
-
-# Debug
-
-- TAB + 0 - Dump RAM
-- TAB + 1 - Dump ROM
-- TAB + 2 - Dump VRAM
-- TAB + 3 - Dump OAM
-- TAB + 4 - Dump Palette RAM
-- TAB + 5 - Dump Frame Buffer
-- TAB + A - Dump All
 
 ## Fix for me? ( Contributing )
 
