@@ -2,6 +2,7 @@ import numpy as np
 from pynes.apu import APU
 from string import Template
 from dataclasses import dataclass
+from collections import deque
 
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing as mp
@@ -61,6 +62,12 @@ class EmulatorProcess:
         self.executor.shutdown(wait=True)
         self.executor = None
 
+class EmulatorError(Exception):
+    def __init__(self, exception: Exception):
+        self.type = type(exception)
+        self.message = str(exception)
+        super().__init__(self.message)
+
 @dataclass
 class Flags:
     Carry: bool = False
@@ -108,17 +115,20 @@ class Controller:
         return bit
 
 class Emulator:
+    """
+    NES emulator with CPU, PPU, APU, and Controller support.
+    """
     def __init__(self):
         # CPU initialization
         self.cartridge: Cartridge = None
-        self._events = {}
-        self.apu = APU(self)
-        self.RAM = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
-        self.ROM = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
-        self.CHRROM = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
+        self._events: dict[str, list[callable]] = {}
+        self.apu: APU = APU(self)
+        self.RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
+        self.ROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
+        self.CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
         self.logging = True
-        self.tracelog = []
-        self.controllers = {
+        self.tracelog: list[str] = deque(maxlen=1000)
+        self.controllers: dict[int, Controller] = {
             1: Controller(buttons={}),  # Controller 1
             2: Controller(buttons={})   # Controller 2
         }
@@ -131,8 +141,8 @@ class Emulator:
         self.A = 0
         self.X = 0
         self.Y = 0
-        self.flag = Flags()
-        self.debug = Debug()
+        self.flag: Flags = Flags()
+        self.debug: Debug = Debug()
         self.CPU_Halted = False
         # Data bus and addressing mode tracking
         # Data bus for open bus behavior 
@@ -164,12 +174,10 @@ class Emulator:
         self.NMI_Pending = False
         self.IRQ_Pending = False  # Add IRQ pending flag
         
-        #cache
-        self._cache = TTLCache(maxsize=100, ttl=300)  # 100 items, 5 mins
-        
         # debugger
         self.fps = 0
         self.frame_count = 0
+        self.frame_complete_count = 0
         self.last_fps_time = time.time()
         # PPU open bus decay timer
         self.ppu_bus_latch_time = time.time()
@@ -200,17 +208,19 @@ class Emulator:
         """Instance-level decorator for events."""
 
         def decorator(callback: callable) -> callable:
-            if not hasattr(self, "_events"):
-                self._events = {}
+            if callback is None: raise ValueError("Callback cannot be None")
+            if not hasattr(self, "_events"): self._events = {}
+            
             self._events.setdefault(event_name, []).append(callback)
             return callback
 
         return decorator
 
-    def _emit(self, event_name, *args, **kwargs):
+    def _emit(self, event_name: str, *args: any, **kwargs: any):
         """Emit an event to all registered callbacks."""
-        for cb in self._events.get(event_name, []):
-            cb(*args, **kwargs)
+        if hasattr(self, '_events') and event_name in self._events:
+            for callback in self._events.get(event_name, []):
+                callback(*args, **kwargs)
 
     def Read(self, Address: int) -> int:
         """Read from CPU or PPU memory with proper mirroring."""
@@ -335,20 +345,28 @@ class Emulator:
                 return result
 
             case 0x04:  # OAMDATA
-                # Timing-dependent behavior during visible scanlines when rendering
+                # During rendering, OAM access is restricted
                 if (self.PPUMASK & 0x18) and 0 <= self.Scanline < 240:
                     if 1 <= self.PPUCycles <= 64:
+                        # Secondary OAM clear phase
                         result = 0xFF
+                        self.OAMADDR = (self.OAMADDR + 1) & 0xFF
                     elif 65 <= self.PPUCycles <= 256:
-                        result = int(self.OAM[self.OAMADDR])
+                        # Sprite evaluation phase
+                        # During this phase, reads come from aligned addresses
+                        result = int(self.OAM[self.OAMADDR & 0xFC])
                     elif 257 <= self.PPUCycles <= 320:
+                        # Sprite tile loading phase
                         result = 0xFF
                     else:
+                        # Sprite loading for next scanline
                         result = int(self.OAM[self.OAMADDR])
                 else:
+                    # Outside rendering - normal read
                     result = int(self.OAM[self.OAMADDR])
-                # Reads from attribute bytes should be missing bits 2..5
-                if (self.OAMADDR & 0x03) == 0x02:
+                
+                # Always mask bits 2-5 of attribute bytes during rendering
+                if ((self.PPUMASK & 0x18) and (self.OAMADDR & 0x03) == 0x02):
                     result &= 0xC3  # keep bits 7-6 and 1-0
                 self.ppu_bus_latch = result
                 self.ppu_bus_latch_time = time.time()
@@ -414,12 +432,18 @@ class Emulator:
 
         elif reg == 0x04:  # OAMDATA
             if (self.PPUMASK & 0x18) and 0 <= self.Scanline < 240:
-                # During visible scanlines with rendering enabled: increment by 4 and mask
-                self.OAMADDR = (self.OAMADDR + 4) & 0xFF
-                self.OAMADDR &= 0xFC
-                # No write takes place to OAM during rendering
+                # During rendering, writes are ignored but OAMADDR is still incremented
+                if 1 <= self.PPUCycles <= 64:
+                    # During secondary OAM clear: increment by 1
+                    self.OAMADDR = (self.OAMADDR + 1) & 0xFF
+                else:
+                    # During sprite evaluation/loading: increment by 4 and mask to multiple of 4
+                    self.OAMADDR = (self.OAMADDR + 4) & 0xFC
             else:
+                # Outside rendering - normal write and increment
                 self.OAM[self.OAMADDR] = val
+                # Always increment by 1 for writes outside rendering
+                self.OAMADDR = (self.OAMADDR + 1) & 0xFF
                 self.OAMADDR = (self.OAMADDR + 1) & 0xFF
 
         elif reg == 0x05:  # PPUSCROLL
@@ -838,9 +862,9 @@ class Emulator:
 
     def _step(self):
         try:
-            if self.CPU_Halted: 
+            if self.CPU_Halted:
                 return
-
+            self._emit("before_cycle", self.cycles)
             self.Emulate_CPU()
 
             # PPU runs 3 cycles per CPU cycle
@@ -854,14 +878,15 @@ class Emulator:
             self.frame_count += 1
             current_time = time.time()
             if current_time - self.last_fps_time >= 1.0:
-                self.fps = self.frame_count
+                self.fps = self.frame_count / (current_time - self.last_fps_time)
                 self.frame_count = 0
                 self.last_fps_time = current_time
+            self._emit("after_cycle", self.cycles)
 
         except Exception as e:
-            print(f"Step error: {e}")
-            traceback.print_exc()
-            self.CPU_Halted = True
+            raise EmulatorError(Exception(e))
+        except MemoryError as e:
+            raise EmulatorError(MemoryError(e))
 
     def Run(self):
         """Run CPU and PPU together."""
@@ -2387,8 +2412,8 @@ class Emulator:
                 self.FrameComplete = True
 
                 # Emit frame event
-                if hasattr(self, '_events') and 'gen_frame' in self._events:
-                    self._emit("gen_frame", self.FrameBuffer)
+                self._emit("frame_complete", self.FrameBuffer)
+                self.frame_complete_count += 1
                 self.FrameComplete = False
 
             # Visible scanlines (0-239)
@@ -2534,13 +2559,21 @@ class Emulator:
                 if priority and hasattr(self, '_bg_opaque_line') and self._bg_opaque_line[x]:
                     continue
 
-                # Respect left 8-pixel sprite mask
+                # Sprite 0 hit detection (must happen before left edge masking)
+                if (spr_index == 0 and                           # Must be sprite 0
+                    x < 255 and                                  # Not at x=255
+                    (self.PPUMASK & 0x18) == 0x18 and          # Both sprites and BG enabled
+                    hasattr(self, '_bg_opaque_line') and        # BG data exists
+                    self._bg_opaque_line[x] and                 # BG pixel has pattern data
+                    color_idx > 0 and                           # Sprite pixel has pattern data
+                    (self.PPUSTATUS & 0x40) == 0):             # Not already hit
+                    # Left edge clipping check (hit can still occur in left 8 pixels if both clipping bits are enabled)
+                    if x >= 8 or (self.PPUMASK & 0x06) == 0x06:
+                        self.PPUSTATUS |= 0x40  # Set sprite 0 hit
+                
+                # Apply left 8-pixel sprite clipping
                 if x < 8 and (self.PPUMASK & 0x04) == 0:
                     continue
-
-                # Sprite 0 hit detection: BG must be opaque at pixel, both masks allow
-                if spr_index == 0 and hasattr(self, '_bg_opaque_line') and self._bg_opaque_line[x]:
-                    self.PPUSTATUS |= 0x40  # sprite 0 hit
 
                 # Get sprite palette
                 palette_addr = (0x10 + palette_idx * 4 + color_idx) & 0x1F
@@ -2549,15 +2582,20 @@ class Emulator:
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
 
     def EvaluateSpritesForScanline(self):
-        """Select up to 8 sprites for the current scanline and set overflow flag."""
+        """Select up to 8 sprites for the current scanline and set overflow flag.
+        Overflow is set when more than 8 sprites appear on a scanline.
+        Always evaluate all sprites even after overflow is detected."""
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
-        sprites = []
-        count = 0
-        overflow = False
+        sprites = []  # Holds up to 8 visible sprites
+        n_found = 0  # Total sprites found on scanline (for overflow)
+        
+        # Must evaluate all sprites even after overflow
         for i in range(0, 256, 4):
             y = int(self.OAM[i]) + 1
             if y <= self.Scanline < y + sprite_height:
-                if count < 8:
+                # Found a sprite on this scanline
+                if n_found < 8:
+                    # Only store first 8 sprites
                     sprites.append({
                         'index': i // 4,
                         'y': y,
@@ -2565,25 +2603,20 @@ class Emulator:
                         'attr': int(self.OAM[i + 2]),
                         'x': int(self.OAM[i + 3]),
                     })
-                else:
-                    overflow = True
-                count += 1
-        # Set sprite overflow flag (bit 5)
-        if overflow:
+                n_found += 1
+        
+        # Set sprite overflow flag (bit 5) if more than 8 sprites found
+        if n_found > 8:
             self.PPUSTATUS |= 0x20
         else:
             self.PPUSTATUS &= 0xDF
+            
         self._sprites_line = sprites
 
     @lru_cache(maxsize=((len(nes_palette) + 1) * 3))
     def NESPaletteToRGB(self, color_idx: int) -> np.ndarray:
         """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
         idx = color_idx & 0x3F
-        
-        if idx in self._cache:
-            return self._cache[idx]
-        
-        self._cache[idx] = nes_palette[idx]
         return nes_palette[idx]
 
     # === DMA helpers ===

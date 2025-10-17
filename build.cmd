@@ -1,0 +1,1 @@
+for /f "delims=" %i in ('where upx') do pyinstaller pynes.spec --clean --noconfirm --upx-dir "%~dpi"

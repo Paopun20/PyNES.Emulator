@@ -1,4 +1,4 @@
-# Error Codes
+## Error Codes
 
 For more information, I recommend reading the fully commented assembly code for the test.
 
@@ -643,7 +643,7 @@ X: RTS should perform a dummy read on cycle 2.
 2: Your emulator has incorrect open bus emulation.  
 3: JSR should leave the value of the second operand on the data bus.
 
-# Success Codes
+## Success Codes
 
 Some tests have multiple acceptable behaviors that are tested for in this ROM. The behavior used will either be printed on screen after running the test, or you'll see a "success code" on the all-test table.
 
@@ -682,7 +682,7 @@ Some tests have multiple acceptable behaviors that are tested for in this ROM. T
 1: This test was ran on a composite PPU.  
 2: This test was ran on an RGB PPU.
 
-# Removed Tests
+## Removed Tests
 
 In case you are running an old version of this ROM and are still looking for an explanation of the error codes:
 
