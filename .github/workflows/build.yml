@@ -22,7 +22,7 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install OS deps
+    - name: Install OS dependencies
       shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
@@ -45,16 +45,21 @@ jobs:
           brew install upx
         elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
           winget install --id=UPX.UPX -e --accept-source-agreements --accept-package-agreements
-          echo "Refreshing PATH..."
-          export PATH="$PATH:/c/Program Files/UPX"
-          which upx || echo "UPX not found in PATH, manually setting..."
-          dir "/c/Program Files/UPX" || true
+          userprofile=$(cygpath "$USERPROFILE")
+          upx_link_path="$userprofile/AppData/Local/Microsoft/WinGet/Links"
+          upx_exe="$upx_link_path/upx.exe"
+          if [[ -f "$upx_exe" ]]; then
+            echo "$upx_exe" > "$userprofile/.upx_path"
+          else
+            echo "UPX executable not found after install"
+          fi
         else
           echo "Unsupported OS: ${{ matrix.os }}"
           exit 1
         fi
 
-    - run: |
+    - name: Install Python dependencies
+      run: |
         pip install --upgrade pip
         pip install -r requirements.txt
         pip install git+https://github.com/pyinstaller/pyinstaller.git
@@ -63,38 +68,32 @@ jobs:
       shell: bash
       run: |
         mkdir -p dist
-    
+
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          # Try to find UPX installed via winget
-          upx_path="$(where upx 2>/dev/null | head -n 1 || true)"
-          if [[ -n "$upx_path" ]]; then
-            pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "$upx_path")"
-          elif [[ -d "/c/Program Files/UPX" ]]; then
-            pyinstaller pynes.spec --clean --noconfirm --upx-dir "/c/Program Files/UPX"
+          userprofile=$(cygpath "$USERPROFILE")
+          upx_path_file="$userprofile/.upx_path"
+          if [[ -f "$upx_path_file" ]]; then
+            upx_dir="$(dirname "$(cat "$upx_path_file")")"
+            echo "Using UPX from: $upx_dir"
+            pyinstaller pynes.spec --clean --noconfirm --upx-dir "$upx_dir"
           else
             echo "UPX not found, building without compression"
             pyinstaller pynes.spec --clean --noconfirm
           fi
-    
+
         else
-          # Linux / macOS
           if command -v upx >/dev/null 2>&1; then
-            pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "$(command -v upx)")"
+            upx_dir="$(dirname "$(command -v upx)")"
+            echo "Using UPX from: $upx_dir"
+            pyinstaller pynes.spec --clean --noconfirm --upx-dir "$upx_dir"
           else
             echo "UPX not found, building without compression"
             pyinstaller pynes.spec --clean --noconfirm
           fi
         fi
 
-    - name: Install Ubuntu dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0 libxrender1 libgomp1
-
-    - name: Install macOS dependencies
-      if: matrix.os == 'macos-latest'
-      run: brew install libomp
-
     - uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
         path: |
