@@ -728,9 +728,6 @@ class Emulator:
         # Finally write the actual new value
         self.Write(Address, result)
         return result
-        result = (Input - 1) & 0xFF
-        self.Write(Address, result)
-        self.UpdateZeroNegativeFlags(result)
 
     def Op_ORA(self, Input: int):
         """Logical OR with accumulator."""
