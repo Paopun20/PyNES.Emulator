@@ -883,10 +883,10 @@ class Emulator:
                 self.last_fps_time = current_time
             self._emit("after_cycle", self.cycles)
 
-        except Exception as e:
-            raise EmulatorError(Exception(e))
         except MemoryError as e:
             raise EmulatorError(MemoryError(e))
+        except Exception as e:
+            raise EmulatorError(Exception(e))
 
     def Run(self):
         """Run CPU and PPU together."""
