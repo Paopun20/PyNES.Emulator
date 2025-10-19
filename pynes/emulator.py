@@ -2458,6 +2458,10 @@ class Emulator:
                 self.Op_ORA(value)
                 self.cycles = 6
 
+            case 0x72: # make a crash
+                self.CPU_Halted = True
+                self.cycles = 1
+
             case _:  # Unknown opcode
                 print(f"Unknown opcode: ${self.opcode:02X} at PC=${self.ProgramCounter-1:04X}")
                 
