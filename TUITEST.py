@@ -6,6 +6,7 @@ import pygame
 import threading
 import multiprocessing
 import datetime
+import time
 
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
@@ -24,6 +25,9 @@ NES_WIDTH, NES_HEIGHT, SCALE = 256, 240, 3
 install()
 
 app = None
+
+cpu_clock: int = 1_790_000
+ppu_clock: int = 5_369_317
 
 # ------------------ Emulator Process ------------------
 
@@ -101,6 +105,7 @@ def run_emulator_process(rom_path: str, log_queue=None):
         while running:
             while not emulator.FrameComplete and running:
                 emulator.Run1Cycle()
+            time.sleep(1 / cpu_clock)
 
     threading.Thread(target=cycle_loop, daemon=True).start()
 

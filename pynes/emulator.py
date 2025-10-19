@@ -327,7 +327,7 @@ class Emulator:
         return getattr(self, 'ppu_bus_latch', 0)
 
     def ReadPPURegister(self, addr: int) -> int:
-        """Read from PPU registers."""
+        """Read from PPU registers with NMI suppression."""
         reg = addr & 0x07
         ppu_bus = self._ppu_open_bus_value()
 
@@ -335,7 +335,16 @@ class Emulator:
             case 0x02:  # PPUSTATUS
                 # Upper 3 bits are status, lower 5 from bus
                 result = (self.PPUSTATUS & 0xE0) | (ppu_bus & 0x1F)
-                self.PPUSTATUS &= 0x7F  # Clear VBlank flag
+
+                # Reading PPUSTATUS on cycle 0 or 1 of scanline 241 suppresses NMI
+                # Cycle 0: Race condition - read returns old value, NMI suppressed
+                # Cycle 1: Read returns VBlank set, but NMI is suppressed
+                if self.Scanline == 241 and self.PPUCycles <= 1:
+                    self.NMI_Pending = False
+
+                # Clear VBlank flag AFTER reading (not before, for race condition handling)
+                self.PPUSTATUS &= 0x7F
+
                 # Reset write toggle on read of PPUSTATUS
                 self.w = False
                 self.AddressLatch = False
@@ -352,7 +361,6 @@ class Emulator:
                         self.OAMADDR = (self.OAMADDR + 1) & 0xFF
                     elif 65 <= self.PPUCycles <= 256:
                         # Sprite evaluation phase
-                        # During this phase, reads come from aligned addresses
                         result = int(self.OAM[self.OAMADDR & 0xFC])
                     elif 257 <= self.PPUCycles <= 320:
                         # Sprite tile loading phase
@@ -363,7 +371,7 @@ class Emulator:
                 else:
                     # Outside rendering - normal read
                     result = int(self.OAM[self.OAMADDR])
-                
+
                 # Always mask bits 2-5 of attribute bytes during rendering
                 if ((self.PPUMASK & 0x18) and (self.OAMADDR & 0x03) == 0x02):
                     result &= 0xC3  # keep bits 7-6 and 1-0
@@ -407,21 +415,31 @@ class Emulator:
 
             # Unreadable registers return PPU open bus
             case _:  
-                # Unreadable registers return current open bus value
                 return int(self._ppu_open_bus_value())
 
     def WritePPURegister(self, addr: int, value: int):
-        """Write to PPU registers."""
+        """Write to PPU registers with NMI enable handling."""
         reg = addr & 0x07
         val = value & 0xFF
-        
+
         # Update PPU bus latch for open bus behavior
         self.ppu_bus_latch = val
 
         if reg == 0x00:  # PPUCTRL
+            old_nmi_enabled = bool(self.PPUCTRL & 0x80)
             self.PPUCTRL = val
+            new_nmi_enabled = bool(self.PPUCTRL & 0x80)
+
             # t: ... ... NN .. .. (set nametable bits)
             self.t = (self.t & 0xF3FF) | ((val & 0x03) << 10)
+
+            # If NMI is enabled and VBlank flag is set, trigger NMI
+            # This handles: "NMI should occur when enabled during VBlank"
+            if not old_nmi_enabled and new_nmi_enabled:
+                if self.PPUSTATUS & 0x80:  # VBlank flag is set
+                    # Don't trigger if we're at the exact moment VBlank is being cleared
+                    if not (self.Scanline == 261 and self.PPUCycles <= 1):
+                        self.NMI_Pending = True
 
         elif reg == 0x01:  # PPUMASK
             self.PPUMASK = val
@@ -441,8 +459,7 @@ class Emulator:
             else:
                 # Outside rendering - normal write and increment
                 self.OAM[self.OAMADDR] = val
-                # Always increment by 1 for writes outside rendering
-                self.OAMADDR = (self.OAMADDR + 1) & 0xFF
+                # Increment by 1 for writes outside rendering
                 self.OAMADDR = (self.OAMADDR + 1) & 0xFF
 
         elif reg == 0x05:  # PPUSCROLL
@@ -537,11 +554,15 @@ class Emulator:
         base_addr = (high << 8) | low
         final_addr = (base_addr + self.Y) & 0xFFFF
         
+        # Store base address for instruction handlers
+        self._base_addr = base_addr
+        
         # Only perform dummy read when crossing page boundary
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
             # Dummy read from the same page but with wrapped low byte
             _ = self.Read((base_addr & 0xFF00) | ((base_addr + self.Y) & 0xFF))
             self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+        
         self.addressBus = final_addr
 
     #@lru_cache(maxsize=None)
@@ -578,8 +599,7 @@ class Emulator:
         base_addr = (high << 8) | low
         final_addr = (base_addr + self.Y) & 0xFFFF
         
-        # Preserve base address for instruction handlers that need it
-        # (e.g., to decide whether to perform a dummy read)
+        # Preserve base address for instruction handlers
         self._base_addr = base_addr
 
         # Only perform dummy read and add cycle if page boundary crossed
@@ -587,6 +607,7 @@ class Emulator:
             # Dummy read from the same page but with wrapped low byte
             _ = self.Read((base_addr & 0xFF00) | ((base_addr + self.Y) & 0xFF))
             self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+        
         self.addressBus = final_addr
 
     #@lru_cache(maxsize=None)
@@ -609,21 +630,29 @@ class Emulator:
         self.addressBus = ((high << 8) | low) + self.X
         if (self.addressBus & 0xFF00) != (high << 8):
             self._emit('onDummyRead', ((high << 8) | low) & 0xFFFF)
-            _ = self.Read(((high << 8) | low) & 0xFFFF)  # Perform dummy read to update data_bus
+            _ = self.Read(((high << 8) | low) & 0xFFFF)
             self.cycles += 1
 
     def ReadOperands_AbsoluteAddressed_YIndexed(self):
-        """Read absolute address with Y register index."""
-        self.current_instruction_mode = "absolute"
+        """Read absolute address and add Y (Y is NOT modified)."""
+        self.current_instruction_mode = "absolute_indexed"
         low = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         high = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-        self.addressBus = ((high << 8) | low) + self.Y
-        if (self.addressBus & 0xFF00) != (high << 8):
-            self._emit('onDummyRead', ((high << 8) | low) & 0xFFFF)
-            _ = self.Read(((high << 8) | low) & 0xFFFF)  # Perform dummy read to update data_bus
-            self.cycles += 1
+        base_addr = (high << 8) | low
+        final_addr = (base_addr + self.Y) & 0xFFFF
+        
+        # Store base address for instruction handlers
+        self._base_addr = base_addr
+        
+        # Only perform dummy read when crossing page boundary
+        if (base_addr & 0xFF00) != (final_addr & 0xFF00):
+            # Dummy read from the same page but with wrapped low byte
+            _ = self.Read((base_addr & 0xFF00) | ((base_addr + self.Y) & 0xFF))
+            self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+        
+        self.addressBus = final_addr
 
     def ReadOperands_IndexedIndirectAddressed(self):
         """Read indexed indirect address ((zero page), Y)."""
@@ -2452,7 +2481,20 @@ class Emulator:
         self.cycles = 7
 
     def Emulate_PPU(self):
-        """Emulate one PPU cycle."""
+        """Emulate one PPU cycle with precise VBlank and NMI timing."""
+
+        # VBlank flag is SET at scanline 241, cycle 1 (second cycle of scanline)
+        if self.Scanline == 241 and self.PPUCycles == 1:
+            self.PPUSTATUS |= 0x80  # Set VBlank flag
+            # NMI should trigger if NMI is enabled
+            if self.PPUCTRL & 0x80:
+                self.NMI_Pending = True
+
+        # Pre-render scanline: clear VBlank and sprite flags
+        if self.Scanline == 261 and self.PPUCycles == 1:
+            self.PPUSTATUS &= 0x1F  # Clear VBlank (bit 7), sprite 0 hit (bit 6), sprite overflow (bit 5)
+            self.NMI_Pending = False  # Clear any pending NMI
+
         self.PPUCycles += 1
 
         # 341 PPU cycles per scanline
@@ -2460,16 +2502,9 @@ class Emulator:
             self.PPUCycles = 0
             self.Scanline += 1
 
-            # Scanline 241: Enter VBlank
-            if self.Scanline == 241:
-                self.PPUSTATUS |= 0x80  # Set VBlank flag
-                if self.PPUCTRL & 0x80:  # NMI enabled
-                    self.NMI_Pending = True
-
             # Scanline 261: End of frame
-            elif self.Scanline >= 262:
-                self.Scanline = -1  # Pre-render scanline
-                self.PPUSTATUS &= 0x7F  # Clear VBlank flag
+            if self.Scanline >= 262:
+                self.Scanline = 0  # Start new frame at scanline 0
                 self.FrameComplete = True
 
                 # Emit frame event
@@ -2477,8 +2512,10 @@ class Emulator:
                 self.frame_complete_count += 1
                 self.FrameComplete = False
 
-            # Visible scanlines (0-239)
-            if self.Scanline < 240:
+        # Visible scanlines (0-239)
+        if 0 <= self.Scanline < 240:
+            # Render at the start of each scanline
+            if self.PPUCycles == 1:
                 self.RenderScanline()
 
     def RenderScanline(self):
@@ -2502,20 +2539,34 @@ class Emulator:
             self.RenderSprites()
 
     def RenderBackground(self):
-        """Render background for current scanline."""
-        nametable_base = 0x2000 | ((self.PPUCTRL & 0x03) << 10)
+        """Render background for current scanline with proper scrolling."""
+        # Check if background is enabled
+        if not (self.PPUMASK & 0x08):
+            return
+
         scroll_x = self.PPUSCROLL[0]
         scroll_y = self.PPUSCROLL[1]
-        y = (self.Scanline + scroll_y) & 0xFF
+
+        # Calculate which nametable to use
+        base_nametable = (self.PPUCTRL & 0x03)
+
         # Universal background color (palette entry 0)
         backdrop_color = int(self.PaletteRAM[0])
 
         for x in range(256):
-            # Calculate tile position
-            tile_x = ((x + scroll_x) // 8) & 31
-            # Nametable มี 30 แถว (0-29); ห้ามใช้ bitwise AND กับ 29 เพราะจะทำให้ wrap ไม่ถูกต้อง
-            # ใช้โมดูลัส 30 เพื่อให้เลื่อนสกรอลล์ข้ามขอบทำงานถูกต้อง
-            tile_y = (y // 8) % 30
+            # Calculate absolute scroll position
+            abs_x = x + scroll_x
+            abs_y = self.Scanline + scroll_y
+
+            # Determine which nametable (with horizontal and vertical wrapping)
+            nt_h = (abs_x // 256) & 1  # Horizontal nametable select
+            nt_v = (abs_y // 240) & 1  # Vertical nametable select
+            nametable = (base_nametable ^ nt_h ^ (nt_v << 1))
+            nametable_base = 0x2000 | (nametable << 10)
+
+            # Tile position within nametable
+            tile_x = (abs_x // 8) & 31
+            tile_y = (abs_y // 8) % 30  # 30 rows of tiles
 
             # Get tile index from nametable
             tile_offset = tile_y * 32 + tile_x
@@ -2526,19 +2577,21 @@ class Emulator:
             pattern_base = 0x1000 if (self.PPUCTRL & 0x10) else 0x0000
             tile_addr = pattern_base + tile_index * 16
 
-            # Get tile row
-            tile_row = y % 8
+            # Get tile row and column
+            tile_row = abs_y % 8
+            pixel_x = abs_x % 8
+
             plane1 = int(self.CHRROM[tile_addr + tile_row])
             plane2 = int(self.CHRROM[tile_addr + tile_row + 8])
 
             # Get pixel color
-            pixel_x = (x + scroll_x) % 8
             bit = 7 - pixel_x
             color_idx = ((plane1 >> bit) & 1) | (((plane2 >> bit) & 1) << 1)
 
             if color_idx == 0:  # Background transparent -> draw backdrop color
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
-                # keep _bg_opaque_line[x] = False for sprite priority
+                if hasattr(self, '_bg_opaque_line'):
+                    self._bg_opaque_line[x] = False
                 continue
 
             # Get palette from attribute table
@@ -2558,19 +2611,22 @@ class Emulator:
             color = int(self.PaletteRAM[palette_addr])
 
             self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
-            # mark opaque background at this pixel for sprite priority,
-            # unless left 8-pixel background is disabled
+
+            # Mark opaque background at this pixel for sprite priority
             if hasattr(self, '_bg_opaque_line'):
-                if not (x < 8 and (self.PPUMASK & 0x02) == 0):
+                # Left 8-pixel background clipping
+                if x < 8 and (self.PPUMASK & 0x02) == 0:
+                    self._bg_opaque_line[x] = False
+                else:
                     self._bg_opaque_line[x] = True
 
     def RenderSprites(self):
-        """Render sprites for current scanline."""
+        """Render sprites for current scanline with proper 8x16 handling."""
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
         pattern_base_default = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
 
-        # Iterate through evaluated sprites (max 8)
-        for entry in getattr(self, '_sprites_line', []):
+        # Iterate through evaluated sprites (max 8) in REVERSE order for proper priority
+        for entry in reversed(getattr(self, '_sprites_line', [])):
             spr_index = entry['index']
             sprite_y = entry['y']
 
@@ -2592,35 +2648,52 @@ class Emulator:
             if v_flip:
                 sprite_row = sprite_height - 1 - sprite_row
 
-            # Get tile data
+            # Get tile data - FIXED 8x16 handling
             if sprite_height == 16:
                 # 8x16: pattern table depends on tile_index bit 0
                 pattern_base = 0x0000 if (tile_index & 1) == 0 else 0x1000
-                tile_addr = pattern_base + (tile_index & 0xFE) * 16 + sprite_row
+                # Use top or bottom tile based on row
+                if sprite_row >= 8:
+                    # Bottom tile
+                    tile_addr = pattern_base + ((tile_index & 0xFE) | 1) * 16 + (sprite_row - 8)
+                else:
+                    # Top tile
+                    tile_addr = pattern_base + (tile_index & 0xFE) * 16 + sprite_row
             else:
+                # 8x8: use PPUCTRL pattern table
                 tile_addr = pattern_base_default + tile_index * 16 + sprite_row
+
             plane1 = int(self.CHRROM[tile_addr])
             plane2 = int(self.CHRROM[tile_addr + 8])
 
             # Render 8 pixels
             for pixel in range(8):
-                x = sprite_x + (7 - pixel if not h_flip else pixel)
+                # FIXED: horizontal flip calculation
+                if h_flip:
+                    x = sprite_x + pixel
+                    bit = pixel  # Don't invert bit when h_flip is true
+                else:
+                    x = sprite_x + pixel
+                    bit = 7 - pixel  # Normal left-to-right
 
                 if x < 0 or x >= 256:
                     continue
 
                 # Get pixel color
-                bit = 7 - pixel if not h_flip else pixel
                 color_idx = ((plane1 >> bit) & 1) | (((plane2 >> bit) & 1) << 1)
 
                 if color_idx == 0:  # Transparent
+                    continue
+
+                # Apply left 8-pixel sprite clipping BEFORE priority check
+                if x < 8 and (self.PPUMASK & 0x04) == 0:
                     continue
 
                 # Check priority with background using opaque map
                 if priority and hasattr(self, '_bg_opaque_line') and self._bg_opaque_line[x]:
                     continue
 
-                # Sprite 0 hit detection (must happen before left edge masking)
+                # Sprite 0 hit detection
                 if (spr_index == 0 and                           # Must be sprite 0
                     x < 255 and                                  # Not at x=255
                     (self.PPUMASK & 0x18) == 0x18 and          # Both sprites and BG enabled
@@ -2628,13 +2701,9 @@ class Emulator:
                     self._bg_opaque_line[x] and                 # BG pixel has pattern data
                     color_idx > 0 and                           # Sprite pixel has pattern data
                     (self.PPUSTATUS & 0x40) == 0):             # Not already hit
-                    # Left edge clipping check (hit can still occur in left 8 pixels if both clipping bits are enabled)
+                    # Left edge clipping check
                     if x >= 8 or (self.PPUMASK & 0x06) == 0x06:
                         self.PPUSTATUS |= 0x40  # Set sprite 0 hit
-                
-                # Apply left 8-pixel sprite clipping
-                if x < 8 and (self.PPUMASK & 0x04) == 0:
-                    continue
 
                 # Get sprite palette
                 palette_addr = (0x10 + palette_idx * 4 + color_idx) & 0x1F
@@ -2643,35 +2712,36 @@ class Emulator:
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
 
     def EvaluateSpritesForScanline(self):
-        """Select up to 8 sprites for the current scanline and set overflow flag.
-        Overflow is set when more than 8 sprites appear on a scanline.
-        Always evaluate all sprites even after overflow is detected."""
+        """Select up to 8 sprites for the current scanline and set overflow flag."""
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
         sprites = []  # Holds up to 8 visible sprites
         n_found = 0  # Total sprites found on scanline (for overflow)
-        
-        # Must evaluate all sprites even after overflow
-        for i in range(0, 256, 4):
-            y = int(self.OAM[i]) + 1
+
+        # Evaluate all 64 sprites
+        for i in range(64):
+            oam_addr = i * 4
+            y = int(self.OAM[oam_addr])
+
+            # Check if sprite is in range for this scanline
             if y <= self.Scanline < y + sprite_height:
-                # Found a sprite on this scanline
-                if n_found < 8:
-                    # Only store first 8 sprites
-                    sprites.append({
-                        'index': i // 4,
-                        'y': y,
-                        'tile': int(self.OAM[i + 1]),
-                        'attr': int(self.OAM[i + 2]),
-                        'x': int(self.OAM[i + 3]),
-                    })
                 n_found += 1
-        
+
+                # Only store first 8 sprites
+                if len(sprites) < 8:
+                    sprites.append({
+                        'index': i,
+                        'y': y,
+                        'tile': int(self.OAM[oam_addr + 1]),
+                        'attr': int(self.OAM[oam_addr + 2]),
+                        'x': int(self.OAM[oam_addr + 3]),
+                    })
+
         # Set sprite overflow flag (bit 5) if more than 8 sprites found
         if n_found > 8:
             self.PPUSTATUS |= 0x20
         else:
-            self.PPUSTATUS &= 0xDF
-            
+            self.PPUSTATUS &= ~0x20
+
         self._sprites_line = sprites
 
     @lru_cache(maxsize=((len(nes_palette) + 1) * 3))
