@@ -1,6 +1,6 @@
-## Error Codes
+# Error Codes
 
-For more information, I recommend reading the fully commented assembly code for the test.
+This document lists various error codes that can be encountered when emulating the NES, categorized by the component or behavior they relate to. These codes are primarily used for debugging and testing the accuracy of an NES emulator.
 
 ## ROM is not Writable
 
@@ -118,6 +118,8 @@ Q: Opcode $F4 (NOP Zero Page, X) malfunctioned.
 R: Opcode $FA (NOP Implied) malfunctioned.  
 S: Opcode $FC (NOP Absolute, X) malfunctioned.
 
+---
+
 ## Absolute Indexed Wraparound
 
 1: Absolute indexed addressing did not read from the correct address.  
@@ -151,6 +153,8 @@ S: Opcode $FC (NOP Absolute, X) malfunctioned.
 
 1: You should be able to branch from the Zero Page to page $FF.  
 2: You should be able to branch from page $FF to the Zero Page.
+
+---
 
 ## Unofficial Instructions: SLO, RLA, SRE, RRA, SAX, LAX, DCP, ISC, ANC, ASR, ARR, ANE, LXA, AXS, SBC, LAE
 

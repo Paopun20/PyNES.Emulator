@@ -24,11 +24,9 @@ import traceback
 from pynes.cartridge import Cartridge
 
 # DATA
-OpCodeNames: list[str] = [
-    "BRK", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "ANC", "NOP", "ORA", "ASL", "SLO", "BPL", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", "JSR", "AND", "HLT", "RLA", "BIT", "AND", "ROL", "RLA", "PLP", "AND", "ROL", "ANC", "BIT", "AND", "ROL", "RLA", "BMI", "AND", "HLT", "RLA", "NOP", "AND", "ROL", "RLA", "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", "RTI", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "PHA", "EOR", "LSR", "ALR", "JMP", "EOR", "LSR", "SRE", "BVC", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", "RTS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "PLA", "ADC", "ROR", "ARR", "JMP", "ADC", "ROR", "RRA", "BVS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", "DEY", "NOP", "TXA", "ANE", "STY", "STA", "STX", "SAX", "BCC", "STA", "HLT", "SHA", "STY", "STA", "STX", "SAX", "TYA", "STA", "TXS", "SHS", "SHY", "STA", "SHX", "SHA", "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", "TAY", "LDA", "TAX", "LXA", "LDY", "LDA", "LDX", "LAX", "BCS", "LDA", "HLT", "LAX", "LDY", "LDA", "LDX", "LAX", "CLV", "LDA", "TSX", "LAE", "LDY", "LDA", "LDX", "LAX", "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", "INY", "CMP", "DEX", "AXS", "CPY", "CMP", "DEC", "DCP", "BNE", "CMP", "HLT", "DCP", "NOP", "CMP", "DEC", "DCP", "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", "CPX", "SBC", "NOP", "ISC", "CPX", "SBC", "INC", "ISC", "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISC", "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC",
-]
+OpCodeNames: list[str] = ["BRK", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "ANC", "NOP", "ORA", "ASL", "SLO", "BPL", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", "JSR", "AND", "HLT", "RLA", "BIT", "AND", "ROL", "RLA", "PLP", "AND", "ROL", "ANC", "BIT", "AND", "ROL", "RLA", "BMI", "AND", "HLT", "RLA", "NOP", "AND", "ROL", "RLA", "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", "RTI", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "PHA", "EOR", "LSR", "ALR", "JMP", "EOR", "LSR", "SRE", "BVC", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", "RTS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "PLA", "ADC", "ROR", "ARR", "JMP", "ADC", "ROR", "RRA", "BVS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", "DEY", "NOP", "TXA", "ANE", "STY", "STA", "STX", "SAX", "BCC", "STA", "HLT", "SHA", "STY", "STA", "STX", "SAX", "TYA", "STA", "TXS", "SHS", "SHY", "STA", "SHX", "SHA", "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", "TAY", "LDA", "TAX", "LXA", "LDY", "LDA", "LDX", "LAX", "BCS", "LDA", "HLT", "LAX", "LDY", "LDA", "LDX", "LAX", "CLV", "LDA", "TSX", "LAE", "LDY", "LDA", "LDX", "LAX", "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", "INY", "CMP", "DEX", "AXS", "CPY", "CMP", "DEC", "DCP", "BNE", "CMP", "HLT", "DCP", "NOP", "CMP", "DEC", "DCP", "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", "CPX", "SBC", "NOP", "ISC", "CPX", "SBC", "INC", "ISC", "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISC", "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC"]
 
-nes_palette = np.array([
+nes_palette: np.ndarray = np.array([
     (84, 84, 84), (0, 30, 116), (8, 16, 144), (48, 0, 136),
     (68, 0, 100), (92, 0, 48), (84, 4, 0), (60, 24, 0),
     (32, 42, 0), (8, 58, 0), (0, 64, 0), (0, 60, 0),
@@ -226,9 +224,8 @@ class Emulator:
         """Read from CPU or PPU memory with proper mirroring."""
         addr = int(Address) & 0xFFFF
 
-        # For absolute addressing, update data bus with high byte
-        if self.current_instruction_mode == "absolute":
-            self.data_bus = (addr >> 8) & 0xFF
+        if self.debug.Debug:
+            print(f"Read: addr=${addr:04X}, mode={self.current_instruction_mode}, data_bus_before=${self.data_bus:02X}")
 
         # RAM with mirroring ($0000-$07FF mirrors to $0800-$1FFF)
         if addr < 0x2000:
@@ -255,31 +252,35 @@ class Emulator:
                     status |= 0x04
                 if self.apu.noise["length_counter"] > 0:
                     status |= 0x08
-                # $4015 read should not update data bus
+                self.data_bus = status
                 return status
             elif addr == 0x4016:  # Controller 1
                 val = self.controllers[1].read()
-                # Upper 3 bits of controller reads are open bus
                 val = (val & 0x1F) | (self.data_bus & 0xE0)
                 self.data_bus = val
                 return val
             elif addr == 0x4017:  # Controller 2
                 val = self.controllers[2].read()
-                # Upper 3 bits of controller reads are open bus
                 val = (val & 0x1F) | (self.data_bus & 0xE0)
                 self.data_bus = val
                 return val
-            # unmapped APU/I-O registers return data bus
+            # Unmapped APU/I-O registers ($4000-$4014, excluding 0x4015-0x4017)
+            self._emit('onDummyRead', addr)
+            self.data_bus = (addr >> 8) & 0xFF if self.current_instruction_mode == "absolute" else self.data_bus
+            return self.data_bus
+
+        # Unmapped region ($4018-$7FFF)
+        elif addr < 0x8000:
+            self._emit('onDummyRead', addr)
+            if self.current_instruction_mode == "absolute":
+                self.data_bus = (addr >> 8) & 0xFF
             return self.data_bus
 
         # ROM ($8000-$FFFF)
-        elif addr >= 0x8000:
+        else:
             val = int(self.ROM[addr - 0x8000])
             self.data_bus = val
             return val
-
-        # Unmapped reads return the data bus value
-        return self.data_bus
 
     def Write(self, Address: int, Value: int):
         """Write to CPU or PPU memory with proper mirroring."""
@@ -313,9 +314,7 @@ class Emulator:
                 self.apu.write_register(addr, val)
 
         # ROM area
-        elif addr >= 0x8000: # rom is not writable # fix
-            # self.ROM[addr - 0x8000] = val
-            pass
+        elif addr >= 0x8000:
             # writes to ROM still place value on data bus
             self.data_bus = val
 
@@ -409,7 +408,7 @@ class Emulator:
             # Unreadable registers return PPU open bus
             case _:  
                 # Unreadable registers return current open bus value
-                return self._ppu_open_bus_value()
+                return int(self._ppu_open_bus_value())
 
     def WritePPURegister(self, addr: int, value: int):
         """Write to PPU registers."""
@@ -600,6 +599,45 @@ class Emulator:
         high = self.Read((zp_addr + 1) & 0xFF)
         self.addressBus = (high << 8) | low
 
+    def ReadOperands_AbsoluteAddressed_XIndexed(self):
+        """Read absolute address with X register index."""
+        self.current_instruction_mode = "absolute"
+        low = self.Read(self.ProgramCounter)
+        self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+        high = self.Read(self.ProgramCounter)
+        self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+        self.addressBus = ((high << 8) | low) + self.X
+        if (self.addressBus & 0xFF00) != (high << 8):
+            self._emit('onDummyRead', ((high << 8) | low) & 0xFFFF)
+            _ = self.Read(((high << 8) | low) & 0xFFFF)  # Perform dummy read to update data_bus
+            self.cycles += 1
+
+    def ReadOperands_AbsoluteAddressed_YIndexed(self):
+        """Read absolute address with Y register index."""
+        self.current_instruction_mode = "absolute"
+        low = self.Read(self.ProgramCounter)
+        self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+        high = self.Read(self.ProgramCounter)
+        self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+        self.addressBus = ((high << 8) | low) + self.Y
+        if (self.addressBus & 0xFF00) != (high << 8):
+            self._emit('onDummyRead', ((high << 8) | low) & 0xFFFF)
+            _ = self.Read(((high << 8) | low) & 0xFFFF)  # Perform dummy read to update data_bus
+            self.cycles += 1
+
+    def ReadOperands_IndexedIndirectAddressed(self):
+        """Read indexed indirect address ((zero page), Y)."""
+        self.current_instruction_mode = "indirect_indexed"
+        zp_addr = self.Read(self.ProgramCounter)
+        self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+        low = self.Read(zp_addr)
+        high = self.Read((zp_addr + 1) & 0xFF)
+        self.addressBus = ((high << 8) | low) + self.Y
+        if (self.addressBus & 0xFF00) != (high << 8):
+            self._emit('onDummyRead', ((high << 8) | low) & 0xFFFF)
+            _ = self.Read(((high << 8) | low) & 0xFFFF)  # Perform dummy read to update data_bus
+            self.cycles += 1
+
     def Push(self, Value: int):
         """Push byte onto stack."""
         addr = 0x100 + (self.stackPointer & 0xFF)
@@ -647,16 +685,12 @@ class Emulator:
 
     def Op_ASL(self, Address: int, Input: int):
         """Arithmetic Shift Left."""
-        # First perform a dummy read
-        _ = self.Read(Address)
-        # Then do a dummy write of the original value
-        self.Write(Address, Input)
-        # Calculate result
+        _ = self.Read(Address)  # Dummy read
+        self.Write(Address, Input)  # Dummy write of original value
         self.flag.Carry = (Input & 0x80) != 0
         result = (Input << 1) & 0xFF
         self.UpdateZeroNegativeFlags(result)
-        # Finally write the actual new value
-        self.Write(Address, result)
+        self.Write(Address, result)  # Final write
         return result
 
     def Op_LSR(self, Address: int, Input: int):
@@ -840,6 +874,23 @@ class Emulator:
         # print(f"ROM Header: {self.cartridge.HeaderedROM[:0x10]}")
         # print(f"Reset Vector: ${self.ProgramCounter:04X}")
     
+    def Swap(self, cartridge: Cartridge):
+        """
+        This function is likely intended to swap a cartridge with another one.
+        
+        :param cartridge: Cartridge object that represents the cartridge to be swapped
+        :type cartridge: Cartridge
+        """
+        if not (cartridge is Cartridge):
+            raise EmulatorError(ValueError("Invalid cartridge object provided."))
+        self.cartridge = cartridge
+        self.ROM = self.cartridge.ROM
+        self.CHRROM = self.cartridge.CHRROM
+        self.PRGROM = self.cartridge.PRGROM
+    
+    def SwapAt(self, at_cycles: int, cartridge: Cartridge):
+        raise EmulatorError(NotImplementedError("Cartridge swapping at runtime is not yet implemented."))
+    
     def Input(self, controller_id: int, buttons: dict[str, bool]):
         """Update the button states for the specified controller.
         
@@ -976,12 +1027,23 @@ class Emulator:
                 self.cycles = 7
 
             case 0x20:  # JSR
+                # Cycle 1: Fetch low byte of target address
                 low = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
+                
+                # Cycle 2: Dummy read/internal operation - data bus should contain high byte
+                self.Read(self.ProgramCounter)  # Updates data bus
+                
+                # Cycle 3: Read actual high byte
                 high = self.Read(self.ProgramCounter)
                 ret_addr = self.ProgramCounter  # Return to next instruction
+                
+                # Cycles 4-5: Stack pushes for return address
                 self.Push(ret_addr >> 8)
                 self.Push(ret_addr & 0xFF)
+                
+                # Cycle 6: Set new PC, data bus should have high byte of target
+                self.data_bus = high  # JSR leaves high byte on data bus
                 self.ProgramCounter = (high << 8) | low
                 self.cycles = 6
 
@@ -1619,6 +1681,8 @@ class Emulator:
 
             # === SHIFT/ROTATE ===
             case 0x0A:  # ASL A
+                # Dummy read from PC for cycle 2
+                self.Read(self.ProgramCounter)
                 self.flag.Carry = (self.A & 0x80) != 0
                 self.A = (self.A << 1) & 0xFF
                 self.UpdateZeroNegativeFlags(self.A)

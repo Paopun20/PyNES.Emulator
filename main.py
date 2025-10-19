@@ -8,7 +8,6 @@ from pynes.cartridge import Cartridge
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
 
-import time
 import pygame
 import threading
 
@@ -88,7 +87,7 @@ if not valid:
 
 emulator_vm.cartridge = load_cartridge
 emulator_vm.logging = True
-emulator_vm.debug.Debug = True
+emulator_vm.debug.Debug = False
 emulator_vm.debug.halt_on_unknown_opcode = False
 
 # === Header ===
