@@ -1,0 +1,3 @@
+[submodule "AccuracyCoin-Link"]
+	path = AccuracyCoin-Link
+	url = https://github.com/100thCoin/AccuracyCoin.git
