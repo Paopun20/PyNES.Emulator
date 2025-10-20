@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import numpy as np
 
+
 @dataclass
 class Cartridge:
     file: str
@@ -10,7 +11,7 @@ class Cartridge:
     HeaderedROM: np.ndarray
 
     @classmethod
-    def from_file(cls: 'Cartridge', filepath: str) -> tuple[bool, "Cartridge | str"]:
+    def from_file(cls: "Cartridge", filepath: str) -> tuple[bool, "Cartridge | str"]:
         """
         Loads a NES ROM file from the given filepath.
 
@@ -39,4 +40,6 @@ class Cartridge:
             CHRROM[:chr_size] = HeaderedROM[0x8010 : 0x8010 + chr_size]
 
         # คืน instance
-        return True, cls(file=file, ROM=ROM, PRGROM=PRGROM, CHRROM=CHRROM, HeaderedROM=HeaderedROM)
+        return True, cls(
+            file=file, ROM=ROM, PRGROM=PRGROM, CHRROM=CHRROM, HeaderedROM=HeaderedROM
+        )

@@ -1,3 +1,8 @@
+"""
+
+this next-gen GUI and TUI
+
+"""
 from os import environ
 environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
@@ -169,7 +174,7 @@ class PyNES(App):
                 id="top_section"
             ),
             Container(
-                Static("Log Output:", classes="log_label"),
+                Static("Eum Tracelogger:", classes="log_label"),
                 TextArea(
                     id="log_area",
                     read_only=True,

@@ -5,6 +5,7 @@ from rich.traceback import install; install() # for cool traceback
 
 from pynes.emulator import Emulator, OpCodeNames, EmulatorError
 from pynes.cartridge import Cartridge
+from pynes.api.discord import Presence
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
 
@@ -16,13 +17,31 @@ from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
+import time
+
+# discord
+from pypresence.types import ActivityType, StatusDisplayType
+
 console = Console()
 console.clear()
+
+presence = Presence(1429842237432266752)
+presence.connect()
 
 __var__ =  "(DEV BUILD)"
 NES_WIDTH = 256
 NES_HEIGHT = 240
 SCALE = 3
+
+presence.update(
+    status_display_type=StatusDisplayType.STATE,
+    activity_type=ActivityType.PLAYING,
+    
+    name="PyNES Emulator",
+    details="LOL",
+    state="TEST",
+)
+
 
 pygame.init()
 screen = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), pygame.HWSURFACE | pygame.DOUBLEBUF | pygame.GL_DOUBLEBUFFER)
@@ -40,28 +59,13 @@ except Exception:
     console.print("[bold yellow]⚠️ Icon not found[/bold yellow]")
 
 clock = pygame.time.Clock()
+cpu_clock: int = 1_790_000
+ppu_clock: int = 5_369_317
+all_clock: int = cpu_clock + ppu_clock
 
-controller_state = {
-    'A': False,
-    'B': False,
-    'Select': False,
-    'Start': False,
-    'Up': False,
-    'Down': False,
-    'Left': False,
-    'Right': False
-}
+controller_state = {'A': False,'B': False,'Select': False,'Start': False,'Up': False,'Down': False,'Left': False,'Right': False}
 
-KEY_MAPPING = {
-    pygame.K_x: 'A',
-    pygame.K_z: 'B',
-    pygame.K_RSHIFT: 'Select',
-    pygame.K_RETURN: 'Start',
-    pygame.K_UP: 'Up',
-    pygame.K_DOWN: 'Down',
-    pygame.K_LEFT: 'Left',
-    pygame.K_RIGHT: 'Right'
-}
+KEY_MAPPING = {pygame.K_x: 'A',pygame.K_z: 'B',pygame.K_RSHIFT: 'Select',pygame.K_RETURN: 'Start',pygame.K_UP: 'Up',pygame.K_DOWN: 'Down',pygame.K_LEFT: 'Left',pygame.K_RIGHT: 'Right'}
 
 emulator_vm = Emulator()
 
@@ -110,15 +114,13 @@ table.add_row("ESC", "Quit")
 
 console.print(table)
 
-# console.print("[bold magenta]Debug Dumps (hold TAB + key):[/bold magenta]")
-# console.print("  0=RAM  1=ROM  2=VRAM  3=OAM  4=Palette  5=Frame  A=All\n")
-
 # === EMU LOOP ===
 emulator_vm.Reset()
 running = True
 paused = False
 frame_count = 0
 show_debug = True
+start_time = time.time()
 
 def draw_debug_overlay():
     """Draws semi-transparent debug info on top of current frame"""
@@ -131,6 +133,9 @@ def draw_debug_overlay():
         f"NES File: {nes_path}",
         f"ROM Header: {emulator_vm.cartridge.HeaderedROM[:0x10]}",
         "",
+        f"EUM take: ~{(time.time() - start_time):.2f}s",
+        f"IRL take: ~{((time.time() - start_time) * (1/all_clock)):.2f}s",
+        f"CPU Halted: {emulator_vm.CPU_Halted}",
         f"Frame Complete Count: {emulator_vm.frame_complete_count}",
         f"FPS: {clock.get_fps():.1f} | EMU FPS: {emulator_vm.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
         f"PC: ${emulator_vm.ProgramCounter:04X} | Cycles: {emulator_vm.cycles}",
@@ -161,31 +166,14 @@ def subpro():
         if paused:
             continue
         
-        while not emulator_vm.FrameComplete and running and not paused:
+        while running and not paused:
             try:
                 emulator_vm.Run1Cycle()
             except EmulatorError as e:
                 errorType = e.type
                 text = e.message
-                if errorType is MemoryError:
-                    messagebox.showerror(f"Memory Error: {errorType.__name__}", text)
-                elif errorType is ValueError:
-                    messagebox.showerror(f"Value Error: {errorType.__name__}", text)
-                elif errorType is IndexError:
-                    messagebox.showerror(f"Index Error: {errorType.__name__}", text)
-                elif errorType is KeyError:
-                    messagebox.showerror(f"Key Error: {errorType.__name__}", text)
-                elif errorType is AttributeError:
-                    messagebox.showerror(f"Attribute Error: {errorType.__name__}", text)
-                elif errorType is TypeError:
-                    messagebox.showerror(f"Type Error: {errorType.__name__}", text)
-                elif errorType is NotImplementedError:
-                    messagebox.showerror(f"Not Implemented Error: {errorType.__name__}", text)
-                else:
-                    messagebox.showerror(f"Unknown Error: {errorType.__name__}", text)
+                print(f"{errorType.__name__}: {text}")
                 running = False
-
-        emulator_vm.FrameComplete = False
         frame_count += 1
 
 subpro_thread = threading.Thread(target=subpro, daemon=True, name="emulator_thread")
@@ -227,6 +215,7 @@ while running:
                 console.print("[bold red]🔄 Resetting emulator...[/bold red]")
                 emulator_vm.Reset()
                 frame_count = 0
+                start_time = time.time()
         elif event.type == pygame.KEYUP:
             if event.key in KEY_MAPPING:
                 controller_state[KEY_MAPPING[event.key]] = False
