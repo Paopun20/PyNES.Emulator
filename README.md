@@ -2,7 +2,7 @@
 
 A NES (Nintendo Entertainment System) emulator written in 100% Python.
 
-## Accuracy
+## Accuracy (can be outdate)
 
 <div style="display: flex; gap: 10px;">
     <img src="./assets/screenshot/testshot 2025-10-17 195053.png" width="400" alt="PyNES Test"/>
