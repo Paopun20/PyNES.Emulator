@@ -275,7 +275,7 @@ class Emulator:
                 self.data_bus = val
                 return val
             
-        if addr >= 0x4000 and addr <= 0x4015:
+        elif addr >= 0x4000 and addr <= 0x4015:
             # All other APU/I-O reads -> use APU read_register
             val = self.apu.read_register(addr)
             self.data_bus = val
@@ -312,7 +312,7 @@ class Emulator:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
 
         # --- APU and I/O registers ($4000-$4017)
-        if addr >= 0x4000 and addr <= 0x4017:
+        elif addr >= 0x4000 and addr <= 0x4017:
             # Controller strobe first
             if addr == 0x4016:  # Controller 1
                 strobe = bool(val & 0x01)
@@ -325,17 +325,17 @@ class Emulator:
                 if strobe:
                     self.controllers[2].latch()
         
-        if addr >= 0x4000 and addr <= 0x4015:
+        elif addr >= 0x4000 and addr <= 0x4015:
             print(f"is write at {hex(addr)}:{hex(val)} ({val})")
             self.apu.write_register(addr, val)
 
         # --- OAM DMA ($4014)
-        if addr == 0x4014:
+        elif addr == 0x4014:
             # Schedule DMA page (256 bytes) for next CPU cycle
             self._oam_dma_pending_page = val
 
         # --- ROM area ($8000+)
-        if addr >= 0x8000:
+        elif addr >= 0x8000:
             # Writes to ROM do not affect memory, but update data bus
             self.data_bus = val
 
@@ -978,7 +978,7 @@ class Emulator:
     
     def Run1Frame(self):
         while not self.FrameComplete:
-            self.Run1Frame()
+            self.Run1Cycle()
 
     def IRQ_RUN(self):
         """Handle Interrupt Request."""
