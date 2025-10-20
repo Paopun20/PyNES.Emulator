@@ -10,9 +10,6 @@ class Byte:
             raise TypeError("Value must be an integer.")
         self._value = value & 0xFF  # automatically wrap 0-255
 
-    def __int__(self):
-        return self._value
-
     def __repr__(self):
         return f"Byte({self._value})"
 

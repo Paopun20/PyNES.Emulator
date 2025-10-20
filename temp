@@ -1,0 +1,22 @@
+E:\PyNES\env\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+pygame 2.6.1 (SDL 2.28.4, Python 3.13.7)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+Testing basic APU playback...
+Playing pulse 1 for 2 seconds...
+Traceback (most recent call last):
+  File "E:\PyNES\testapu.py", line 101, in <module>
+    test_apu_basic_playback()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "E:\PyNES\testapu.py", line 33, in test_apu_basic_playback
+    apu.step()
+    ~~~~~~~~^^
+  File "E:\PyNES\pynes\apu.py", line 461, in step
+    self.play_buffer()
+    ~~~~~~~~~~~~~~~~^^
+  File "E:\PyNES\pynes\apu.py", line 467, in play_buffer
+    sound = pygame.sndarray.make_sound(self.audio_buffer)
+  File "E:\PyNES\env\Lib\site-packages\pygame\sndarray.py", line 92, in make_sound
+    return mixer.Sound(array=array)
+           ~~~~~~~~~~~^^^^^^^^^^^^^
+ValueError: Array must be 2-dimensional for stereo mixer
