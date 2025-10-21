@@ -1,9 +1,12 @@
 import numpy as np
+import array
 from pynes.apu import APU
 from string import Template
 from dataclasses import dataclass
 from collections import deque
 from typing import List, Dict # make fast?
+from pynes.helper.memoize import memoize
+import cProfile
 
 import timeit
 
@@ -112,6 +115,7 @@ class Controller:
         if self.strobe:
             self.latch()  # Re-latch if strobe is high
             return self.shift_register & 1
+        
         bit = self.shift_register & 1
         self.shift_register >>= 1
         self.shift_register |= 0x80  # Set high bit to 1 after 8 reads
@@ -166,9 +170,9 @@ class Emulator:
         self.current_instruction_mode = ""
 
         # PPU initialization
-        self.VRAM = np.zeros(0x2000, dtype=np.uint8)
-        self.OAM = np.zeros(256, dtype=np.uint8)
-        self.PaletteRAM = np.zeros(0x20, dtype=np.uint8)
+        self.VRAM = array.array('B', [0] * 0x2000)
+        self.OAM = array.array('B', [0] * 256)
+        self.PaletteRAM = array.array('B', [0] * 0x20)
         self.PPUCycles = 0
         self.Scanline = 0
         self.FrameComplete = False
@@ -245,42 +249,36 @@ class Emulator:
     def Read(self, Address: int) -> int:
         """Read from CPU or PPU memory with proper mirroring."""
         addr = int(Address) & 0xFFFF
-    
-        if self.debug.Debug:
-            print(f"Read: addr=${addr:04X}, mode={self.current_instruction_mode}, data_bus_before=${self.data_bus:02X}")
 
-        # --- RAM with mirroring ($0000-$07FF mirrors to $0800-$1FFF)
+        # --- RAM mirroring ($0000-$1FFF)
         if addr < 0x2000:
             val = int(self.RAM[addr & 0x07FF])
             self.data_bus = val
             return val
-    
-        # --- PPU registers ($2000-$2007 mirrors to $2008-$3FFF)
+
+        # --- PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
             val = self.ReadPPURegister(0x2000 + (addr & 0x07))
             self.data_bus = val
             return val
-    
+
         # --- APU and I/O registers ($4000-$4017)
         if addr <= 0x4017:
-            # Controller reads
             if addr == 0x4016:  # Controller 1
-                val = self.controllers[1].read()
-                val = (val & 0x1F) | (self.data_bus & 0xE0)
+                bit0 = self.controllers[1].read() & 1
+                val = (bit0) | (self.data_bus & 0xE0)  # preserve open-bus bits
                 self.data_bus = val
                 return val
             elif addr == 0x4017:  # Controller 2
-                val = self.controllers[2].read()
-                val = (val & 0x1F) | (self.data_bus & 0xE0)
+                bit0 = self.controllers[2].read() & 1
+                val = (bit0) | (self.data_bus & 0xE0)
                 self.data_bus = val
                 return val
-            
-        if addr >= 0x4000 and addr <= 0x4015:
-            # All other APU/I-O reads -> use APU read_register
-            val = self.apu.read_register(addr)
-            self.data_bus = val
-            print(f"is read at {hex(addr)}:{hex(val)} ({val})")
-            return val
+            elif addr >= 0x4000 and addr <= 0x4015:
+                reg = addr & 0xFF
+                val = self.apu.read_register(reg)
+                self.data_bus = val
+                return val
 
         # --- Unmapped region ($4018-$7FFF)
         elif addr < 0x8000:
@@ -288,7 +286,7 @@ class Emulator:
             if self.current_instruction_mode == "absolute":
                 self.data_bus = (addr >> 8) & 0xFF
             return self.data_bus
-    
+
         # --- ROM ($8000-$FFFF)
         else:
             val = int(self.ROM[addr - 0x8000])
@@ -299,44 +297,38 @@ class Emulator:
         """Write to CPU or PPU memory with proper mirroring."""
         addr = int(Address) & 0xFFFF
         val = int(Value) & 0xFF
-
-        # All writes update the data bus
         self.data_bus = val
 
-        # --- RAM with mirroring ($0000-$07FF mirrors to $0800-$1FFF)
+        # --- RAM ($0000-$1FFF)
         if addr < 0x2000:
             self.RAM[addr & 0x07FF] = val
 
-        # --- PPU registers ($2000-$2007 mirrors to $2008-$3FFF)
+        # --- PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
 
-        # --- APU and I/O registers ($4000-$4017)
+        # --- APU / Controller ($4000-$4017)
         if addr >= 0x4000 and addr <= 0x4017:
-            # Controller strobe first
-            if addr == 0x4016:  # Controller 1
+            if addr == 0x4016:  # Controller 1 strobe
                 strobe = bool(val & 0x01)
                 self.controllers[1].strobe = strobe
                 if strobe:
                     self.controllers[1].latch()
-            elif addr == 0x4017:  # Controller 2
+            elif addr == 0x4017:  # Controller 2 strobe
                 strobe = bool(val & 0x01)
                 self.controllers[2].strobe = strobe
                 if strobe:
                     self.controllers[2].latch()
-        
-        if addr >= 0x4000 and addr <= 0x4015:
-            print(f"is write at {hex(addr)}:{hex(val)} ({val})")
-            self.apu.write_register(addr, val)
+            elif addr <= 0x4015:  # APU registers
+                reg = addr & 0xFF
+                self.apu.write_register(reg, val)
 
         # --- OAM DMA ($4014)
         if addr == 0x4014:
-            # Schedule DMA page (256 bytes) for next CPU cycle
             self._oam_dma_pending_page = val
 
         # --- ROM area ($8000+)
         if addr >= 0x8000:
-            # Writes to ROM do not affect memory, but update data bus
             self.data_bus = val
 
     def _ppu_open_bus_value(self) -> int:
@@ -950,9 +942,8 @@ class Emulator:
             
             for _ in range(3):
                 self.Emulate_PPU()
-            
-            self.apu.step()
-
+                self.apu.step() # async lol
+                
             self.frame_count += 1
             current_time = time.time()
             if current_time - self.last_fps_time >= 1.0:
@@ -1016,10 +1007,7 @@ class Emulator:
             self.IRQ_RUN()
             return
 
-        if self.cycles > 0:
-            # self.cycles -= 1
-            self.cycles = 0 # for testing
-            # return
+        if self.cycles > 0: self.cycles = 0
 
         self.opcode = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
@@ -1029,6 +1017,7 @@ class Emulator:
             self._emit("tracelogger", self.tracelog[-1])
 
         self.ExecuteOpcode()
+
         # Apply any extra cycles recorded during operand fetch (page-cross, dummy reads)
         extra = getattr(self, '_cycles_extra', 0)
         if extra:
@@ -1056,6 +1045,7 @@ class Emulator:
                 high = self.Read(0xFFFF)
                 self.ProgramCounter = (high << 8) | low
                 self.cycles = 7
+                return
 
             case 0x20:  # JSR
                 low = self.Read(self.ProgramCounter)
@@ -1068,6 +1058,7 @@ class Emulator:
                 self.data_bus = high
                 self.ProgramCounter = (high << 8) | low
                 self.cycles = 6
+                return
 
             case 0x40 | 0x60:  # RTI (0x40), RTS (0x60)
                 if self.opcode == 0x40:  # RTI
@@ -1082,6 +1073,7 @@ class Emulator:
                     self.ProgramCounter = ((high << 8) | low) + 1
                     self.ProgramCounter &= 0xFFFF
                     self.cycles = 6
+                return
 
             case 0x4C | 0x6C:  # JMP Absolute (0x4C), JMP Indirect (0x6C)
                 if self.opcode == 0x4C:  # JMP Absolute
@@ -1099,6 +1091,7 @@ class Emulator:
                     high = self.Read((ptr & 0xFF00) | ((ptr + 1) & 0xFF))
                     self.ProgramCounter = (high << 8) | low
                     self.cycles = 5
+                return
 
             # BRANCH INSTRUCTIONS 
             case 0x10 | 0x30 | 0x50 | 0x70 | 0x90 | 0xB0 | 0xD0 | 0xF0:
@@ -1110,6 +1103,7 @@ class Emulator:
                 elif self.opcode == 0xB0: self.Branch(self.flag.Carry)
                 elif self.opcode == 0xD0: self.Branch(not self.flag.Zero)
                 elif self.opcode == 0xF0: self.Branch(self.flag.Zero)
+                return
 
             # LOAD INSTRUCTIONS - LDA 
             case 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1:
@@ -1146,6 +1140,7 @@ class Emulator:
                     self.A = self.Read(self.addressBus)
                     self.cycles = 5  # Base cycles only, extra cycles handled separately
                 self.UpdateZeroNegativeFlags(self.A)
+                return
 
             # LOAD INSTRUCTIONS - LDX 
             case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE:
@@ -1170,6 +1165,7 @@ class Emulator:
                     self.X = self.Read(self.addressBus)
                     self.cycles = 4
                 self.UpdateZeroNegativeFlags(self.X)
+                return
 
             # LOAD INSTRUCTIONS - LDY 
             case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC:
@@ -1194,6 +1190,7 @@ class Emulator:
                     self.Y = self.Read(self.addressBus)
                     self.cycles = 4
                 self.UpdateZeroNegativeFlags(self.Y)
+                return
 
             # STORE INSTRUCTIONS - STA 
             case 0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91:
@@ -1225,6 +1222,7 @@ class Emulator:
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     self.cycles = 5
                     self.Write(self.addressBus, self.A)
+                return
 
             # STORE INSTRUCTIONS - STX/STY 
             case 0x86 | 0x96 | 0x8E | 0x84 | 0x94 | 0x8C:
@@ -1252,6 +1250,7 @@ class Emulator:
                     self.ReadOperands_AbsoluteAddressed()
                     self.Write(self.addressBus, self.Y)
                     self.cycles = 4
+                return
 
             # TRANSFER INSTRUCTIONS 
             case 0xAA | 0xA8 | 0x8A | 0x98 | 0xBA | 0x9A:
@@ -1273,6 +1272,7 @@ class Emulator:
                 elif self.opcode == 0x9A:  # TXS
                     self.stackPointer = self.X
                 self.cycles = 2
+                return
 
             # STACK INSTRUCTIONS 
             case 0x48 | 0x68 | 0x08 | 0x28:
@@ -1289,6 +1289,7 @@ class Emulator:
                 elif self.opcode == 0x28:  # PLP
                     self.SetProcessorStatus(self.Pop())
                     self.cycles = 4
+                return
 
             # LOGICAL INSTRUCTIONS - AND 
             case 0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 | 0x32:
@@ -1329,6 +1330,7 @@ class Emulator:
                     value = self.Read(self.addressBus)
                     self.cycles = 6
                 self.Op_AND(value)
+                return
 
             # LOGICAL INSTRUCTIONS - ORA 
             case 0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11:
@@ -1365,6 +1367,7 @@ class Emulator:
                     value = self.Read(self.addressBus)
                     self.cycles = 5
                 self.Op_ORA(value)
+                return
 
             # LOGICAL INSTRUCTIONS - EOR 
             case 0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51:
@@ -1401,6 +1404,7 @@ class Emulator:
                     value = self.Read(self.addressBus)
                     self.cycles = 5
                 self.Op_EOR(value)
+                return
 
             # BIT INSTRUCTIONS 
             case 0x24 | 0x2C:
@@ -1411,6 +1415,7 @@ class Emulator:
                     self.ReadOperands_AbsoluteAddressed()
                     self.cycles = 4
                 self.Op_BIT(self.Read(self.addressBus))
+                return
 
             # ARITHMETIC INSTRUCTIONS - ADC 
             case 0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71:
@@ -1447,6 +1452,7 @@ class Emulator:
                     value = self.Read(self.addressBus)
                     self.cycles = 5
                 self.Op_ADC(value)
+                return
 
             # ARITHMETIC INSTRUCTIONS - SBC 
             case 0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB:
@@ -1483,6 +1489,7 @@ class Emulator:
                     value = self.Read(self.addressBus)
                     self.cycles = 5
                 self.Op_SBC(value)
+                return
 
             # COMPARE INSTRUCTIONS - CMP 
             case 0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1:
@@ -1519,6 +1526,7 @@ class Emulator:
                     value = self.Read(self.addressBus)
                     self.cycles = 5
                 self.Op_CMP(value)
+                return
 
             # COMPARE INSTRUCTIONS - CPX/CPY 
             case 0xE0 | 0xE4 | 0xEC | 0xC0 | 0xC4 | 0xCC:
@@ -1551,6 +1559,7 @@ class Emulator:
                     self.Op_CPX(value)
                 else:
                     self.Op_CPY(value)
+                return
 
             # INCREMENT INSTRUCTIONS 
             case 0xE6 | 0xF6 | 0xEE | 0xFE | 0xE8 | 0xC8:
@@ -1578,6 +1587,7 @@ class Emulator:
                     self.Y = (self.Y + 1) & 0xFF
                     self.UpdateZeroNegativeFlags(self.Y)
                     self.cycles = 2
+                return
 
             # DECREMENT INSTRUCTIONS 
             case 0xC6 | 0xD6 | 0xCE | 0xDE | 0xCA | 0x88:
@@ -1605,6 +1615,7 @@ class Emulator:
                     self.Y = (self.Y - 1) & 0xFF
                     self.UpdateZeroNegativeFlags(self.Y)
                     self.cycles = 2
+                return
 
             # SHIFT INSTRUCTIONS - ASL 
             case 0x0A | 0x06 | 0x16 | 0x0E | 0x1E:
@@ -1630,6 +1641,7 @@ class Emulator:
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_ASL(self.addressBus, self.Read(self.addressBus))
                     self.cycles = 7
+                return
 
             # SHIFT INSTRUCTIONS - LSR 
             case 0x4A | 0x46 | 0x56 | 0x4E | 0x5E:
@@ -1654,6 +1666,7 @@ class Emulator:
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_LSR(self.addressBus, self.Read(self.addressBus))
                     self.cycles = 7
+                return
 
             # ROTATE INSTRUCTIONS - ROL 
             case 0x2A | 0x26 | 0x36 | 0x2E | 0x3E:
@@ -1679,6 +1692,7 @@ class Emulator:
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_ROL(self.addressBus, self.Read(self.addressBus))
                     self.cycles = 7
+                return
 
             # ROTATE INSTRUCTIONS - ROR 
             case 0x6A | 0x66 | 0x76 | 0x6E | 0x7E:
@@ -1704,6 +1718,7 @@ class Emulator:
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_ROR(self.addressBus, self.Read(self.addressBus))
                     self.cycles = 7
+                return
 
             # FLAG INSTRUCTIONS 
             case 0x18 | 0x38 | 0x58 | 0x78 | 0xB8 | 0xD8 | 0xF8:
@@ -1715,35 +1730,43 @@ class Emulator:
                 elif self.opcode == 0xD8: self.flag.Decimal = False
                 elif self.opcode == 0xF8: self.flag.Decimal = True
                 self.cycles = 2
+                return
 
             # NOP INSTRUCTIONS 
             case 0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA:  # NOP variants
                 self.cycles = 2
+                return
 
             case 0x80 | 0x82 | 0x89 | 0xC2 | 0xE2:  # NOP Immediate
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 self.cycles = 2
+                return
 
             case 0x04 | 0x44 | 0x64:  # NOP Zero Page
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 self.cycles = 3
+                return
 
             case 0x14 | 0x34 | 0x54 | 0x74 | 0xD4 | 0xF4:  # NOP Zero Page,X
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 self.cycles = 4
+                return
 
             case 0x0C:  # NOP Absolute
                 self.ProgramCounter = (self.ProgramCounter + 2) & 0xFFFF
                 self.cycles = 4
+                return
 
             case 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC:  # NOP Absolute,X
                 self.ProgramCounter = (self.ProgramCounter + 2) & 0xFFFF
                 self.cycles = 4
+                return
 
             # UNOFFICIAL/ILLEGAL OPCODES - SINGLE BYTE 
             case 0x02 | 0x72:  # KIL/JAM
                 self.CPU_Halted = True
                 self.cycles = 1
+                return
 
             case 0x0B | 0x2B:  # ANC imm
                 val = self.Read(self.ProgramCounter)
@@ -1751,6 +1774,7 @@ class Emulator:
                 self.Op_AND(val)
                 self.flag.Carry = self.flag.Negative
                 self.cycles = 2
+                return
 
             case 0x4B:  # ALR imm
                 val = self.Read(self.ProgramCounter)
@@ -1760,6 +1784,7 @@ class Emulator:
                 self.A = (self.A >> 1) & 0xFF
                 self.UpdateZeroNegativeFlags(self.A)
                 self.cycles = 2
+                return
 
             case 0x6B:  # ARR imm
                 val = self.Read(self.ProgramCounter)
@@ -1773,6 +1798,7 @@ class Emulator:
                 self.flag.Overflow = bit6 ^ bit5
                 self.UpdateZeroNegativeFlags(self.A)
                 self.cycles = 2
+                return
 
             case 0x8B:  # ANE imm
                 val = self.Read(self.ProgramCounter)
@@ -1780,6 +1806,7 @@ class Emulator:
                 self.A = self.X & val
                 self.UpdateZeroNegativeFlags(self.A)
                 self.cycles = 2
+                return
 
             case 0xAB:  # LAX imm
                 val = self.Read(self.ProgramCounter)
@@ -1787,6 +1814,7 @@ class Emulator:
                 self.A = self.X = val & 0xFF
                 self.UpdateZeroNegativeFlags(self.A)
                 self.cycles = 2
+                return
 
             case 0xCB:  # AXS imm
                 val = self.Read(self.ProgramCounter)
@@ -1796,6 +1824,7 @@ class Emulator:
                 self.X = tmp & 0xFF
                 self.UpdateZeroNegativeFlags(self.X)
                 self.cycles = 2
+                return
 
             # UNOFFICIAL/ILLEGAL OPCODES - MEMORY 
             # SLO (ASL then ORA)
@@ -1828,6 +1857,7 @@ class Emulator:
                 value = (value << 1) & 0xFF
                 self.Write(self.addressBus, value)  # Actual write
                 self.Op_ORA(value)
+                return
 
             # RLA (ROL then AND)
             case 0x23 | 0x27 | 0x2F | 0x33 | 0x37 | 0x3B | 0x3F:
@@ -1860,6 +1890,7 @@ class Emulator:
                 value = ((value << 1) | carry_in) & 0xFF
                 self.Write(self.addressBus, value)  # Actual write
                 self.Op_AND(value)
+                return
 
             # SRE (LSR then EOR)
             case 0x43 | 0x47 | 0x4F | 0x53 | 0x57 | 0x5B | 0x5F:
@@ -1891,6 +1922,7 @@ class Emulator:
                 value >>= 1
                 self.Write(self.addressBus, value)  # Actual write
                 self.Op_EOR(value)
+                return
 
             # RRA (ROR then ADC)
             case 0x63 | 0x67 | 0x6F | 0x73 | 0x77 | 0x7B | 0x7F:
@@ -1923,6 +1955,7 @@ class Emulator:
                 value = ((value >> 1) | carry_in) & 0xFF
                 self.Write(self.addressBus, value)  # Actual write
                 self.Op_ADC(value)
+                return
 
             # SAX (STA & STX)
             case 0x87 | 0x8F | 0x83 | 0x97:
@@ -1939,6 +1972,7 @@ class Emulator:
                     self.ReadOperands_ZeroPage_YIndexed()
                     self.cycles = 4
                 self.Write(self.addressBus, self.A & self.X)
+                return
 
             # LAX (LDA & LDX)
             case 0xA3 | 0xA7 | 0xAF | 0xB3 | 0xB7 | 0xBF:
@@ -1964,6 +1998,7 @@ class Emulator:
                 value = self.Read(self.addressBus)
                 self.A = self.X = value
                 self.UpdateZeroNegativeFlags(self.A)
+                return
 
             # DCP (DEC then CMP)
             case 0xC3 | 0xC7 | 0xCF | 0xD3 | 0xD7 | 0xDB | 0xDF:
@@ -2002,6 +2037,7 @@ class Emulator:
 
                 self.Write(self.addressBus, value)
                 self.Op_CMP(value)
+                return
 
             # ISC (INC then SBC)
             case 0xE3 | 0xE7 | 0xEF | 0xF3 | 0xF7 | 0xFB | 0xFF:
@@ -2040,6 +2076,7 @@ class Emulator:
 
                 self.Write(self.addressBus, value)
                 self.Op_SBC(value)
+                return
 
             # OBSCURE UNOFFICIAL OPCODES 
             case 0x93 | 0x9F | 0x9C | 0x9E | 0x9B | 0xBB:
@@ -2075,6 +2112,7 @@ class Emulator:
                     self.A = self.X = self.stackPointer = value & 0xFF
                     self.UpdateZeroNegativeFlags(self.A)
                     self.cycles = 4
+                return
 
             case _:  # Unknown opcode
                 print(f"Unknown opcode: ${self.opcode:02X} at PC=${self.ProgramCounter-1:04X}")
@@ -2082,6 +2120,7 @@ class Emulator:
                     self.CPU_Halted = True
                     raise Exception(f"Unknown opcode ${self.opcode:02X} encountered at ${self.ProgramCounter-1:04X}")
                 self.cycles = 2
+                return
 
     def NMI_RUN(self):
         """Handle Non-Maskable Interrupt."""
@@ -2358,12 +2397,9 @@ class Emulator:
 
         self._sprites_line = sprites
 
-    @lru_cache(maxsize=((len(nes_palette) + 1) * 3))
-    def NESPaletteToRGB(self, color_idx: int) -> np.ndarray:
+    @memoize(maxsize=((len(nes_palette) + 1) * 3))
+    def NESPaletteToRGB(self, color_idx: int) -> int:
         """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
-        
-        # if random.random() < 0.25: # fun code
-        #     return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
         
         return nes_palette[color_idx & 0x3F]
 
