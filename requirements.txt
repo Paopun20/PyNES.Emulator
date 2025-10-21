@@ -30,7 +30,6 @@ pkg==0.2
 platformdirs==4.5.0
 pluggy==1.6.0
 propcache==0.4.1
-PyAudio==0.2.14
 pygame==2.6.1
 Pygments==2.19.2
 pyinstaller==6.11.0
