@@ -10,6 +10,12 @@ A NES (Nintendo Entertainment System) emulator written in 100% Python.
 
 Not suitable for speedrunning at this time—please wait for future updates before using PyNES for these purposes.
 
+1. No lag frame.
+2. Run too slow like **shit**.
+3. Accuracy like **shit**.
+
+why I make this? it is fun.
+
 ## Features (some work in progress)
 
 - **CPU Emulation**: Partial implementation of the 6502 CPU instruction set.
@@ -21,7 +27,7 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 
 ## Current Status
 
-- CPU: ~( IDK )% of instructions implemented.
+- CPU: Basic instruction set implemented, but many unofficial opcodes are missing.
 - PPU: Basic rendering, but many features are incomplete.
 - APU: Work in progress.
 - Input: Basic keyboard mapping.
@@ -38,14 +44,17 @@ Not suitable for speedrunning at this time—please wait for future updates befo
    ```
     git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
    ```
+
 3. Install the required dependencies using:
    ```bash
    pip install -r requirements.txt
    ```
+
 4. Start the emulator with:
    ```bash
    python main.py
    ```
+
 5. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
 ### Run emulator from pre-built executable
@@ -59,7 +68,8 @@ If you want to use a ready-made executable:
 5. Run the executable inside.
 6. When the emulator starts, select a `.nes` ROM file when prompted.
 
-# Controls
+## Controls
+
 - Arrow Keys - D-Pad
 - Z - B Button
 - X - A Button

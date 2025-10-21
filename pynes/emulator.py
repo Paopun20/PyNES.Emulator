@@ -13,10 +13,6 @@ import multiprocessing as mp
 # from numba import njit
 # from numba.experimental import jitclass
 
-# cache
-from functools import lru_cache
-# from cachetools import TTLCache
-
 # debugger
 import time # for fps
 
@@ -200,6 +196,7 @@ class Emulator:
         self.ppu_bus_latch_time = time.time()
         # OAM DMA pending page (execute after instruction completes)
         self._oam_dma_pending_page = None
+        self.oam_dma_page = 0
         
         self.NMI = NMI(False, False)
         self.IRQ = IRQ(False)
@@ -460,12 +457,13 @@ class Emulator:
         elif reg == 0x04:  # OAMDATA
             if (self.PPUMASK & 0x18) and 0 <= self.Scanline < 240:
                 # During rendering, writes are ignored but OAMADDR is still incremented
+                # Handle misaligned OAM by allowing writes to any address
                 if 1 <= self.PPUCycles <= 64:
                     # During secondary OAM clear: increment by 1
                     self.OAMADDR = (self.OAMADDR + 1) & 0xFF
                 else:
-                    # During sprite evaluation/loading: increment by 4 and mask to multiple of 4
-                    self.OAMADDR = (self.OAMADDR + 4) & 0xFC
+                    # During sprite evaluation/loading: allow any write but increment appropriately
+                    self.OAMADDR = (self.OAMADDR + 1) & 0xFF
             else:
                 # Outside rendering - normal write and increment
                 self.OAM[self.OAMADDR] = val
@@ -2131,6 +2129,31 @@ class Emulator:
         self.ProgramCounter = (high << 8) | low
         self.cycles = 7
 
+    def CheckSpriteZeroHit(self, scanline: int, x: int, sprite_index: int, color_idx: int) -> bool:
+        """Check if this sprite should trigger sprite 0 hit."""
+        # Only sprite 0 (first sprite in OAM) can trigger the hit
+        if sprite_index != 0:
+            return False
+        
+        # Both background and sprite rendering must be enabled
+        if (self.PPUMASK & 0x18) != 0x18:
+            return False
+        
+        # Sprite must be non-transparent
+        if color_idx == 0:
+            return False
+        
+        # Background pixel at this position must be opaque
+        if not (hasattr(self, '_bg_opaque_line') and self._bg_opaque_line[x]):
+            return False
+        
+        # Can't occur at leftmost or rightmost pixel
+        if x == 0 or x == 255:
+            return False
+        
+        # All conditions met
+        return True
+
     def Emulate_PPU(self):
         """Emulate one PPU cycle with precise VBlank and NMI timing."""
 
@@ -2276,40 +2299,43 @@ class Emulator:
         """Render up to 8 sprites on a given scanline into the framebuffer."""
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
         sprites_drawn = 0
-    
+        
+        # Clear sprite 0 hit flag at start of visible scanline
+        if self.PPUCycles == 1 and 0 <= scanline < 240:
+            self.PPUSTATUS &= ~0x40
+
         for i in range(0, 256, 4):  # each sprite = 4 bytes
             y = self.OAM[i] + 1
             tile_index = self.OAM[i + 1]
             attributes = self.OAM[i + 2]
             x = self.OAM[i + 3]
-    
-            # Check visibility
+
+            # Check visibility - sprite must be on current scanline
             if not (y <= scanline < y + sprite_height):
                 continue
-            
+
             # Sprite overflow (more than 8 on same line)
             sprites_drawn += 1
             if sprites_drawn > 8:
-                self.PPUSTATUS |= 0x20  # Set sprite overflow flag
                 break
             
             # Determine pattern table base (from PPUCTRL)
             pattern_table_base = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
-    
+
             # Handle 8x16 sprites
             if sprite_height == 16:
                 pattern_table_base = (tile_index & 1) * 0x1000
                 tile_index &= 0xFE  # even index only
-    
+
             # Fetch tile row
             row = scanline - y
             if attributes & 0x80:
                 row = sprite_height - 1 - row  # vertical flip
-    
+
             pattern_addr = pattern_table_base + (tile_index * 16) + row
             low = self.CHRROM[pattern_addr]
             high = self.CHRROM[pattern_addr + 8]
-    
+
             # Draw 8 pixels
             for col in range(8):
                 px = 7 - col if (attributes & 0x40) else col  # horizontal flip
@@ -2323,23 +2349,25 @@ class Emulator:
                 palette_base = 0x10 + ((attributes & 0x03) << 2)
                 color = self.PaletteRAM[(palette_base + color_idx) & 0x1F]
                 rgb = nes_palette[color & 0x3F]
-    
+
                 sx = x + col
                 if sx < 0 or sx >= 256:
                     continue  # skip pixels offscreen
                 
+                self.CheckSpriteZeroHit(scanline, sx, i // 4, color_idx)
+                
                 if 0 <= scanline < 240:
                     priority = (attributes >> 5) & 1
-                    if priority == 0 or (self.FrameBuffer[scanline, sx] == 0).all():
+                    bg_pixel_opaque = hasattr(self, '_bg_opaque_line') and self._bg_opaque_line[sx]
+
+                    # Sprite 0 hit detection - only check if both background and sprites are enabled
+                    if i == 0 and color_idx != 0 and (self.PPUMASK & 0x18) == 0x18:
+                        if bg_pixel_opaque and 1 <= sx <= 254:  # Sprite 0 hit can't occur at x=0 or x=255
+                            self.PPUSTATUS |= 0x40  # Set sprite 0 hit flag
+
+                    # Sprite priority: 0=front, 1=behind background
+                    if priority == 0 or not bg_pixel_opaque:
                         self.FrameBuffer[scanline, sx] = rgb
-    
-                # Sprite 0 hit detection
-                if i == 0 and color_idx != 0:
-                    # Only valid if rendering enabled
-                    if (self.PPUMASK & 0x18) == 0x18:  # background + sprite both on
-                        bg_pixel = self.FrameBuffer[scanline, sx]
-                        if not (bg_pixel == 0).all():
-                            self.PPUSTATUS |= 0x40  # sprite zero hit
 
     def EvaluateSpritesForScanline(self):
         """Select up to 8 sprites for the current scanline and set overflow flag."""
@@ -2353,7 +2381,8 @@ class Emulator:
             y = int(self.OAM[oam_addr])
 
             # Check if sprite is in range for this scanline
-            if y <= self.Scanline < y + sprite_height:
+            # Note: y=255 means sprite is offscreen, y=0-239 are visible
+            if y <= self.Scanline < y + sprite_height and y < 240:
                 n_found += 1
 
                 # Only store first 8 sprites
@@ -2367,6 +2396,8 @@ class Emulator:
                     })
 
         # Set sprite overflow flag (bit 5) if more than 8 sprites found
+        # According to NES spec: flag is set when more than 8 sprites are detected
+        # during secondary OAM evaluation (not just found in primary OAM)
         if n_found > 8:
             self.PPUSTATUS |= 0x20
         else:
@@ -2385,6 +2416,12 @@ class Emulator:
         """Copy 256 bytes from CPU page to OAM and add DMA cycles."""
         base = (page & 0xFF) << 8
         for i in range(256):
-            self.OAM[i] = self.Read(base + i)
-        # DMA takes 513 or 514 CPU cycles depending on alignment; approximate 513
+            data = self.Read(base + i)
+            self.OAM[i] = data
+            # Update data bus with the read value
+            self.data_bus = data
+        # DMA takes 513 or 514 CPU cycles depending on alignment
         self.cycles += 513
+    
+        # Also handle the case when reading from $4014
+        self.oam_dma_page = page  # Store for reading
