@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from collections import deque
 from typing import List, Dict # make fast?
 from pynes.helper.memoize import memoize
-import cProfile
-
-import timeit
 
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing as mp
@@ -474,6 +471,7 @@ class Emulator:
                 self.OAM[self.OAMADDR] = val
                 # Increment by 1 for writes outside rendering
                 self.OAMADDR = (self.OAMADDR + 1) & 0xFF
+            self.ppu_bus_latch = val
 
         elif reg == 0x05:  # PPUSCROLL
             if not self.w:
@@ -2189,7 +2187,8 @@ class Emulator:
 
         # Sprite rendering
         if self.PPUMASK & 0x10:  # Sprites enabled
-            self.RenderSprites()
+            self.PPUSTATUS &= 0x9F  # Clear sprite 0 hit flag
+            self.RenderSprites(self.Scanline)
 
     def RenderBackground(self):
         """Render background for current scanline with proper scrolling."""
@@ -2273,96 +2272,74 @@ class Emulator:
                 else:
                     self._bg_opaque_line[x] = True
 
-    def RenderSprites(self):
-        """Render sprites for current scanline with proper 8x16 handling."""
+    def RenderSprites(self, scanline: int):
+        """Render up to 8 sprites on a given scanline into the framebuffer."""
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
-        pattern_base_default = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
-
-        # Iterate through evaluated sprites (max 8) in REVERSE order for proper priority
-        for entry in reversed(getattr(self, '_sprites_line', [])):
-            spr_index = entry['index']
-            sprite_y = entry['y']
-
-            # Check if sprite is on this scanline
-            if sprite_y > self.Scanline or sprite_y + sprite_height <= self.Scanline:
+        sprites_drawn = 0
+    
+        for i in range(0, 256, 4):  # each sprite = 4 bytes
+            y = self.OAM[i] + 1
+            tile_index = self.OAM[i + 1]
+            attributes = self.OAM[i + 2]
+            x = self.OAM[i + 3]
+    
+            # Check visibility
+            if not (y <= scanline < y + sprite_height):
                 continue
-
-            tile_index = entry['tile']
-            attributes = entry['attr']
-            sprite_x = entry['x']
-
-            palette_idx = attributes & 0x03
-            h_flip = bool(attributes & 0x40)
-            v_flip = bool(attributes & 0x80)
-            priority = bool(attributes & 0x20)  # 0 = front, 1 = behind background
-
-            # Calculate tile row
-            sprite_row = self.Scanline - sprite_y
-            if v_flip:
-                sprite_row = sprite_height - 1 - sprite_row
-
-            # Get tile data - FIXED 8x16 handling
+            
+            # Sprite overflow (more than 8 on same line)
+            sprites_drawn += 1
+            if sprites_drawn > 8:
+                self.PPUSTATUS |= 0x20  # Set sprite overflow flag
+                break
+            
+            # Determine pattern table base (from PPUCTRL)
+            pattern_table_base = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
+    
+            # Handle 8x16 sprites
             if sprite_height == 16:
-                # 8x16: pattern table depends on tile_index bit 0
-                pattern_base = 0x0000 if (tile_index & 1) == 0 else 0x1000
-                # Use top or bottom tile based on row
-                if sprite_row >= 8:
-                    # Bottom tile
-                    tile_addr = pattern_base + ((tile_index & 0xFE) | 1) * 16 + (sprite_row - 8)
-                else:
-                    # Top tile
-                    tile_addr = pattern_base + (tile_index & 0xFE) * 16 + sprite_row
-            else:
-                # 8x8: use PPUCTRL pattern table
-                tile_addr = pattern_base_default + tile_index * 16 + sprite_row
-
-            plane1 = int(self.CHRROM[tile_addr])
-            plane2 = int(self.CHRROM[tile_addr + 8])
-
-            # Render 8 pixels
-            for pixel in range(8):
-                # FIXED: horizontal flip calculation
-                if h_flip:
-                    x = sprite_x + pixel
-                    bit = pixel  # Don't invert bit when h_flip is true
-                else:
-                    x = sprite_x + pixel
-                    bit = 7 - pixel  # Normal left-to-right
-
-                if x < 0 or x >= 256:
-                    continue
-
-                # Get pixel color
-                color_idx = ((plane1 >> bit) & 1) | (((plane2 >> bit) & 1) << 1)
-
-                if color_idx == 0:  # Transparent
-                    continue
-
-                # Apply left 8-pixel sprite clipping BEFORE priority check
-                if x < 8 and (self.PPUMASK & 0x04) == 0:
-                    continue
-
-                # Check priority with background using opaque map
-                if priority and hasattr(self, '_bg_opaque_line') and self._bg_opaque_line[x]:
-                    continue
-
+                pattern_table_base = (tile_index & 1) * 0x1000
+                tile_index &= 0xFE  # even index only
+    
+            # Fetch tile row
+            row = scanline - y
+            if attributes & 0x80:
+                row = sprite_height - 1 - row  # vertical flip
+    
+            pattern_addr = pattern_table_base + (tile_index * 16) + row
+            low = self.CHRROM[pattern_addr]
+            high = self.CHRROM[pattern_addr + 8]
+    
+            # Draw 8 pixels
+            for col in range(8):
+                px = 7 - col if (attributes & 0x40) else col  # horizontal flip
+                bit0 = (low >> (7 - px)) & 1
+                bit1 = (high >> (7 - px)) & 1
+                color_idx = (bit1 << 1) | bit0
+                if color_idx == 0:
+                    continue  # transparent
+                
+                # Apply palette
+                palette_base = 0x10 + ((attributes & 0x03) << 2)
+                color = self.PaletteRAM[(palette_base + color_idx) & 0x1F]
+                rgb = nes_palette[color & 0x3F]
+    
+                sx = x + col
+                if sx < 0 or sx >= 256:
+                    continue  # skip pixels offscreen
+                
+                if 0 <= scanline < 240:
+                    priority = (attributes >> 5) & 1
+                    if priority == 0 or (self.FrameBuffer[scanline, sx] == 0).all():
+                        self.FrameBuffer[scanline, sx] = rgb
+    
                 # Sprite 0 hit detection
-                if (spr_index == 0 and                           # Must be sprite 0
-                    x < 255 and                                  # Not at x=255
-                    (self.PPUMASK & 0x18) == 0x18 and          # Both sprites and BG enabled
-                    hasattr(self, '_bg_opaque_line') and        # BG data exists
-                    self._bg_opaque_line[x] and                 # BG pixel has pattern data
-                    color_idx > 0 and                           # Sprite pixel has pattern data
-                    (self.PPUSTATUS & 0x40) == 0):             # Not already hit
-                    # Left edge clipping check
-                    if x >= 8 or (self.PPUMASK & 0x06) == 0x06:
-                        self.PPUSTATUS |= 0x40  # Set sprite 0 hit
-
-                # Get sprite palette
-                palette_addr = (0x10 + palette_idx * 4 + color_idx) & 0x1F
-                color = int(self.PaletteRAM[palette_addr])
-
-                self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
+                if i == 0 and color_idx != 0:
+                    # Only valid if rendering enabled
+                    if (self.PPUMASK & 0x18) == 0x18:  # background + sprite both on
+                        bg_pixel = self.FrameBuffer[scanline, sx]
+                        if not (bg_pixel == 0).all():
+                            self.PPUSTATUS |= 0x40  # sprite zero hit
 
     def EvaluateSpritesForScanline(self):
         """Select up to 8 sprites for the current scanline and set overflow flag."""
