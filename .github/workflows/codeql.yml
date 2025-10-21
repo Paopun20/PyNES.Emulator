@@ -1,5 +1,4 @@
 name: "CodeQL"
-
 on:
   push:
     branches: [ "main" ]
@@ -8,59 +7,46 @@ on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch: {}
-
 jobs:
   analyze:
     name: CodeQL Analyze
-    runs-on: windows-latest # windows is the best for Python analysis?
-
+    runs-on: windows-latest  # windows
     permissions:
       security-events: write
       packages: read
       actions: read
       contents: read
-
     strategy:
       fail-fast: false
       matrix:
         language: [ python ]
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v5
-
+      
     - name: Setup Python
       uses: actions/setup-python@v6.0.0
       with:
         python-version: '3.x'
-
+        
     - name: Cache pip
       uses: actions/cache@v4
       with:
-        path: ~/.cache/pip
+        path: ~\AppData\Local\pip\Cache
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
+          
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
+        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+        
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v4.30.8
       with:
         languages: python
         queries: +security-extended,security-and-quality
-
+        
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4.30.8
       with:
         category: "/language:python"
-
-    - name: Upload CodeQL results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: codeql-results
-        path: ./codeql-database
