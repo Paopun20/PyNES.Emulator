@@ -1,5 +1,4 @@
 name: Build PyNES Emulator
-
 on:
   push:
     branches: [ main ]
@@ -7,7 +6,6 @@ on:
     branches: [ main ]
   release:
     types: [ published ]
-
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -16,17 +14,31 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
         python-version: ['3.13']
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     defaults:
       run:
         shell: bash
-
     steps:
     - uses: actions/checkout@v5
+    
     - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
-
+    
+    - name: Get pip cache dir
+      id: pip-cache
+      shell: bash
+      run: |
+        echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
+    
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.pip-cache.outputs.dir }}
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          ${{ runner.os }}-pip-
+    
     - name: Install OS dependencies
       shell: bash
       run: |
@@ -35,13 +47,9 @@ jobs:
         elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
           brew install libomp
         fi
-
-    - uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-
+    
     - name: Install UPX
+      continue-on-error: true
       shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
@@ -62,18 +70,19 @@ jobs:
           echo "Unsupported OS: ${{ matrix.os }}"
           exit 1
         fi
-
+    
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
         pip install -r requirements.txt
         pip install git+https://github.com/pyinstaller/pyinstaller.git
-
+    
     - name: Build PyNES
+      id: build
+      continue-on-error: true
       shell: bash
       run: |
         mkdir -p dist
-
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
           userprofile=$(cygpath "$USERPROFILE")
           upx_path_file="$userprofile/.upx_path"
@@ -85,7 +94,6 @@ jobs:
             echo "UPX not found, building without compression"
             pyinstaller pynes.spec --clean --noconfirm
           fi
-
         else
           if command -v upx >/dev/null 2>&1; then
             upx_dir="$(dirname "$(command -v upx)")"
@@ -96,12 +104,40 @@ jobs:
             pyinstaller pynes.spec --clean --noconfirm
           fi
         fi
-
-    - uses: actions/upload-artifact@v4
-      if: always()
+        
+        # Check if build succeeded
+        if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
+          echo "build_success=true" >> $GITHUB_OUTPUT
+        else
+          echo "build_success=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Upload build artifacts
+      if: always() && steps.build.outputs.build_success == 'true'
+      uses: actions/upload-artifact@v4
       with:
         name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
         path: |
           dist/*
           icon.ico
         retention-days: 30
+    
+    - name: Upload build logs on failure
+      if: always() && steps.build.outputs.build_success != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ matrix.os }}-py${{ matrix.python-version }}
+        path: |
+          build/
+          *.log
+        retention-days: 7
+    
+    - name: Report build status
+      if: always()
+      run: |
+        if [[ "${{ steps.build.outputs.build_success }}" == "true" ]]; then
+          echo "✅ Build succeeded for ${{ matrix.os }}"
+        else
+          echo "❌ Build failed for ${{ matrix.os }}"
+          exit 1
+        fi
