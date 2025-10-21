@@ -12,7 +12,7 @@ on:
 jobs:
   analyze:
     name: CodeQL Analyze
-    runs-on: ubuntu-latest
+    runs-on: windows-latest # windows is the best for Python analysis?
 
     permissions:
       security-events: write
