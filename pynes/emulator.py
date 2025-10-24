@@ -1,25 +1,20 @@
 import numpy as np
 import array
+import cython
+import sys
+
 from pynes.apu import APU
 from string import Template
 from dataclasses import dataclass
 from collections import deque
-from typing import List, Dict # make fast?
+from typing import List, Dict
 from pynes.helper.memoize import memoize
-
-from concurrent.futures import ProcessPoolExecutor
-import multiprocessing as mp
-
-# from numba import njit
-# from numba.experimental import jitclass
 
 # debugger
 import time # for fps
 
-import random
-
-# cart
 from pynes.cartridge import Cartridge
+from pynes.controller import Controller
 
 # DATA
 OpCodeNames: List[str] = ["BRK", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "ANC", "NOP", "ORA", "ASL", "SLO", "BPL", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", "JSR", "AND", "HLT", "RLA", "BIT", "AND", "ROL", "RLA", "PLP", "AND", "ROL", "ANC", "BIT", "AND", "ROL", "RLA", "BMI", "AND", "HLT", "RLA", "NOP", "AND", "ROL", "RLA", "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", "RTI", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "PHA", "EOR", "LSR", "ALR", "JMP", "EOR", "LSR", "SRE", "BVC", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", "RTS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "PLA", "ADC", "ROR", "ARR", "JMP", "ADC", "ROR", "RRA", "BVS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", "DEY", "NOP", "TXA", "ANE", "STY", "STA", "STX", "SAX", "BCC", "STA", "HLT", "SHA", "STY", "STA", "STX", "SAX", "TYA", "STA", "TXS", "SHS", "SHY", "STA", "SHX", "SHA", "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", "TAY", "LDA", "TAX", "LXA", "LDY", "LDA", "LDX", "LAX", "BCS", "LDA", "HLT", "LAX", "LDY", "LDA", "LDX", "LAX", "CLV", "LDA", "TSX", "LAE", "LDY", "LDA", "LDX", "LAX", "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", "INY", "CMP", "DEX", "AXS", "CPY", "CMP", "DEC", "DCP", "BNE", "CMP", "HLT", "DCP", "NOP", "CMP", "DEC", "DCP", "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", "CPX", "SBC", "NOP", "ISC", "CPX", "SBC", "INC", "ISC", "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISC", "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC"]
@@ -49,17 +44,8 @@ nes_palette: np.ndarray = np.array([
     (160, 214, 228), (160, 162, 160), (0, 0, 0), (0, 0, 0),
 ], dtype=np.uint8)
 
-class EmulatorProcess:
-    def __init__(self):
-        self.executor = None
-
-    def __enter__(self):
-        self.executor = ProcessPoolExecutor(max_workers=mp.cpu_count())
-        return self.executor
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.executor.shutdown(wait=True)
-        self.executor = None
+sys.set_int_max_str_digits(2**31-1)
+sys.setrecursionlimit(2**31-1)
 
 class EmulatorError(Exception):
     def __init__(self, exception: Exception):
@@ -78,41 +64,10 @@ class Flags:
     Overflow: bool = False
     Negative: bool = False
 
-
 @dataclass
 class Debug:
     Debug: bool = False
     halt_on_unknown_opcode: bool = False
-
-@dataclass
-class Controller:
-    """Represents an NES controller state and shift register."""
-    buttons: Dict[str, bool]  # Current button states
-    shift_register: int = 0  # 8-bit shift register for reading
-    strobe: bool = False  # Strobe state for latching buttons
-
-    def latch(self):
-        """Latch current button states into shift register."""
-        self.shift_register = 0
-        self.shift_register |= (1 << 0) if self.buttons.get("A", False) else 0
-        self.shift_register |= (1 << 1) if self.buttons.get("B", False) else 0
-        self.shift_register |= (1 << 2) if self.buttons.get("Select", False) else 0
-        self.shift_register |= (1 << 3) if self.buttons.get("Start", False) else 0
-        self.shift_register |= (1 << 4) if self.buttons.get("Up", False) else 0
-        self.shift_register |= (1 << 5) if self.buttons.get("Down", False) else 0
-        self.shift_register |= (1 << 6) if self.buttons.get("Left", False) else 0
-        self.shift_register |= (1 << 7) if self.buttons.get("Right", False) else 0
-
-    def read(self) -> int:
-        """Read one bit from the shift register."""
-        if self.strobe:
-            self.latch()  # Re-latch if strobe is high
-            return self.shift_register & 1
-        
-        bit = self.shift_register & 1
-        self.shift_register >>= 1
-        self.shift_register |= 0x80  # Set high bit to 1 after 8 reads
-        return bit
 
 @dataclass
 class NMI:
@@ -125,6 +80,7 @@ class NMI:
 class IRQ:
     Line:bool=False
 
+@cython.cclass
 class Emulator:
     """
     NES emulator with CPU, PPU, APU, and Controller support.
@@ -313,7 +269,7 @@ class Emulator:
                 self.controllers[2].strobe = strobe
                 if strobe:
                     self.controllers[2].latch()
-            elif addr <= 0x4015:  # APU registers
+            elif addr >= 0x4000 and addr <= 0x4015:  # APU registers
                 reg = addr & 0xFF
                 self.apu.write_register(reg, val)
 
@@ -333,6 +289,7 @@ class Emulator:
             self.ppu_bus_latch_time = time.time()
         return getattr(self, 'ppu_bus_latch', 0)
 
+    @cython.inline
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers with NMI suppression."""
         reg = addr & 0x07
@@ -984,6 +941,7 @@ class Emulator:
             self.ProgramCounter = (high << 8) | low
             self.cycles = 7
 
+    @cython.locals(opcode=int, cycles=int, current_instruction_mode=str)
     def Emulate_CPU(self):
         # Reset instruction mode at the start of each cycle
         self.current_instruction_mode = ""
@@ -1025,6 +983,7 @@ class Emulator:
             self._perform_oam_dma(self._oam_dma_pending_page)
             self._oam_dma_pending_page = None
 
+    @cython.inline
     def ExecuteOpcode(self):
         """Execute the current opcode."""
         match self.opcode:

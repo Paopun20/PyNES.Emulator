@@ -1,8 +1,11 @@
 import numpy as np
 import pygame
+import cython
 from pygame import mixer
 
+@cython.cclass
 class APU:
+    @cython.locals(sample_rate=cython.int, buffer_size=cython.int)
     def __init__(self, sample_rate=44100, buffer_size=1024):
         # === Pygame mixer setup ===
         self.sample_rate = sample_rate
