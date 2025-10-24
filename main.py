@@ -1,9 +1,9 @@
 from os import environ
 environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
-from rich.traceback import install; install() # for cool traceback
+from rich.traceback import install; install()
 
-from pynes.emulator import Emulator, OpCodeNames, EmulatorError
+from pynes.emulator import Emulator, EmulatorError
 from pynes.cartridge import Cartridge
 from pynes.api.discord import Presence
 from pathlib import Path
@@ -11,16 +11,21 @@ from tkinter import Tk, filedialog, messagebox
 
 import pygame
 import threading
+import time
+import numpy as np
+
+from pygame.locals import DOUBLEBUF, OPENGL
+from OpenGL.GL import *
+from OpenGL.GLU import *
 
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
-import time
-
-# discord
 from pypresence.types import ActivityType, StatusDisplayType
+
+from numba import njit
 
 console = Console()
 console.clear()
@@ -28,53 +33,92 @@ console.clear()
 presence = Presence(1429842237432266752)
 presence.connect()
 
-__var__ =  "(DEV BUILD)"
+__var__ = "(DEV BUILD)"
 NES_WIDTH = 256
 NES_HEIGHT = 240
 SCALE = 3
 
-presence.update(
-    status_display_type=StatusDisplayType.STATE,
-    activity_type=ActivityType.PLAYING,
-    
-    name="PyNES Emulator",
-    details="LOL",
-    state="TEST",
-)
-
-
+# Initialize pygame first
 pygame.init()
-screen = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), pygame.HWSURFACE | pygame.DOUBLEBUF | pygame.GL_DOUBLEBUFFER)
-pygame.display.set_caption("PyNES Emulator")
+
+# Font for debug overlay (create before OpenGL context)
 font = pygame.font.Font(None, 20)
 icon_path = Path(__file__).parent / "icon.ico"
 
-dump_path = Path(__file__).parent / "debug" / "dump"
-dump_path.mkdir(parents=True, exist_ok=True)
-tab_pressed = False
-
+# Load icon before creating OpenGL context
+icon_surface = None
 try:
-    pygame.display.set_icon(pygame.image.load(icon_path))
+    icon_surface = pygame.image.load(icon_path)
 except Exception:
     console.print("[bold yellow]⚠️ Icon not found[/bold yellow]")
+
+# NOW create the OpenGL context
+screen = pygame.display.set_mode(
+    (NES_WIDTH * SCALE, NES_HEIGHT * SCALE),
+    DOUBLEBUF | OPENGL
+)
+pygame.display.set_caption("PyNES Emulator")
+
+if icon_surface:
+    pygame.display.set_icon(icon_surface)
+
+# Setup OpenGL AFTER context is created
+glClearColor(0.0, 0.0, 0.0, 1.0)
+glEnable(GL_TEXTURE_2D)
+glDisable(GL_DEPTH_TEST)
+glDisable(GL_LIGHTING)
+glViewport(0, 0, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
+
+# Setup orthographic projection
+glMatrixMode(GL_PROJECTION)
+glLoadIdentity()
+glOrtho(0, NES_WIDTH * SCALE, NES_HEIGHT * SCALE, 0, -1, 1)
+glMatrixMode(GL_MODELVIEW)
+glLoadIdentity()
+
+# Create texture for NES frame
+texture_id = glGenTextures(1)
+glBindTexture(GL_TEXTURE_2D, texture_id)
+glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+
+# Initialize texture with black data
+empty_data = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
+glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, NES_WIDTH, NES_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, empty_data)
 
 clock = pygame.time.Clock()
 cpu_clock: int = 1_790_000
 ppu_clock: int = 5_369_317
 all_clock: int = cpu_clock + ppu_clock
 
-controller_state = {'A': False,'B': False,'Select': False,'Start': False,'Up': False,'Down': False,'Left': False,'Right': False}
+controller_state = {
+    'A': False, 'B': False, 'Select': False, 'Start': False,
+    'Up': False, 'Down': False, 'Left': False, 'Right': False
+}
 
-KEY_MAPPING = {pygame.K_x: 'A',pygame.K_z: 'B',pygame.K_RSHIFT: 'Select',pygame.K_RETURN: 'Start',pygame.K_UP: 'Up',pygame.K_DOWN: 'Down',pygame.K_LEFT: 'Left',pygame.K_RIGHT: 'Right'}
+KEY_MAPPING = {
+    pygame.K_x: 'A', pygame.K_z: 'B',
+    pygame.K_RSHIFT: 'Select', pygame.K_RETURN: 'Start',
+    pygame.K_UP: 'Up', pygame.K_DOWN: 'Down',
+    pygame.K_LEFT: 'Left', pygame.K_RIGHT: 'Right'
+}
 
 emulator_vm = Emulator()
 
 root = Tk()
 root.withdraw()
-root.iconbitmap(str(icon_path))
+try:
+    root.iconbitmap(str(icon_path))
+except:
+    pass
 
 while True:
-    nes_path = filedialog.askopenfilename(title="Select a NES file", filetypes=[("NES file", "*.nes")])
+    nes_path = filedialog.askopenfilename(
+        title="Select a NES file",
+        filetypes=[("NES file", "*.nes")]
+    )
     if nes_path:
         if not nes_path.endswith(".nes"):
             messagebox.showerror("Error", "Invalid file type, please select a NES file", icon="error")
@@ -88,6 +132,14 @@ valid, load_cartridge = Cartridge.from_file(nes_path)
 if not valid:
     messagebox.showerror("Error", load_cartridge)
     exit(1)
+
+presence.update(
+    status_display_type=StatusDisplayType.STATE,
+    activity_type=ActivityType.PLAYING,
+    name="PyNES Emulator",
+    details="Running NES Game",
+    state=f"Play {Path(nes_path).name}",
+)
 
 emulator_vm.cartridge = load_cartridge
 emulator_vm.logging = True
@@ -122,15 +174,34 @@ frame_count = 0
 show_debug = True
 start_time = time.time()
 
+# Frame buffer for thread-safe frame updates
+frame_lock = threading.Lock()
+latest_frame = None
+frame_ready = False
+
+def render_text_to_texture(text_lines, width, height):
+    """Render text to a pygame surface and convert to OpenGL texture"""
+    surf = pygame.Surface((width, height), pygame.SRCALPHA)
+    surf.fill((0, 0, 0, 180))
+    
+    y_pos = 5
+    for line in text_lines:
+        text_surf = font.render(line, True, (255, 255, 255))
+        surf.blit(text_surf, (5, y_pos))
+        y_pos += 20
+    
+    # Convert pygame surface to texture data (flip vertically for OpenGL)
+    text_data = pygame.image.tostring(surf, "RGBA", True)
+    return text_data, surf.get_width(), surf.get_height()
+
 def draw_debug_overlay():
-    """Draws semi-transparent debug info on top of current frame"""
+    """Draws semi-transparent debug info using OpenGL"""
     if not show_debug:
         return
 
-    y_pos = 5
     debug_info = [
         f"PyNES Emulator {__var__} [Debug Menu]",
-        f"NES File: {nes_path}",
+        f"NES File: {Path(nes_path).name}",
         f"ROM Header: {emulator_vm.cartridge.HeaderedROM[:0x10]}",
         "",
         f"EUM take: ~{(time.time() - start_time):.2f}s",
@@ -150,51 +221,113 @@ def draw_debug_overlay():
                f"{'U' if emulator_vm.flag.Unused else '-'}"
     ]
 
-    debug_surface = pygame.Surface((NES_WIDTH * SCALE, len(debug_info) * 20 + 10))
-    debug_surface.set_alpha(180)
-    debug_surface.fill((0, 0, 0))
-    screen.blit(debug_surface, (0, 0))
+    debug_height = len(debug_info) * 20 + 10
+    text_data, tex_width, tex_height = render_text_to_texture(
+        debug_info, NES_WIDTH * SCALE, debug_height
+    )
 
-    for line in debug_info:
-        text_surface = font.render(line, True, (255, 255, 255))
-        screen.blit(text_surface, (5, y_pos))
-        y_pos += 20
+    # Create temporary texture for debug overlay
+    debug_tex = glGenTextures(1)
+    glBindTexture(GL_TEXTURE_2D, debug_tex)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, text_data)
+
+    # Enable blending for transparency
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+    # Draw debug overlay quad
+    glBegin(GL_QUADS)
+    glTexCoord2f(0, 1); glVertex2f(0, 0)
+    glTexCoord2f(1, 1); glVertex2f(tex_width, 0)
+    glTexCoord2f(1, 0); glVertex2f(tex_width, tex_height)
+    glTexCoord2f(0, 0); glVertex2f(0, tex_height)
+    glEnd()
+
+    glDisable(GL_BLEND)
+    glDeleteTextures([debug_tex])
+    
+    # Rebind main texture for next frame
+    glBindTexture(GL_TEXTURE_2D, texture_id)
+
+
+def render_frame(frame):
+    """Render frame using OpenGL (must be called from main thread)"""
+    try:
+        # Convert frame to RGB format if needed
+        if frame.dtype != np.uint8:
+            frame = frame.astype(np.uint8)
+        
+        # Ensure frame is contiguous in memory
+        frame_rgb = np.ascontiguousarray(frame, dtype=np.uint8)
+        
+        # Clear the screen
+        glClear(GL_COLOR_BUFFER_BIT)
+        
+        # Update texture with new frame data
+        glBindTexture(GL_TEXTURE_2D, texture_id)
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, NES_WIDTH, NES_HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, frame_rgb)
+        
+        # Draw the NES frame as a textured quad
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 0); glVertex2f(0, 0)
+        glTexCoord2f(1, 0); glVertex2f(NES_WIDTH * SCALE, 0)
+        glTexCoord2f(1, 1); glVertex2f(NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
+        glTexCoord2f(0, 1); glVertex2f(0, NES_HEIGHT * SCALE)
+        glEnd()
+        
+        # Draw debug overlay on top
+        draw_debug_overlay()
+        
+        # Swap buffers
+        pygame.display.flip()
+        
+    except Exception as e:
+        print(f"Frame render error: {e}")
+
 
 def subpro():
     global running, paused, frame_count
     while running:
         if paused:
+            time.sleep(0.01)
             continue
         
-        while running and not paused:
-            try:
-                emulator_vm.Run1Cycle()
-            except EmulatorError as e:
-                errorType = e.type
-                text = e.message
-                print(f"{errorType.__name__}: {text}")
-                running = False
-        frame_count += 1
+        try:
+            emulator_vm.Run1Cycle()
+        except EmulatorError as e:
+            errorType = e.type
+            text = e.message
+            print(f"{errorType.__name__}: {text}")
+            running = False
+
 
 subpro_thread = threading.Thread(target=subpro, daemon=True, name="emulator_thread")
 subpro_thread.start()
 
+
 @emulator_vm.on("frame_complete")
 def vm_frame(frame):
-    surf = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
-    surf = pygame.transform.scale(surf, (NES_WIDTH * SCALE, NES_HEIGHT * SCALE))
-    screen.blit(surf, (0, 0))
-    draw_debug_overlay()
-    pygame.display.flip()
+    """Store frame for rendering on main thread"""
+    global latest_frame, frame_ready
+    with frame_lock:
+        latest_frame = frame.copy() if hasattr(frame, 'copy') else np.array(frame)
+        frame_ready = True
+
 
 @emulator_vm.on("before_cycle")
 def cycle(_):
     global controller_state
     emulator_vm.Input(1, controller_state)
 
+
+# Initial clear
+glClear(GL_COLOR_BUFFER_BIT)
+pygame.display.flip()
+
 # === MAIN LOOP ===
 while running:
-    tab_pressed = pygame.key.get_pressed()[pygame.K_TAB]
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -206,11 +339,16 @@ while running:
             elif event.key == pygame.K_p:
                 paused = not paused
                 console.print(f"[bold yellow]{'⏸️ Paused' if paused else '▶️ Resumed'}[/bold yellow]")
-                vm_frame(emulator_vm.FrameBuffer)
-                
+                if paused and latest_frame is not None:
+                    with frame_lock:
+                        render_frame(latest_frame)
             elif event.key == pygame.K_d:
                 show_debug = not show_debug
                 console.print(f"[cyan]Debug {'ON' if show_debug else 'OFF'}[/cyan]")
+                # Redraw current frame
+                if latest_frame is not None:
+                    with frame_lock:
+                        render_frame(latest_frame)
             elif event.key == pygame.K_r:
                 console.print("[bold red]🔄 Resetting emulator...[/bold red]")
                 emulator_vm.Reset()
@@ -220,11 +358,21 @@ while running:
             if event.key in KEY_MAPPING:
                 controller_state[KEY_MAPPING[event.key]] = False
 
+    # Render new frame if available
+    if frame_ready:
+        with frame_lock:
+            if latest_frame is not None:
+                render_frame(latest_frame)
+                frame_ready = False
+                frame_count += 1
+
+    # Prevent simultaneous opposite directions
     if controller_state['Up'] and controller_state['Down']:
         controller_state['Up'] = controller_state['Down'] = False
     if controller_state['Left'] and controller_state['Right']:
         controller_state['Left'] = controller_state['Right'] = False
     
+    # Update window title
     title = f"PyNES Emulator"
     if paused:
         title += " [PAUSED]"
