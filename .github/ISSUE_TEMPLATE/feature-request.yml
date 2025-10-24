@@ -1,8 +1,7 @@
 name: Feature Request
-about: Suggest an idea for this project
-title: ''
-labels: ''
-assignees: ''
+about: Suggest an idea for improving PyNES
+title: 'Feature Request'
+labels: ['enhancement']
 body:
   - type: textarea
     attributes:

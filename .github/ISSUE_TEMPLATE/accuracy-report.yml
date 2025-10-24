@@ -1,8 +1,7 @@
 name: Accuracy Report
 about: Report an accuracy issue in PyNES
-title: ''
-labels: ''
-assignees: ''
+title: 'Accuracy Issue Report'
+labels: ["bug", "accuracy report"]
 body:
   - type: textarea
     attributes:
