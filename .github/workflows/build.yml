@@ -2,7 +2,7 @@ name: Build PyNES Emulator
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   pull_request:
     branches: [ main ]
   release:
@@ -123,4 +123,4 @@ jobs:
         path: |
           dist/*
           icon.ico
-        retention-days: 30
+        retention-days: 90
