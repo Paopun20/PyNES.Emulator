@@ -2,7 +2,7 @@
 
 [![Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Python Version](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/downloads/) [![GitHub Stars](https://img.shields.io/github/stars/Paopun20/PyNES.Emulator.svg?style=social&label=Star)](https://github.com/Paopun20/PyNES.Emulator)
 
-A NES (Nintendo Entertainment System) emulator written in 100% Python and some Cython for performance (some parts are written in C/C++ or Rust (not today), so it's still a Python project.).
+A NES (Nintendo Entertainment System) emulator written in 100% Python (some parts are written in Cython or Rust (not today), so it's still a Python project).
 
 ## Accuracy (can be outdate)
 
@@ -15,6 +15,10 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 1. No lag frame like real NES hardware.
 2. Code run is still very slow if don't use Cython.
 3. Accuracy not 100% yet.
+
+## Performance
+
+The emulator is still under development, and performance is not yet optimized. Expect some slowdowns, especially on less powerful machines. We are actively working on improving performance through various optimizations, including the integration of Cython for critical components.
 
 ## Features (some work in progress)
 

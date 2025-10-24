@@ -21,3 +21,7 @@ dist/*
 debug/*
 
 reference/*
+
+# gen file
+*.c
+*.pyd
