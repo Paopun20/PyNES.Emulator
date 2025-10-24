@@ -1,8 +1,7 @@
 name: Bug Report
 about: Report a bug in PyNES
-title: ''
-labels: ''
-assignees: ''
+title: 'Bug Report'
+labels: ["bug"]
 body:
   - type: textarea
     attributes:
