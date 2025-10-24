@@ -7,7 +7,7 @@ try:
 except ImportError:
     USE_CYTHON = False
 
-ext = '.pyx' if USE_CYTHON else '.c'
+ext = '.py' if USE_CYTHON else '.c'
 
 extensions = [
     Extension(
