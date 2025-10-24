@@ -104,6 +104,11 @@ jobs:
         pip install --upgrade -r requirements.txt
         pip install git+https://github.com/pyinstaller/pyinstaller.git
 
+    - id: build cython extensions
+      name: Build Cython Extensions
+      shell: bash
+      run: python setup.py build_ext --inplace
+
     - id: build
       name: Build PyNES
       continue-on-error: ${{ matrix.os == 'windows-latest' }}
