@@ -90,6 +90,12 @@ jobs:
           echo "Unsupported OS: ${{ matrix.os }}"
           exit 1
         fi
+
+    - name: make env
+      shell: bash
+      run: |
+        python -m venv env
+        source venv/bin/activate
     
     - name: Install Python dependencies
       shell: bash
