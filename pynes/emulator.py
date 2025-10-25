@@ -96,7 +96,7 @@ class Emulator:
         self.CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
         self.logging = True
         self.tracelog = DiskList("trace.log")
-        self.tracelog.clear() # remove old data
+        self.tracelog.clean() # remove old data
         self.controllers: Dict[int, Controller] = {
             1: Controller(buttons={}),  # Controller 1
             2: Controller(buttons={})   # Controller 2
