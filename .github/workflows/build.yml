@@ -103,6 +103,15 @@ jobs:
       shell: bash
       run: python setup.py build_ext --inplace
 
+    - id: onebyonebuild
+      name: Rust
+      shell: bash
+      run: |
+        cd pynes/rust
+        for dir in */ ; do
+          maturin develop --release
+        done
+
     - id: build
       name: Build PyNES
       continue-on-error: ${{ matrix.os == 'windows-latest' }}
@@ -133,6 +142,6 @@ jobs:
       with:
         name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
         path: |
-          dist/*
+          dist/pynes.exe
           icon.ico
         retention-days: 90
