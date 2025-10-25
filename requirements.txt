@@ -3,3 +3,4 @@ pypresence
 rich
 cython
 PyOpenGL
+numpy
