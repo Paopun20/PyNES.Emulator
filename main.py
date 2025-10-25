@@ -24,9 +24,6 @@ from rich.panel import Panel
 from rich import box
 
 from pypresence.types import ActivityType, StatusDisplayType
-
-from numba import njit
-
 console = Console()
 console.clear()
 
