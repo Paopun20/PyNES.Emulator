@@ -14,7 +14,7 @@ cython_ext = cythonize([
 
 rust_ext = [
     RustExtension(
-        target="pynes.rust.disklist",
+        target="disklist",
         path="pynes/rust/disklist/Cargo.toml",
         debug=False,
         py_limited_api=False,
