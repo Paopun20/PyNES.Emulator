@@ -16,9 +16,8 @@ rust_ext = [
     RustExtension(
         target="pynes.rust.disklist",
         path="pynes/rust/disklist/Cargo.toml",
+        debug=False,
         py_limited_api=False,
-        features=["pyembed"],
-        
     ),
 ]
 

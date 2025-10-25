@@ -98,8 +98,8 @@ jobs:
         pip install --upgrade -r requirements.txt
         pip install git+https://github.com/pyinstaller/pyinstaller.git
 
-    - id: build_cython_extensions
-      name: Build Cython Extensions
+    - id: build_extensions
+      name: Build Extensions
       shell: bash
       run: python setup.py build_ext --inplace
 
