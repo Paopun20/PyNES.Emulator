@@ -21,6 +21,7 @@ jobs:
     defaults:
       run:
         shell: bash
+
     steps:
     - name: Checkout
       uses: actions/checkout@v5
@@ -31,11 +32,20 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Setup Rust
-      uses: actions-rs/toolchain@v1.0.6 # latest and this repository have archive, no longer updated this action
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
       with:
-        profile: minimal
-        toolchain: stable
-        override: true
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
     
     - name: Get pip cache dir
       id: pip-cache
@@ -56,9 +66,9 @@ jobs:
       shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-          sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0 libxrender1 libgomp1
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libglib2.0-0 libxrender1 libgomp1
         elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-          brew update
           brew install libomp
         fi
 
@@ -67,7 +77,7 @@ jobs:
       shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-          sudo apt-get update && sudo apt-get install -y upx
+          sudo apt-get install -y upx
           echo "upx_path=$(command -v upx)" >> $GITHUB_OUTPUT
 
         elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
@@ -75,27 +85,32 @@ jobs:
           echo "upx_path=$(command -v upx)" >> $GITHUB_OUTPUT
 
         elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          winget install --id=UPX.UPX -e --accept-source-agreements --accept-package-agreements || true
-          userprofile_win="$USERPROFILE"
-          userprofile=$(cygpath "$userprofile_win" 2>/dev/null || echo "$userprofile_win")
-          upx_link_path="$userprofile/AppData/Local/Microsoft/WinGet/Links"
-          upx_exe="$upx_link_path/upx.exe"
-          if [[ -f "$upx_exe" ]]; then
-            echo "UPX found at $upx_exe"
-            echo "upx_path=$upx_exe" >> $GITHUB_OUTPUT
+          # Try winget first, fallback to direct download
+          if ! winget install --id=UPX.UPX -e --accept-source-agreements --accept-package-agreements --silent; then
+            echo "Winget install failed, attempting direct download..."
+            curl -L -o upx.zip https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win64.zip
+            unzip -q upx.zip
+            upx_dir="$(pwd)/upx-4.2.1-win64"
+            echo "upx_path=$upx_dir/upx.exe" >> $GITHUB_OUTPUT
           else
-            echo "upx_path=" >> $GITHUB_OUTPUT
+            userprofile_win="$USERPROFILE"
+            userprofile=$(cygpath "$userprofile_win" 2>/dev/null || echo "$userprofile_win")
+            upx_link_path="$userprofile/AppData/Local/Microsoft/WinGet/Links"
+            upx_exe="$upx_link_path/upx.exe"
+            if [[ -f "$upx_exe" ]]; then
+              echo "UPX found at $upx_exe"
+              echo "upx_path=$upx_exe" >> $GITHUB_OUTPUT
+            else
+              echo "upx_path=" >> $GITHUB_OUTPUT
+            fi
           fi
-        else
-          echo "Unsupported OS: ${{ matrix.os }}"
-          exit 1
         fi
 
     - name: make env
       shell: bash
       run: |
         python -m venv env
-        source venv/bin/activate
+        source env/bin/activate
     
     - name: Install Python dependencies
       shell: bash
@@ -109,45 +124,56 @@ jobs:
       shell: bash
       run: python setup.py build_ext --inplace
 
-    - id: onebyonebuild
-      name: Rust
+    - name: Build Rust Extensions
       shell: bash
       run: |
         cd pynes/rust
+        # Install maturin if not already available
+        pip install maturin
+        
+        # Build all Rust extensions
         for dir in */ ; do
-          maturin develop --release
+          if [[ -f "${dir}Cargo.toml" ]]; then
+            echo "Building ${dir}..."
+            cd "$dir"
+            maturin develop --release
+            cd ..
+          fi
         done
 
-    - id: build
-      name: Build PyNES
-      continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    - name: Build PyNES
+      id: build
       shell: bash
       run: |
         mkdir -p dist
-        BUILD_EXIT=0
-
+        
         if [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
           upx_dir="$(dirname "${{ steps.upx.outputs.upx_path }}")"
           echo "Using UPX from: $upx_dir"
-          pyinstaller pynes.spec --clean --noconfirm --upx-dir "$upx_dir" || BUILD_EXIT=$?
+          pyinstaller pynes.spec --clean --noconfirm --upx-dir "$upx_dir"
         else
           echo "UPX not found, building without compression"
-          pyinstaller pynes.spec --clean --noconfirm || BUILD_EXIT=$?
+          pyinstaller pynes.spec --clean --noconfirm
         fi
+        
+        echo "build_success=true" >> $GITHUB_OUTPUT
 
-        if [[ "$BUILD_EXIT" -eq 0 ]]; then
-          echo "build_success=true" >> $GITHUB_OUTPUT
+    - name: Verify Build Output
+      shell: bash
+      run: |
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          test -f dist/pynes.exe || exit 1
         else
-          echo "build_success=false" >> $GITHUB_OUTPUT
-          echo "PyInstaller exited with code $BUILD_EXIT"
+          test -f dist/pynes || exit 1
         fi
-        exit $BUILD_EXIT
 
-    - uses: actions/upload-artifact@v4
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       if: steps.build.outputs.build_success == 'true'
       with:
         name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
         path: |
-          dist/pynes.exe
+          dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
           icon.ico
         retention-days: 90
+        compression-level: 6
