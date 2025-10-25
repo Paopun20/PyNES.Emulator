@@ -106,12 +106,6 @@ jobs:
           fi
         fi
 
-    - name: make env
-      shell: bash
-      run: |
-        python -m venv env
-        source env/bin/activate
-    
     - name: Install Python dependencies
       shell: bash
       run: |
