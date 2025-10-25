@@ -25,3 +25,7 @@ reference/*
 # gen file
 *.c
 *.pyd
+
+# rust build
+pynes/rust/*/target
+pynes/rust/*/Cargo.lock

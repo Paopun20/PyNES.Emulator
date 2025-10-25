@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from collections import deque
 from typing import List, Dict
 from pynes.helper.memoize import memoize
+from disklist import DiskList
 
 # debugger
 import time # for fps
@@ -94,7 +95,8 @@ class Emulator:
         self.ROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
         self.CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
         self.logging = True
-        self.tracelog: List[str] = deque(maxlen=1000)
+        self.tracelog = DiskList("trace.log")
+        self.tracelog.clear() # remove old data
         self.controllers: Dict[int, Controller] = {
             1: Controller(buttons={}),  # Controller 1
             2: Controller(buttons={})   # Controller 2

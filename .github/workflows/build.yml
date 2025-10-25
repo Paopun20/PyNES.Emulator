@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest] # ubuntu-latest, macos-latest # Temporarily disabled on linux and macOS due to build issues
         python-version: ['3.13.7']
 
     defaults:
@@ -87,14 +87,14 @@ jobs:
     - name: Install Python dependencies
       shell: bash
       run: |
-        pip install --upgrade pip
+        python -m pip install --upgrade pip
         pip install --upgrade -r requirements.txt
         pip install git+https://github.com/pyinstaller/pyinstaller.git
 
-    # - id: build_cython_extensions
-    #   name: Build Cython Extensions
-    #   shell: bash
-    #   run: python setup.py build_ext --inplace
+    - id: build_cython_extensions
+      name: Build Cython Extensions
+      shell: bash
+      run: python setup.py build_ext --inplace
 
     - id: build
       name: Build PyNES

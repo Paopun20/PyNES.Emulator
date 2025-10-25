@@ -2,7 +2,7 @@
 
 [![Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Python Version](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/downloads/) [![GitHub Stars](https://img.shields.io/github/stars/Paopun20/PyNES.Emulator.svg?style=social&label=Star)](https://github.com/Paopun20/PyNES.Emulator)
 
-A NES (Nintendo Entertainment System) emulator written in 100% Python (some parts are written in Cython or Rust (not today), so it's still a Python project).
+A NES (Nintendo Entertainment System) emulator written in Python, Cython and Rust
 
 ## Accuracy (can be outdate)
 
