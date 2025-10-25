@@ -29,6 +29,13 @@ jobs:
       uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1.0.6 # latest and this repository have archive, no longer updated this action
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
     
     - name: Get pip cache dir
       id: pip-cache
