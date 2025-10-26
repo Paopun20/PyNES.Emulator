@@ -29,3 +29,8 @@ reference/*
 # rust build
 pynes/rust/*/target
 pynes/rust/*/Cargo.lock
+
+# log file
+*.log
+*.bak
+*.backup

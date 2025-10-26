@@ -37,6 +37,7 @@ SCALE = 3
 
 # Initialize pygame first
 pygame.init()
+pygame.joystick.init()
 
 # Font for debug overlay (create before OpenGL context)
 font = pygame.font.Font(None, 20)
@@ -102,6 +103,29 @@ KEY_MAPPING = {
     pygame.K_LEFT: 'Left', pygame.K_RIGHT: 'Right'
 }
 
+GAMEPAD_BUTTON_MAP = {
+    0: 'A',      # A (Xbox) -> NES A
+    1: 'B',      # B (Xbox) -> NES B
+    6: 'Select', # Back -> Select
+    7: 'Start'   # Start -> Start
+}
+
+AXIS_DEADZONE = 0.5
+
+joysticks = {}
+def init_all_joysticks():
+    joysticks.clear()
+    for i in range(pygame.joystick.get_count()):
+        try:
+            js = pygame.joystick.Joystick(i)
+            js.init()
+            joysticks[js.get_instance_id() if hasattr(js, 'get_instance_id') else i] = js
+            console.print(f"[green]Detected controller:[/green] {js.get_name()} (id={js.get_id()})")
+        except Exception as e:
+            console.print(f"[yellow]Joystick init failed for index {i}: {e}[/yellow]")
+
+init_all_joysticks()
+
 emulator_vm = Emulator()
 
 root = Tk()
@@ -151,7 +175,7 @@ console.print(f"[green]Loaded:[/green] {nes_path}\n")
 table = Table(title="🎮 Controls", box=box.ROUNDED, border_style="cyan")
 table.add_column("Key", justify="center")
 table.add_column("Action", justify="left")
-table.add_row("Arrow Keys", "D-Pad")
+table.add_row("Arrow Keys / D-Pad", "D-Pad")
 table.add_row("Z", "B Button")
 table.add_row("X", "A Button")
 table.add_row("Enter", "Start")
@@ -351,9 +375,106 @@ while running:
                 emulator_vm.Reset()
                 frame_count = 0
                 start_time = time.time()
+
         elif event.type == pygame.KEYUP:
             if event.key in KEY_MAPPING:
                 controller_state[KEY_MAPPING[event.key]] = False
+
+        # --- Joystick events ---
+        elif event.type == pygame.JOYBUTTONDOWN:
+            try:
+                btn = event.button
+                if btn in GAMEPAD_BUTTON_MAP:
+                    controller_state[GAMEPAD_BUTTON_MAP[btn]] = True
+            except Exception:
+                pass
+
+        elif event.type == pygame.JOYBUTTONUP:
+            try:
+                btn = event.button
+                if btn in GAMEPAD_BUTTON_MAP:
+                    controller_state[GAMEPAD_BUTTON_MAP[btn]] = False
+            except Exception:
+                pass
+
+        elif event.type == pygame.JOYHATMOTION:
+            # Hat returns (x, y) where x/y in -1,0,1
+            try:
+                hat_x, hat_y = event.value
+                # Reset directional states first (for this input source)
+                # Note: If you want to combine keyboard + hat, you might want to avoid overwriting
+                # keyboard state; here we give hat priority for its axes.
+                if hat_x == -1:
+                    controller_state['Left'] = True
+                    controller_state['Right'] = False
+                elif hat_x == 1:
+                    controller_state['Right'] = True
+                    controller_state['Left'] = False
+                else:
+                    controller_state['Left'] = False
+                    controller_state['Right'] = False
+
+                if hat_y == 1:
+                    controller_state['Up'] = True
+                    controller_state['Down'] = False
+                elif hat_y == -1:
+                    controller_state['Down'] = True
+                    controller_state['Up'] = False
+                else:
+                    controller_state['Up'] = False
+                    controller_state['Down'] = False
+            except Exception:
+                pass
+
+        elif event.type == pygame.JOYAXISMOTION:
+            # Map analog stick to D-Pad with deadzone
+            try:
+                axis = event.axis
+                value = event.value
+                # Assume axis 0 = left stick X, 1 = left stick Y (common mapping)
+                if axis == 0:
+                    # Left / Right
+                    if value < -AXIS_DEADZONE:
+                        controller_state['Left'] = True
+                        controller_state['Right'] = False
+                    elif value > AXIS_DEADZONE:
+                        controller_state['Right'] = True
+                        controller_state['Left'] = False
+                    else:
+                        # only clear if no keyboard is holding it - but keeping it simple: clear
+                        controller_state['Left'] = False
+                        controller_state['Right'] = False
+                elif axis == 1:
+                    # Up / Down (note: many controllers give -1 up, +1 down)
+                    if value < -AXIS_DEADZONE:
+                        controller_state['Up'] = True
+                        controller_state['Down'] = False
+                    elif value > AXIS_DEADZONE:
+                        controller_state['Down'] = True
+                        controller_state['Up'] = False
+                    else:
+                        controller_state['Up'] = False
+                        controller_state['Down'] = False
+            except Exception:
+                pass
+
+        elif event.type == pygame.JOYDEVICEADDED:
+            # New device plugged in
+            try:
+                init_all_joysticks()
+            except Exception:
+                pass
+
+        elif event.type == pygame.JOYDEVICEREMOVED:
+            # Device removed
+            try:
+                # Re-init known joysticks
+                init_all_joysticks()
+                # Optionally clear controller directional inputs from removed device
+                controller_state['Up'] = controller_state['Down'] = controller_state['Left'] = controller_state['Right'] = False
+                controller_state['A'] = controller_state['B'] = controller_state['Start'] = controller_state['Select'] = False
+            except Exception:
+                pass
 
     # Render new frame if available
     if frame_ready:
