@@ -23,7 +23,7 @@ from textual.containers import Container
 
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator
-from __version__ import __version__
+from app.__version__ import __version__
 
 NES_WIDTH, NES_HEIGHT, SCALE = 256, 240, 3
 
@@ -109,7 +109,7 @@ def run_emulator_process(rom_path: str, log_queue=None):
         nonlocal running
         while running:
             while not emulator.FrameComplete and running:
-                emulator.Run1Cycle()
+                emulator.step_Cycle()
             time.sleep(1 / cpu_clock)
 
     threading.Thread(target=cycle_loop, daemon=True).start()

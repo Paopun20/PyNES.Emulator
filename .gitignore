@@ -7,11 +7,8 @@ test_nes_files/*
 # pycache
 __pycache__/*
 
-# pycache p2
+# pycache files
 *.pyc
-
-# manim
-manim/*
 
 # build
 build/*
@@ -27,8 +24,8 @@ reference/*
 *.pyd
 
 # rust build
-pynes/rust/*/target
-pynes/rust/*/Cargo.lock
+app/pynes/rust/*/target
+app/pynes/rust/*/Cargo.lock
 
 # log file
 *.log

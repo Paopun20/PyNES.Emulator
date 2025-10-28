@@ -10,12 +10,12 @@ datas_np, binaries_np, hiddenimports_np = collect_all('numpy')
 datas_tk = collect_data_files('tkinter')
 
 a = Analysis(
-    ['main.py'],
+    ['app/main.py'],
     pathex=[],
     binaries=binaries_np,
     datas=datas_np + datas_tk + [
-        ("pynes", "pynes"),  # pynes core module
-        ("icon.ico", "."),   # icon file (placed in root of bundle)
+        ("app/pynes", "app/pynes"),  # pynes core module
+        ("app/icon.ico", "."),   # icon file (placed in root of bundle)
     ],
     hiddenimports=hiddenimports_np + [
         "numpy._core._multiarray_umath",
@@ -68,5 +68,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon.ico'  # Icon for the executable
+    icon='app/icon.ico'  # Icon for the executable
 )

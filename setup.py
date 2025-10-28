@@ -6,7 +6,7 @@ import numpy as np
 cython_ext = cythonize([
     CythonExtension(
         name="pynes.api.discord",
-        sources=["pynes/api/discord.pyx"],
+        sources=["app/pynes/api/discord.pyx"],
         include_dirs=[np.get_include()],
         extra_compile_args=["-O3", "-ffast-math", "-march=native"],
     )
@@ -15,7 +15,7 @@ cython_ext = cythonize([
 rust_ext = [
     RustExtension(
         target="disklist",
-        path="pynes/rust/disklist/Cargo.toml",
+        path="app/pynes/rust/disklist/Cargo.toml",
         debug=False,
         py_limited_api=False,
     ),
@@ -32,8 +32,7 @@ setup(
     ext_modules=cython_ext,
     rust_extensions=rust_ext,
     install_requires=list_req,
-    entry_points={
-        "console_scripts": ["pynes=pynes.main:main"],
-    },
+    # include_package_data=True,
+    package_dir={'pynes': 'app/pynes'},
     zip_safe=False,
 )

@@ -147,6 +147,9 @@ while True:
         break
     else:
         messagebox.showerror("Error", "No NES file selected, please select a NES file", icon="warning")
+        if pygame.QUIT in pygame.event.get():
+            pygame.quit()
+            exit()
         continue
 
 valid, load_cartridge = Cartridge.from_file(nes_path)
@@ -314,9 +317,8 @@ def subpro():
         if paused:
             time.sleep(0.01)
             continue
-        
         try:
-            emulator_vm.Run1Cycle()
+            emulator_vm.step_Cycle()
         except EmulatorError as e:
             errorType = e.type
             text = e.message
@@ -326,7 +328,6 @@ def subpro():
 
 subpro_thread = threading.Thread(target=subpro, daemon=True, name="emulator_thread")
 subpro_thread.start()
-
 
 @emulator_vm.on("frame_complete")
 def vm_frame(frame):

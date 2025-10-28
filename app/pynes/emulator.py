@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from collections import deque
 from typing import List, Dict
 from pynes.helper.memoize import memoize
-from disklist import DiskList
-from datetime import datetime
-from pathlib import Path
+# from disklist import DiskList
+# from datetime import datetime
+# from pathlib import Path
 
 # debugger
 import time # for fps
@@ -97,8 +97,8 @@ class Emulator:
         self.ROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
         self.CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
         self.logging = True
-        self.tracelog = DiskList(Path(__file__).parent.joinpath("trace.log"))
-        self.tracelog.clean() # remove old data
+        self.tracelog = deque(maxlen=2024)
+        # self.tracelog.clean() # remove old data
         self.controllers: Dict[int, Controller] = {
             1: Controller(buttons={}),  # Controller 1
             2: Controller(buttons={})   # Controller 2
@@ -914,19 +914,19 @@ class Emulator:
         except Exception as e:
             raise EmulatorError(Exception(e))
 
-    def Run(self):
+    def run(self):
         """Run CPU and PPU together, No Stop"""
         while not self.CPU_Halted:
-            self.Run1Cycle()
+            self.step_Cycle()
 
-    def Run1Cycle(self):
+    def step_Cycle(self):
         """Run one CPU cycle and corresponding PPU cycles."""
         if not self.CPU_Halted:
             self._step()
     
-    def Run1Frame(self):
+    def step_Frame(self):
         while not self.FrameComplete:
-            self.Run1Cycle()
+            self.step_Cycle()
 
     def IRQ_RUN(self):
         """Handle Interrupt Request."""

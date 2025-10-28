@@ -42,28 +42,28 @@ jobs:
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          app/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('app/**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-
     
     - name: Get pip cache dir
-      id: pip-cache
-      shell: bash
+      id: pip-cache-dir
+      working-directory: app
       run: |
         echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
     
     - name: Cache pip packages
+      id: pip-cache
       uses: actions/cache@v4
       with:
-        path: ${{ steps.pip-cache.outputs.dir }}
-        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
+        path: ${{ steps.pip-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('app/requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-${{ matrix.python-version }}-
           ${{ runner.os }}-pip-
     
     - name: Install OS dependencies
-      shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
           sudo apt-get update
@@ -74,7 +74,6 @@ jobs:
 
     - name: Install UPX
       id: upx
-      shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
           sudo apt-get install -y upx
@@ -85,12 +84,11 @@ jobs:
           echo "upx_path=$(command -v upx)" >> $GITHUB_OUTPUT
 
         elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          # Try winget first, fallback to direct download
           if ! winget install --id=UPX.UPX -e --accept-source-agreements --accept-package-agreements --silent; then
             echo "Winget install failed, attempting direct download..."
             curl -L -o upx.zip https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win64.zip
             unzip -q upx.zip
-            upx_dir="$(pwd)/upx-4.2.1-win64"
+            upx_dir="$(pwd)/upx-5.0.2-win64"
             echo "upx_path=$upx_dir/upx.exe" >> $GITHUB_OUTPUT
           else
             userprofile_win="$USERPROFILE"
@@ -107,41 +105,19 @@ jobs:
         fi
 
     - name: Install Python dependencies
-      shell: bash
       run: |
         python -m pip install --upgrade pip
         pip install --upgrade -r requirements.txt
-        pip install git+https://github.com/pyinstaller/pyinstaller.git
+        pip install --upgrade git+https://github.com/pyinstaller/pyinstaller.git
 
-    - id: build_extensions
-      name: Build Extensions
-      shell: bash
+    - name: Build Extensions
+      id: build_extensions
       run: python setup.py build_ext --inplace
-
-    - name: Build Rust Extensions
-      shell: bash
-      if: false # Temporarily disabled due to build issues
-      run: |
-        cd pynes/rust
-        # Install maturin if not already available
-        pip install maturin
-        
-        # Build all Rust extensions
-        for dir in */ ; do
-          if [[ -f "${dir}Cargo.toml" ]]; then
-            echo "Building ${dir}..."
-            cd "$dir"
-            maturin develop --release
-            cd ..
-          fi
-        done
 
     - name: Build PyNES
       id: build
-      shell: bash
+      working-directory: app
       run: |
-        mkdir -p dist
-        
         if [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
           upx_dir="$(dirname "${{ steps.upx.outputs.upx_path }}")"
           echo "Using UPX from: $upx_dir"
@@ -150,11 +126,9 @@ jobs:
           echo "UPX not found, building without compression"
           pyinstaller pynes.spec --clean --noconfirm
         fi
-        
         echo "build_success=true" >> $GITHUB_OUTPUT
 
     - name: Verify Build Output
-      shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
           test -f dist/pynes.exe || exit 1
@@ -168,7 +142,7 @@ jobs:
       with:
         name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
         path: |
-          dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
-          icon.ico
+          app/dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          app/icon.ico
         retention-days: 90
         compression-level: 6
