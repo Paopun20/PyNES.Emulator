@@ -1,8 +1,6 @@
 # PyNES Emulator
 
 [![Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)
-[![Build PyNES Emulator Dev Build](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg?branch=dev)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python Version](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![GitHub Stars](https://img.shields.io/github/stars/Paopun20/PyNES.Emulator.svg?style=social&label=Star)](https://github.com/Paopun20/PyNES.Emulator)
 [![GitHub Repo Size](https://img.shields.io/github/repo-size/Paopun20/PyNES.Emulator.svg?style=social)](https://github.com/Paopun20/PyNES.Emulator)
@@ -20,7 +18,6 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 1. No lag frames like on real NES hardware.
 2. Code run is still very slow.
 3. Accuracy not 100% yet.
-4. No support for mappers yet.
 
 ## Development Status
 
@@ -38,14 +35,14 @@ The emulator is still under development, and performance is not yet optimized. E
 - **PPU Emulation**: Basic PPU functionality for rendering graphics ( BUG ).
 - **APU Emulation**: Basic sound emulation ( WIP ).
 - **Input Emulation**: Keyboard support.
-- **Controller Support**: Like **Input Emulation** but with Gamepad support. ( Xbox Controller recommended, IDK what I don't have those controllers 😭 ).
+- **Controller Support**: Like **Input Emulation** but with Gamepad support. ( Xbox Controller recommended, IDK, what can use, I don't have those controllers 😭 ).
 - **ROM Loading**: Supports `.nes` ROM files.
 - **Debugging**: Basic FPS and CPU register display.
 
 ## Planned Features
 
 - **TAS (Tool-Assisted Speedruns or Tool-Assisted Superplays)**: Implement features to support TAS creation and playback.
-- **Enhanced PPU Features**: Complete implementation of PPU features including sprites, scrolling, and palettes.
+- **Enhanced PPU Features**: Complete implementation of PPU core.
 - **Complete APU Emulation**: Full sound channel support and audio effects.
 - **Save States**: Implement save and load state functionality.
 - **GUI Enhancements**: Improve the user interface for better usability and aesthetics.
@@ -71,19 +68,37 @@ The emulator is still under development, and performance is not yet optimized. E
 git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
 ```
 
-3. Install the required dependencies using:
+3. virtual environment:
+
+```bash
+python -m venv env
+```
+
+```bash
+# windows:
+.\env\Scripts\activate
+
+# macOS / Linux:
+source env/bin/activate
+```
+
+```bash
+python setup.py build_ext --inplace
+```
+
+4. Install the required dependencies using:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Start the emulator with:
+5. Start the emulator with:
 
 ```bash
 python main.py
 ```
 
-5. When prompted by the emulator, choose a `.nes` ROM file to load and play.
+6. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
 ### Run emulator from pre-built executable
 
