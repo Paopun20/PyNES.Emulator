@@ -116,7 +116,7 @@ jobs:
 
     - name: Build PyNES
       id: build
-      working-directory: app
+      # working-directory: app
       run: |
         if [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
           upx_dir="$(dirname "${{ steps.upx.outputs.upx_path }}")"
