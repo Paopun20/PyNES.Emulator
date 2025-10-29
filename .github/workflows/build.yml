@@ -142,7 +142,7 @@ jobs:
       with:
         name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
         path: |
-          app/dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
           app/icon.ico
         retention-days: 90
         compression-level: 6
