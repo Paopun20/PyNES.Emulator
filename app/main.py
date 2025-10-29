@@ -23,9 +23,7 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich import box
 from pypresence.types import ActivityType, StatusDisplayType
 
 # new import
@@ -95,7 +93,7 @@ clock = pygame.time.Clock()
 
 # init emulator
 nes_emu = Emulator()
-controller = Controller()  # ✅ new controller
+controller = Controller()
 
 root = Tk()
 root.withdraw()
