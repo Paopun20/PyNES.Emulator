@@ -1,5 +1,8 @@
-pygame
-pypresence
-rich
-cython
-PyOpenGL
+pygame # game library
+pypresence # discord rich presence
+rich # rich terminal output
+cython # Cython
+PyOpenGL # gpu rendering
+numpy # numerical computing
+maturin # rust extensions
+setuptools-rust # rust build

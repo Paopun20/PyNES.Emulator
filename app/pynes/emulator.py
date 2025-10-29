@@ -1,6 +1,5 @@
 import numpy as np
 import array
-import cython
 import sys
 
 from pynes.apu import APU
@@ -9,6 +8,9 @@ from dataclasses import dataclass
 from collections import deque
 from typing import List, Dict
 from pynes.helper.memoize import memoize
+# from disklist import DiskList
+# from datetime import datetime
+# from pathlib import Path
 
 # debugger
 import time # for fps
@@ -80,7 +82,6 @@ class NMI:
 class IRQ:
     Line:bool=False
 
-@cython.cclass
 class Emulator:
     """
     NES emulator with CPU, PPU, APU, and Controller support.
@@ -94,7 +95,7 @@ class Emulator:
         self.ROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
         self.CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
         self.logging = True
-        self.tracelog: List[str] = deque(maxlen=1000)
+        self.tracelog = deque(maxlen=2024)
         self.controllers: Dict[int, Controller] = {
             1: Controller(buttons={}),  # Controller 1
             2: Controller(buttons={})   # Controller 2
@@ -289,7 +290,6 @@ class Emulator:
             self.ppu_bus_latch_time = time.time()
         return getattr(self, 'ppu_bus_latch', 0)
 
-    @cython.inline
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers with NMI suppression."""
         reg = addr & 0x07
@@ -910,19 +910,19 @@ class Emulator:
         except Exception as e:
             raise EmulatorError(Exception(e))
 
-    def Run(self):
+    def run(self):
         """Run CPU and PPU together, No Stop"""
         while not self.CPU_Halted:
-            self.Run1Cycle()
+            self.step_Cycle()
 
-    def Run1Cycle(self):
+    def step_Cycle(self):
         """Run one CPU cycle and corresponding PPU cycles."""
         if not self.CPU_Halted:
             self._step()
     
-    def Run1Frame(self):
+    def step_Frame(self):
         while not self.FrameComplete:
-            self.Run1Cycle()
+            self.step_Cycle()
 
     def IRQ_RUN(self):
         """Handle Interrupt Request."""
@@ -941,7 +941,6 @@ class Emulator:
             self.ProgramCounter = (high << 8) | low
             self.cycles = 7
 
-    @cython.locals(opcode=int, cycles=int, current_instruction_mode=str)
     def Emulate_CPU(self):
         # Reset instruction mode at the start of each cycle
         self.current_instruction_mode = ""
@@ -983,7 +982,6 @@ class Emulator:
             self._perform_oam_dma(self._oam_dma_pending_page)
             self._oam_dma_pending_page = None
 
-    @cython.inline
     def ExecuteOpcode(self):
         """Execute the current opcode."""
         match self.opcode:

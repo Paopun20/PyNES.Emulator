@@ -1,58 +1,38 @@
-from setuptools import setup, Extension
+from setuptools import (setup, Extension as CythonExtension)
+from Cython.Build import cythonize
+from setuptools_rust import RustExtension
 import numpy as np
 
-try:
-    from Cython.Build import cythonize
-    USE_CYTHON = True
-except ImportError:
-    USE_CYTHON = False
-
-ext = '.py' if USE_CYTHON else '.c'
-
-extensions = [
-    Extension(
-        "pynes.apu",
-        ["pynes/apu" + ext],
-        include_dirs=[np.get_include()],
-        extra_compile_args=["-O3", "-ffast-math", "-march=native"],
-    ),
-    Extension(
-        "pynes.cartridge",
-        ["pynes/cartridge" + ext],
-        include_dirs=[np.get_include()],
-        extra_compile_args=["-O3", "-ffast-math", "-march=native"],
-    ),
-    Extension(
-        "pynes.controller",
-        ["pynes/controller" + ext],
-        include_dirs=[np.get_include()],
-        extra_compile_args=["-O3", "-ffast-math", "-march=native"],
-    ),
-    Extension(
-        "pynes.api.discord",
-        ["pynes/api/discord" + ext],
+cython_ext = cythonize([
+    CythonExtension(
+        name="pynes.api.discord",
+        sources=["app/pynes/api/discord.pyx"],
         include_dirs=[np.get_include()],
         extra_compile_args=["-O3", "-ffast-math", "-march=native"],
     )
+])
+
+rust_ext = [
+    RustExtension(
+        target="disklist",
+        path="app/pynes/rust/disklist/Cargo.toml",
+        debug=False,
+        py_limited_api=False,
+    ),
 ]
 
-if USE_CYTHON:
-    extensions = cythonize(extensions)
+list_req = []
+with open("requirements.txt") as f:
+    list_req = [line.strip() for line in f]
 
 setup(
     name="PyNES",
-    version="0.1.0",
-    packages=["pynes", "pynes.helper"],
-    ext_modules=extensions,
-    install_requires=[
-        "numpy",
-        "Cython",
-        "sounddevice",
-        "PyQt5",
-    ],
-    entry_points={
-        "console_scripts": [
-            "pynes=pynes.main:main",
-        ],
-    },
+    version="0.0.0",
+    packages=["pynes"],
+    ext_modules=cython_ext,
+    rust_extensions=rust_ext,
+    install_requires=list_req,
+    # include_package_data=True,
+    package_dir={'pynes': 'app/pynes'},
+    zip_safe=False,
 )

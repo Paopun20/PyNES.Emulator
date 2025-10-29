@@ -1,12 +1,15 @@
 from pypresence import Presence as DiscordPresence
 import time
 import threading
+import cython
 
 RPC_types = {k: v for k, v in DiscordPresence.update.__annotations__.items() if k != 'return'}
 DynamicRPC = type('DynamicRPC', (), RPC_types)
 
+@cython.cclass
 class Presence:
-    def __init__(self, client_id: str, auto_update=True, update_interval=15):
+    @cython.locals(client_id=cython.ulonglong, auto_update=cython.bint, update_interval=cython.int)
+    def __init__(self, client_id:cython.ulonglong, auto_update:cython.bint=True, update_interval:cython.int=15):
         self.client_id = client_id
         self.rpc = None
         self.start_time = None
@@ -17,7 +20,7 @@ class Presence:
 
     def connect(self):
         try:
-            self.rpc = DiscordPresence(self.client_id)
+            self.rpc = DiscordPresence(int(self.client_id))
             self.rpc.connect()
             self.start_time = time.time()
             self.connected = True

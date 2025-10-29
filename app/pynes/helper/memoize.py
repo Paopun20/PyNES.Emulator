@@ -19,20 +19,15 @@ def memoize(maxsize=None, policy="lru"):
             key = args + tuple(sorted(kwargs.items()))
             if not all(isinstance(k, Hashable) for k in key):
                 return func(*args, **kwargs)
-
-            # ถ้ามีใน cache
             if key in cache:
                 if policy == "lru":
-                    cache.move_to_end(key)  # ใช้บ่อย → ไปท้าย
+                    cache.move_to_end(key)
                 return cache[key]
-
-            # ไม่มีใน cache
             result = func(*args, **kwargs)
             cache[key] = result
 
             if maxsize is not None and len(cache) > maxsize:
-                cache.popitem(last=False)  # ลบตัวหน้า (เก่าสุด)
-
+                cache.popitem(last=False)
             return result
 
         return wrapper

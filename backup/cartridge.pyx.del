@@ -1,0 +1,69 @@
+# cython: language_level=3
+import numpy as np
+cimport numpy as cnp
+cimport cython
+
+cnp.import_array()
+
+cdef class Cartridge:
+    cdef public str file
+    cdef public cnp.ndarray ROM
+    cdef public cnp.ndarray PRGROM
+    cdef public cnp.ndarray CHRROM
+    cdef public cnp.ndarray HeaderedROM
+    
+    def __init__(self):
+        self.file = ""
+        self.ROM = np.zeros(0x8000, dtype=np.uint8)
+        self.PRGROM = np.zeros(0x8000, dtype=np.uint8)
+        self.CHRROM = np.zeros(0x2000, dtype=np.uint8)
+        self.HeaderedROM = np.zeros(0x8010, dtype=np.uint8)
+    
+    @classmethod
+    def from_file(cls, str filepath):
+        """
+        Load a ROM file from disk.
+        
+        Returns:
+            tuple[bool, Cartridge | str]: (success, cartridge_object_or_error_message)
+        """
+        cdef Cartridge obj = cls()
+        cdef Py_ssize_t chr_size
+        
+        obj.file = filepath
+        
+        try:
+            obj.HeaderedROM = np.fromfile(filepath, dtype=np.uint8)
+        except Exception as e:
+            return False, f"Failed to read file: {e}"
+        
+        if len(obj.HeaderedROM) < 0x8010:
+            return False, "Invalid ROM file: too small"
+        
+        # Load PRG ROM
+        obj.ROM = np.zeros(0x8000, dtype=np.uint8)
+        obj.ROM[0:0x8000] = obj.HeaderedROM[0x10 : 0x10 + 0x8000]
+        obj.PRGROM = obj.ROM.copy()
+        
+        # Load CHR ROM (if present)
+        obj.CHRROM = np.zeros(0x2000, dtype=np.uint8)
+        if len(obj.HeaderedROM) > 0x8010:
+            chr_size = min(0x2000, len(obj.HeaderedROM) - 0x8010)
+            obj.CHRROM[:chr_size] = obj.HeaderedROM[0x8010 : 0x8010 + chr_size]
+        
+        return True, obj
+    
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef cnp.uint8_t read_prg(self, cnp.uint16_t address):
+        """Fast PRG ROM read."""
+        return self.PRGROM[address & 0x7FFF]
+    
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef cnp.uint8_t read_chr(self, cnp.uint16_t address):
+        """Fast CHR ROM read."""
+        return self.CHRROM[address & 0x1FFF]
+    
+    def __repr__(self):
+        return f"<Cartridge file='{self.file}' PRG={len(self.PRGROM)} CHR={len(self.CHRROM)}>"
