@@ -9,7 +9,7 @@ from __version__ import __version__
 
 from pynes.emulator import Emulator, EmulatorError
 from pynes.cartridge import Cartridge
-from pynes.api.discord import Presence
+from pynes.api.discord import Presence  # type: ignore
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
 
@@ -178,8 +178,8 @@ def draw_debug_overlay():
         f"NES File: {Path(nes_path).name}",
         f"ROM Header: {nes_emu.cartridge.HeaderedROM[:0x10]}",
         "",
-        f"EUM take: ~{(time.time() - start_time):.2f}s",
-        f"IRL take: ~{((time.time() - start_time) * (1/all_clock)):.2f}s",
+        f"EUM take (from start): ~{(time.time() - start_time):.2f}s",
+        f"IRL take (from start, based on CPU clock and PUU clock): ~{((time.time() - start_time) * (1/all_clock)):.2f}s",
         f"CPU Halted: {nes_emu.CPU_Halted}",
         f"Frame Complete Count: {nes_emu.frame_complete_count}",
         f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",

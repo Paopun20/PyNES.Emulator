@@ -1,9 +1,11 @@
 # PyNES Emulator
 
-[![Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)
+[![Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)
 [![Python Version](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![GitHub Stars](https://img.shields.io/github/stars/Paopun20/PyNES.Emulator.svg?style=social&label=Star)](https://github.com/Paopun20/PyNES.Emulator)
-[![GitHub Repo Size](https://img.shields.io/github/repo-size/Paopun20/PyNES.Emulator.svg?style=social)](https://github.com/Paopun20/PyNES.Emulator)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## About
 
 A NES (Nintendo Entertainment System) emulator written in Python, Cython and Rust
 
@@ -115,23 +117,23 @@ python app/main.py
 
 ## Controls
 
-| NES Button    | Keyboard    | Xbox Controller |
-| ------------- | ----------- | --------------- |
-| Up            | ↑           | D-Pad Up        |
-| Down          | ↓           | D-Pad Down      |
-| Left          | ←           | D-Pad Left      |
-| Right         | →           | D-Pad Right     |
-| A             | X           | B (physical A)  |
-| B             | Z           | A (physical B)  |
-| Select        | Right Shift | Back            |
-| Start         | Enter       | Start           |
+| NES Button | Keyboard    | Xbox Controller |
+| ---------- | ----------- | --------------- |
+| Up         | ↑           | D-Pad Up        |
+| Down       | ↓           | D-Pad Down      |
+| Left       | ←           | D-Pad Left      |
+| Right      | →           | D-Pad Right     |
+| A          | X           | B (physical A)  |
+| B          | Z           | A (physical B)  |
+| Select     | Right Shift | Back            |
+| Start      | Enter       | Start           |
 
-| Emulator Controls   | Keyboard    | Xbox Controller |
-| ------------------- | ----------- | --------------- |
-| Pause               | P           | N/A             |
-| Debug Overlay       | F5          | N/A             |
-| Reset               | R           | N/A             |
-| Quit                | ESC         | N/A             |
+| Emulator Controls | Keyboard | Xbox Controller |
+| ----------------- | -------- | --------------- |
+| Pause             | P        | N/A             |
+| Debug Overlay     | F5       | N/A             |
+| Reset             | R        | N/A             |
+| Quit              | ESC      | N/A             |
 
 > ⚠️ Note: Controller button mapping may vary depending on the controller brand/model. You may need to adjust button indices for non-Xbox controllers.
 
@@ -142,3 +144,5 @@ Pull requests are welcome! If you want to contribute, please fork the repository
 ## License
 
 This project is open-source and licensed under the MIT - see the [LICENSE](LICENSE.md) file for details.
+
+> it have changed from Apache 2.0 to MIT License, i don't know what different is, but Apache 2.0 and MIT is same but I realized that different is, so I changed it to MIT. (LOL)
