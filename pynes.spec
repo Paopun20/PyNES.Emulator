@@ -57,6 +57,8 @@ exe = EXE(
     [],
     name='pynes',
     debug=False,
+    upx=True,
+    upx_exclude=[],
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,

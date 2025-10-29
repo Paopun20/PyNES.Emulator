@@ -1,6 +1,5 @@
 import numpy as np
 import array
-import cython
 import sys
 
 from pynes.apu import APU
@@ -83,7 +82,6 @@ class NMI:
 class IRQ:
     Line:bool=False
 
-@cython.cclass
 class Emulator:
     """
     NES emulator with CPU, PPU, APU, and Controller support.
@@ -98,7 +96,6 @@ class Emulator:
         self.CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
         self.logging = True
         self.tracelog = deque(maxlen=2024)
-        # self.tracelog.clean() # remove old data
         self.controllers: Dict[int, Controller] = {
             1: Controller(buttons={}),  # Controller 1
             2: Controller(buttons={})   # Controller 2
@@ -293,7 +290,6 @@ class Emulator:
             self.ppu_bus_latch_time = time.time()
         return getattr(self, 'ppu_bus_latch', 0)
 
-    @cython.inline
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers with NMI suppression."""
         reg = addr & 0x07
@@ -945,7 +941,6 @@ class Emulator:
             self.ProgramCounter = (high << 8) | low
             self.cycles = 7
 
-    @cython.locals(opcode=int, cycles=int, current_instruction_mode=str)
     def Emulate_CPU(self):
         # Reset instruction mode at the start of each cycle
         self.current_instruction_mode = ""
@@ -987,7 +982,6 @@ class Emulator:
             self._perform_oam_dma(self._oam_dma_pending_page)
             self._oam_dma_pending_page = None
 
-    @cython.inline
     def ExecuteOpcode(self):
         """Execute the current opcode."""
         match self.opcode:

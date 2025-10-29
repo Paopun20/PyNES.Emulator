@@ -59,7 +59,18 @@ The emulator is still under development, and performance is not yet optimized. E
 
 ## Running the Emulator
 
-### Run emulator from source code
+### Run emulator from pre-built executable (recommended and easiest way)
+
+If you want to use a ready-made executable:
+
+1. Go to the "Actions" tab on this repository's GitHub page.
+2. Find and select the "Build PyNES Emulator" workflow.
+3. Download the most recent artifact for your operating system (Windows (recommended)) (Linux, and macOS is not available at the moment).
+4. Unzip the downloaded file.
+5. Run the executable inside.
+6. When the emulator starts, select a `.nes` ROM file when prompted.
+
+### Run emulator from source code (for developers)
 
 1. Ensure you have Python 3.8 or higher installed.
 2. Clone this repository.
@@ -68,7 +79,7 @@ The emulator is still under development, and performance is not yet optimized. E
 git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
 ```
 
-3. virtual environment:
+3. Create and activate a virtual environment:
 
 ```bash
 python -m venv env
@@ -82,34 +93,25 @@ python -m venv env
 source env/bin/activate
 ```
 
+4. Build the extensions:
+
 ```bash
 python setup.py build_ext --inplace
 ```
 
-4. Install the required dependencies using:
+5. Install the required dependencies using:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-5. Start the emulator with:
+6. Start the emulator with:
 
 ```bash
-python main.py
+python app/main.py
 ```
 
-6. When prompted by the emulator, choose a `.nes` ROM file to load and play.
-
-### Run emulator from pre-built executable
-
-If you want to use a ready-made executable:
-
-1. Go to the "Actions" tab on this repository's GitHub page.
-2. Find and select the "Build PyNES Emulator" workflow.
-3. Download the most recent artifact for your operating system (Windows (recommended)) (Linux, and macOS is not available at the moment).
-4. Unzip the downloaded file.
-5. Run the executable inside.
-6. When the emulator starts, select a `.nes` ROM file when prompted.
+7. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
 ## Controls
 
@@ -123,10 +125,13 @@ If you want to use a ready-made executable:
 | B             | Z           | A (physical B)  |
 | Select        | Right Shift | Back            |
 | Start         | Enter       | Start           |
-| Pause         | P           | N/A             |
-| Debug Overlay | D           | N/A             |
-| Reset         | R           | N/A             |
-| Quit          | ESC         | N/A             |
+
+| Emulator Controls   | Keyboard    | Xbox Controller |
+| ------------------- | ----------- | --------------- |
+| Pause               | P           | N/A             |
+| Debug Overlay       | F5          | N/A             |
+| Reset               | R           | N/A             |
+| Quit                | ESC         | N/A             |
 
 > ⚠️ Note: Controller button mapping may vary depending on the controller brand/model. You may need to adjust button indices for non-Xbox controllers.
 
@@ -136,4 +141,4 @@ Pull requests are welcome! If you want to contribute, please fork the repository
 
 ## License
 
-This project is open-source and licensed under the Apache License 2.0 - see the [LICENSE](LICENSE.md) file for details.
+This project is open-source and licensed under the MIT - see the [LICENSE](LICENSE.md) file for details.
