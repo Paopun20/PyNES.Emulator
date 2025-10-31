@@ -20,6 +20,7 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 1. No lag frames like on real NES hardware.
 2. Code run is still very slow.
 3. Accuracy not 100% yet.
+4. Mapping not supported yet. (it has file but not implemented yet)
 
 ## Development Status
 
@@ -48,6 +49,11 @@ The emulator is still under development, and performance is not yet optimized. E
 - **Complete APU Emulation**: Full sound channel support and audio effects.
 - **Save States**: Implement save and load state functionality.
 - **GUI Enhancements**: Improve the user interface for better usability and aesthetics.
+- **Mapper Support**: Implement support for various NES mappers to enhance game compatibility.
+- **Advanced Debugging Tools**: Add features like breakpoints, memory inspection, and step-by-step execution.
+- **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
+- **Cross-Platform Support**: Ensure compatibility across Windows, macOS, and Linux.
+- **Multiplayer Support**: Implement support for multiple controllers for two-player games.
 
 ## Current Status
 
