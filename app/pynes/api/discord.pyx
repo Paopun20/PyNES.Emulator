@@ -41,7 +41,6 @@ cdef class Presence:
             self.rpc.connect()
             self.start_time = time.time()
             self.connected = True
-            print("✅ Discord RPC connected.")
 
             if self.auto_update:
                 self._stop_event.clear()

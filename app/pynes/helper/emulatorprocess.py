@@ -1,5 +1,6 @@
-from concurrent.futures import ProcessPoolExecutor
 import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
+
 
 class EmulatorProcess:
     def __init__(self):

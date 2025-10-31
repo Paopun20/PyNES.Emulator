@@ -8,7 +8,7 @@
             "name": "PyNES Debugger",
             "type": "debugpy",
             "request": "launch",
-            "program": "main.py",
+            "program": "app/main.py",
             "console": "integratedTerminal"
         }
     ]

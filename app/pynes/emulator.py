@@ -1,59 +1,365 @@
-import numpy as np
 import array
 import sys
 
-from pynes.apu import APU
-from string import Template
-from dataclasses import dataclass
-from collections import deque
-from typing import List, Dict
-from pynes.helper.memoize import memoize
 # from disklist import DiskList
 # from datetime import datetime
 # from pathlib import Path
-
 # debugger
-import time # for fps
+import time  # for fps
+from collections import deque
+from dataclasses import dataclass
+from string import Template
+from typing import Dict, List, TypedDict
 
+import numpy as np
+from pynes.apu import APU
 from pynes.cartridge import Cartridge
 from pynes.controller import Controller
+from pynes.helper.memoize import memoize
 
 # DATA
-OpCodeNames: List[str] = ["BRK", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "ANC", "NOP", "ORA", "ASL", "SLO", "BPL", "ORA", "HLT", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", "JSR", "AND", "HLT", "RLA", "BIT", "AND", "ROL", "RLA", "PLP", "AND", "ROL", "ANC", "BIT", "AND", "ROL", "RLA", "BMI", "AND", "HLT", "RLA", "NOP", "AND", "ROL", "RLA", "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", "RTI", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "PHA", "EOR", "LSR", "ALR", "JMP", "EOR", "LSR", "SRE", "BVC", "EOR", "HLT", "SRE", "NOP", "EOR", "LSR", "SRE", "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", "RTS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "PLA", "ADC", "ROR", "ARR", "JMP", "ADC", "ROR", "RRA", "BVS", "ADC", "HLT", "RRA", "NOP", "ADC", "ROR", "RRA", "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", "DEY", "NOP", "TXA", "ANE", "STY", "STA", "STX", "SAX", "BCC", "STA", "HLT", "SHA", "STY", "STA", "STX", "SAX", "TYA", "STA", "TXS", "SHS", "SHY", "STA", "SHX", "SHA", "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", "TAY", "LDA", "TAX", "LXA", "LDY", "LDA", "LDX", "LAX", "BCS", "LDA", "HLT", "LAX", "LDY", "LDA", "LDX", "LAX", "CLV", "LDA", "TSX", "LAE", "LDY", "LDA", "LDX", "LAX", "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", "INY", "CMP", "DEX", "AXS", "CPY", "CMP", "DEC", "DCP", "BNE", "CMP", "HLT", "DCP", "NOP", "CMP", "DEC", "DCP", "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", "CPX", "SBC", "NOP", "ISC", "CPX", "SBC", "INC", "ISC", "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISC", "BEQ", "SBC", "HLT", "ISC", "NOP", "SBC", "INC", "ISC", "SED", "SBC", "NOP", "ISC", "NOP", "SBC", "INC", "ISC"]
+OpCodeNames: List[str] = [
+    "BRK",
+    "ORA",
+    "HLT",
+    "SLO",
+    "NOP",
+    "ORA",
+    "ASL",
+    "SLO",
+    "PHP",
+    "ORA",
+    "ASL",
+    "ANC",
+    "NOP",
+    "ORA",
+    "ASL",
+    "SLO",
+    "BPL",
+    "ORA",
+    "HLT",
+    "SLO",
+    "NOP",
+    "ORA",
+    "ASL",
+    "SLO",
+    "CLC",
+    "ORA",
+    "NOP",
+    "SLO",
+    "NOP",
+    "ORA",
+    "ASL",
+    "SLO",
+    "JSR",
+    "AND",
+    "HLT",
+    "RLA",
+    "BIT",
+    "AND",
+    "ROL",
+    "RLA",
+    "PLP",
+    "AND",
+    "ROL",
+    "ANC",
+    "BIT",
+    "AND",
+    "ROL",
+    "RLA",
+    "BMI",
+    "AND",
+    "HLT",
+    "RLA",
+    "NOP",
+    "AND",
+    "ROL",
+    "RLA",
+    "SEC",
+    "AND",
+    "NOP",
+    "RLA",
+    "NOP",
+    "AND",
+    "ROL",
+    "RLA",
+    "RTI",
+    "EOR",
+    "HLT",
+    "SRE",
+    "NOP",
+    "EOR",
+    "LSR",
+    "SRE",
+    "PHA",
+    "EOR",
+    "LSR",
+    "ALR",
+    "JMP",
+    "EOR",
+    "LSR",
+    "SRE",
+    "BVC",
+    "EOR",
+    "HLT",
+    "SRE",
+    "NOP",
+    "EOR",
+    "LSR",
+    "SRE",
+    "CLI",
+    "EOR",
+    "NOP",
+    "SRE",
+    "NOP",
+    "EOR",
+    "LSR",
+    "SRE",
+    "RTS",
+    "ADC",
+    "HLT",
+    "RRA",
+    "NOP",
+    "ADC",
+    "ROR",
+    "RRA",
+    "PLA",
+    "ADC",
+    "ROR",
+    "ARR",
+    "JMP",
+    "ADC",
+    "ROR",
+    "RRA",
+    "BVS",
+    "ADC",
+    "HLT",
+    "RRA",
+    "NOP",
+    "ADC",
+    "ROR",
+    "RRA",
+    "SEI",
+    "ADC",
+    "NOP",
+    "RRA",
+    "NOP",
+    "ADC",
+    "ROR",
+    "RRA",
+    "NOP",
+    "STA",
+    "NOP",
+    "SAX",
+    "STY",
+    "STA",
+    "STX",
+    "SAX",
+    "DEY",
+    "NOP",
+    "TXA",
+    "ANE",
+    "STY",
+    "STA",
+    "STX",
+    "SAX",
+    "BCC",
+    "STA",
+    "HLT",
+    "SHA",
+    "STY",
+    "STA",
+    "STX",
+    "SAX",
+    "TYA",
+    "STA",
+    "TXS",
+    "SHS",
+    "SHY",
+    "STA",
+    "SHX",
+    "SHA",
+    "LDY",
+    "LDA",
+    "LDX",
+    "LAX",
+    "LDY",
+    "LDA",
+    "LDX",
+    "LAX",
+    "TAY",
+    "LDA",
+    "TAX",
+    "LXA",
+    "LDY",
+    "LDA",
+    "LDX",
+    "LAX",
+    "BCS",
+    "LDA",
+    "HLT",
+    "LAX",
+    "LDY",
+    "LDA",
+    "LDX",
+    "LAX",
+    "CLV",
+    "LDA",
+    "TSX",
+    "LAE",
+    "LDY",
+    "LDA",
+    "LDX",
+    "LAX",
+    "CPY",
+    "CMP",
+    "NOP",
+    "DCP",
+    "CPY",
+    "CMP",
+    "DEC",
+    "DCP",
+    "INY",
+    "CMP",
+    "DEX",
+    "AXS",
+    "CPY",
+    "CMP",
+    "DEC",
+    "DCP",
+    "BNE",
+    "CMP",
+    "HLT",
+    "DCP",
+    "NOP",
+    "CMP",
+    "DEC",
+    "DCP",
+    "CLD",
+    "CMP",
+    "NOP",
+    "DCP",
+    "NOP",
+    "CMP",
+    "DEC",
+    "DCP",
+    "CPX",
+    "SBC",
+    "NOP",
+    "ISC",
+    "CPX",
+    "SBC",
+    "INC",
+    "ISC",
+    "INX",
+    "SBC",
+    "NOP",
+    "SBC",
+    "CPX",
+    "SBC",
+    "INC",
+    "ISC",
+    "BEQ",
+    "SBC",
+    "HLT",
+    "ISC",
+    "NOP",
+    "SBC",
+    "INC",
+    "ISC",
+    "SED",
+    "SBC",
+    "NOP",
+    "ISC",
+    "NOP",
+    "SBC",
+    "INC",
+    "ISC",
+]
 
 # Template
 TEMPLATE = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
 
-nes_palette: np.ndarray = np.array([
-    (84, 84, 84), (0, 30, 116), (8, 16, 144), (48, 0, 136),
-    (68, 0, 100), (92, 0, 48), (84, 4, 0), (60, 24, 0),
-    (32, 42, 0), (8, 58, 0), (0, 64, 0), (0, 60, 0),
-    (0, 50, 60), (0, 0, 0), (0, 0, 0), (0, 0, 0),
+nes_palette: np.ndarray = np.array(
+    [
+        (84, 84, 84),
+        (0, 30, 116),
+        (8, 16, 144),
+        (48, 0, 136),
+        (68, 0, 100),
+        (92, 0, 48),
+        (84, 4, 0),
+        (60, 24, 0),
+        (32, 42, 0),
+        (8, 58, 0),
+        (0, 64, 0),
+        (0, 60, 0),
+        (0, 50, 60),
+        (0, 0, 0),
+        (0, 0, 0),
+        (0, 0, 0),
+        (152, 150, 152),
+        (8, 76, 196),
+        (48, 50, 236),
+        (92, 30, 228),
+        (136, 20, 176),
+        (160, 20, 100),
+        (152, 34, 32),
+        (120, 60, 0),
+        (84, 90, 0),
+        (40, 114, 0),
+        (8, 124, 0),
+        (0, 118, 40),
+        (0, 102, 120),
+        (0, 0, 0),
+        (0, 0, 0),
+        (0, 0, 0),
+        (236, 238, 236),
+        (76, 154, 236),
+        (120, 124, 236),
+        (176, 98, 236),
+        (228, 84, 236),
+        (236, 88, 180),
+        (236, 106, 100),
+        (212, 136, 32),
+        (160, 170, 0),
+        (116, 196, 0),
+        (76, 208, 32),
+        (56, 204, 108),
+        (56, 180, 204),
+        (60, 60, 60),
+        (0, 0, 0),
+        (0, 0, 0),
+        (236, 238, 236),
+        (168, 204, 236),
+        (188, 188, 236),
+        (212, 178, 236),
+        (236, 174, 236),
+        (236, 174, 212),
+        (236, 180, 176),
+        (228, 196, 144),
+        (204, 210, 120),
+        (180, 222, 120),
+        (168, 226, 144),
+        (152, 226, 180),
+        (160, 214, 228),
+        (160, 162, 160),
+        (0, 0, 0),
+        (0, 0, 0),
+    ],
+    dtype=np.uint8,
+)
 
-    (152, 150, 152), (8, 76, 196), (48, 50, 236), (92, 30, 228),
-    (136, 20, 176), (160, 20, 100), (152, 34, 32), (120, 60, 0),
-    (84, 90, 0), (40, 114, 0), (8, 124, 0), (0, 118, 40),
-    (0, 102, 120), (0, 0, 0), (0, 0, 0), (0, 0, 0),
+sys.set_int_max_str_digits(2**31 - 1)
+sys.setrecursionlimit(2**31 - 1)
 
-    (236, 238, 236), (76, 154, 236), (120, 124, 236), (176, 98, 236),
-    (228, 84, 236), (236, 88, 180), (236, 106, 100), (212, 136, 32),
-    (160, 170, 0), (116, 196, 0), (76, 208, 32), (56, 204, 108),
-    (56, 180, 204), (60, 60, 60), (0, 0, 0), (0, 0, 0),
-
-    (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236),
-    (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144),
-    (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180),
-    (160, 214, 228), (160, 162, 160), (0, 0, 0), (0, 0, 0),
-], dtype=np.uint8)
-
-sys.set_int_max_str_digits(2**31-1)
-sys.setrecursionlimit(2**31-1)
 
 class EmulatorError(Exception):
     def __init__(self, exception: Exception):
         self.type = type(exception)
         self.message = str(exception)
         super().__init__(self.message)
+
 
 @dataclass
 class Flags:
@@ -66,26 +372,37 @@ class Flags:
     Overflow: bool = False
     Negative: bool = False
 
+
 @dataclass
 class Debug:
     Debug: bool = False
     halt_on_unknown_opcode: bool = False
 
+
 @dataclass
 class NMI:
-    PinsSignal:bool=False
-    PreviousPinsSignal:bool=False
-    Pending:bool=False
-    Line:bool=False
+    PinsSignal: bool = False
+    PreviousPinsSignal: bool = False
+    Pending: bool = False
+    Line: bool = False
+
 
 @dataclass
 class IRQ:
-    Line:bool=False
+    Line: bool = False
+
+
+class PPUPendingWrites(TypedDict):
+    reg: int
+    value: int
+    remaining_ppu_cycles: int
+
 
 class Emulator:
     """
     NES emulator with CPU, PPU, APU, and Controller support.
     """
+
     def __init__(self):
         # CPU initialization
         self.cartridge: Cartridge = None
@@ -98,7 +415,7 @@ class Emulator:
         self.tracelog = deque(maxlen=2024)
         self.controllers: Dict[int, Controller] = {
             1: Controller(buttons={}),  # Controller 1
-            2: Controller(buttons={})   # Controller 2
+            2: Controller(buttons={}),  # Controller 2
         }
         self.ProgramCounter = 0
         self.stackPointer = 0
@@ -115,14 +432,14 @@ class Emulator:
         self.debug: Debug = Debug()
         self.CPU_Halted = False
         # Data bus and addressing mode tracking
-        # Data bus for open bus behavior 
+        # Data bus for open bus behavior
         self.data_bus = 0
         self.current_instruction_mode = ""
 
         # PPU initialization
-        self.VRAM = array.array('B', [0] * 0x2000)
-        self.OAM = array.array('B', [0] * 256)
-        self.PaletteRAM = array.array('B', [0] * 0x20)
+        self.VRAM = array.array("B", [0] * 0x2000)
+        self.OAM = array.array("B", [0] * 256)
+        self.PaletteRAM = array.array("B", [0] * 0x20)
         self.PPUCycles = 0
         self.Scanline = 0
         self.FrameComplete = False
@@ -132,18 +449,18 @@ class Emulator:
         self.PPUSTATUS = 0
         self.OAMADDR = 0
         # PPU internal scroll/address registers (v/t/x/w) per NES spec
-        self.v = 0              # current VRAM address (15 bits)
-        self.t = 0              # temporary VRAM address (15 bits)
-        self.x = 0              # fine X scroll (3 bits)
-        self.w = False          # write toggle for $2005/$2006
-        self.PPUSCROLL = [0, 0] # kept for renderer compatibility for now
-        self.PPUADDR = 0        # kept for compatibility; v will be used for $2007
+        self.v = 0  # current VRAM address (15 bits)
+        self.t = 0  # temporary VRAM address (15 bits)
+        self.x = 0  # fine X scroll (3 bits)
+        self.w = False  # write toggle for $2005/$2006
+        self.PPUSCROLL = [0, 0]  # kept for renderer compatibility for now
+        self.PPUADDR = 0  # kept for compatibility; v will be used for $2007
         self.PPUDATA = 0
         self.AddressLatch = False
         self.PPUDataBuffer = 0
         self.FrameBuffer = np.zeros((240, 256, 3), dtype=np.uint8)
         self.IRQ_Pending = False  # Add IRQ pending flag
-        
+        self._ppu_pending_writes: List[PPUPendingWrites] = []
         # debugger
         self.fps = 0
         self.frame_count = 0
@@ -154,9 +471,9 @@ class Emulator:
         # OAM DMA pending page (execute after instruction completes)
         self._oam_dma_pending_page = None
         self.oam_dma_page = 0
-        
-        self.NMI = NMI(False, False)
-        self.IRQ = IRQ(False)
+
+        self.NMI = NMI()
+        self.IRQ = IRQ()
         self.DoNMI = False
         self.DoIRQ = False
         self.DoBRK = False
@@ -183,9 +500,11 @@ class Emulator:
         """Instance-level decorator for events."""
 
         def decorator(callback: callable) -> callable:
-            if callback is None: raise ValueError("Callback cannot be None")
-            if not hasattr(self, "_events"): self._events = {}
-            
+            if callback is None:
+                raise ValueError("Callback cannot be None")
+            if not hasattr(self, "_events"):
+                self._events = {}
+
             self._events.setdefault(event_name, []).append(callback)
             return callback
 
@@ -193,7 +512,7 @@ class Emulator:
 
     def _emit(self, event_name: str, *args: any, **kwargs: any):
         """Emit an event to all registered callbacks."""
-        if hasattr(self, '_events') and event_name in self._events:
+        if hasattr(self, "_events") and event_name in self._events:
             for callback in self._events.get(event_name, []):
                 callback(*args, **kwargs)
 
@@ -201,19 +520,19 @@ class Emulator:
         """Read from CPU or PPU memory with proper mirroring."""
         addr = int(Address) & 0xFFFF
 
-        # --- RAM mirroring ($0000-$1FFF)
+        # RAM mirroring ($0000-$1FFF)
         if addr < 0x2000:
             val = int(self.RAM[addr & 0x07FF])
             self.data_bus = val
             return val
 
-        # --- PPU registers ($2000-$3FFF)
+        # PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
             val = self.ReadPPURegister(0x2000 + (addr & 0x07))
             self.data_bus = val
             return val
 
-        # --- APU and I/O registers ($4000-$4017)
+        # APU and I/O registers ($4000-$4017)
         if addr <= 0x4017:
             if addr == 0x4016:  # Controller 1
                 bit0 = self.controllers[1].read() & 1
@@ -231,14 +550,14 @@ class Emulator:
                 self.data_bus = val
                 return val
 
-        # --- Unmapped region ($4018-$7FFF)
+        # Unmapped region ($4018-$7FFF)
         elif addr < 0x8000:
-            self._emit('onDummyRead', addr)
+            self._emit("onDummyRead", addr)
             if self.current_instruction_mode == "absolute":
                 self.data_bus = (addr >> 8) & 0xFF
             return self.data_bus
 
-        # --- ROM ($8000-$FFFF)
+        # ROM ($8000-$FFFF)
         else:
             val = int(self.ROM[addr - 0x8000])
             self.data_bus = val
@@ -250,15 +569,15 @@ class Emulator:
         val = int(Value) & 0xFF
         self.data_bus = val
 
-        # --- RAM ($0000-$1FFF)
+        # RAM ($0000-$1FFF)
         if addr < 0x2000:
             self.RAM[addr & 0x07FF] = val
 
-        # --- PPU registers ($2000-$3FFF)
+        # PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
 
-        # --- APU / Controller ($4000-$4017)
+        # APU / Controller ($4000-$4017)
         if addr >= 0x4000 and addr <= 0x4017:
             if addr == 0x4016:  # Controller 1 strobe
                 strobe = bool(val & 0x01)
@@ -274,21 +593,21 @@ class Emulator:
                 reg = addr & 0xFF
                 self.apu.write_register(reg, val)
 
-        # --- OAM DMA ($4014)
+        # OAM DMA ($4014)
         if addr == 0x4014:
             self._oam_dma_pending_page = val
 
-        # --- ROM area ($8000+)
+        # ROM area ($8000+)
         if addr >= 0x8000:
             self.data_bus = val
 
     def _ppu_open_bus_value(self) -> int:
         """Return current PPU open-bus value with decay before 1 second passes."""
         # If more than ~0.9s has passed without activity, decay to 0
-        if time.time() - getattr(self, 'ppu_bus_latch_time', 0) > 0.9:
+        if time.time() - getattr(self, "ppu_bus_latch_time", 0) > 0.9:
             self.ppu_bus_latch = 0
             self.ppu_bus_latch_time = time.time()
-        return getattr(self, 'ppu_bus_latch', 0)
+        return getattr(self, "ppu_bus_latch", 0)
 
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers with NMI suppression."""
@@ -337,7 +656,7 @@ class Emulator:
                     result = int(self.OAM[self.OAMADDR])
 
                 # Always mask bits 2-5 of attribute bytes during rendering
-                if ((self.PPUMASK & 0x18) and (self.OAMADDR & 0x03) == 0x02):
+                if (self.PPUMASK & 0x18) and (self.OAMADDR & 0x03) == 0x02:
                     result &= 0xC3  # keep bits 7-6 and 1-0
                 self.ppu_bus_latch = result
                 self.ppu_bus_latch_time = time.time()
@@ -378,8 +697,48 @@ class Emulator:
                 return result
 
             # Unreadable registers return PPU open bus
-            case _:  
+            case _:
                 return int(self._ppu_open_bus_value())
+
+    def _process_ppu_pending_writes(self):
+        """Called once per PPU cycle (or at least whenever PPUCycles advances).
+        Decrements remaining_ppu_cycles and applies any pending writes with 0 left."""
+        if not self._ppu_pending_writes:
+            return
+
+        # decrement remaining cycles for all pending entries
+        for entry in self._ppu_pending_writes:
+            entry["remaining_ppu_cycles"] -= 1
+
+        # collect entries ready to apply (remaining <= 0)
+        ready = [e for e in self._ppu_pending_writes if e["remaining_ppu_cycles"] <= 0]
+        # keep rest
+        self._ppu_pending_writes = [
+            e for e in self._ppu_pending_writes if e["remaining_ppu_cycles"] > 0
+        ]
+
+        # apply ready writes in order they were queued (FIFO)
+        for entry in ready:
+            reg = entry["reg"]
+            val = entry["value"] & 0xFF
+            # apply the same logic that was in WritePPURegister for immediate case
+            # but *without* enqueueing again.
+            if reg == 0x00:
+                old_nmi_enabled = bool(self.PPUCTRL & 0x80)
+                self.PPUCTRL = val
+                new_nmi_enabled = bool(self.PPUCTRL & 0x80)
+                # t: set nametable bits (bits 0-1)
+                self.t = (self.t & 0xF3FF) | ((val & 0x03) << 10)
+                # If NMI is enabled now and VBlank flag is set -> schedule NMI pending
+                if not old_nmi_enabled and new_nmi_enabled:
+                    if self.PPUSTATUS & 0x80:
+                        # don't trigger if we're at the exact moment VBlank is being cleared
+                        if not (self.Scanline == 261 and self.PPUCycles <= 1):
+                            self.NMI.Pending = True
+            else:
+                # fallback (shouldn't happen for our current queued usage)
+                # You can extend to other regs if you want delayed semantics there.
+                pass
 
     def WritePPURegister(self, addr: int, value: int):
         """Write to PPU registers with NMI enable handling."""
@@ -389,44 +748,31 @@ class Emulator:
         # Update PPU bus latch for open bus behavior
         self.ppu_bus_latch = val
 
-        if reg == 0x00:  # PPUCTRL
-            old_nmi_enabled = bool(self.PPUCTRL & 0x80)
-            self.PPUCTRL = val
-            new_nmi_enabled = bool(self.PPUCTRL & 0x80)
+        # Delayed case for PPUCTRL (0x00)
+        if reg == 0x00:
+            # enqueue a write that will be applied after 1 PPU cycle.
+            # Use 1 here since you observed a single PPU-cycle window of old value.
+            pending = {"reg": reg, "value": val, "remaining_ppu_cycles": 1}
+            self._ppu_pending_writes.append(pending)
+            return
 
-            # t: ... ... NN .. .. (set nametable bits)
-            self.t = (self.t & 0xF3FF) | ((val & 0x03) << 10)
-
-            # If NMI is enabled and VBlank flag is set, trigger NMI
-            # This handles: "NMI should occur when enabled during VBlank"
-            if not old_nmi_enabled and new_nmi_enabled:
-                if self.PPUSTATUS & 0x80:  # VBlank flag is set
-                    # Don't trigger if we're at the exact moment VBlank is being cleared
-                    if not (self.Scanline == 261 and self.PPUCycles <= 1):
-                        self.NMI.Pending = True
-
-        elif reg == 0x01:  # PPUMASK
+        if reg == 0x01:
+            # PPU Mask
             self.PPUMASK = val
+            return
 
         elif reg == 0x03:  # OAMADDR
             self.OAMADDR = val
 
-        elif reg == 0x04:  # OAMDATA
-            if (self.PPUMASK & 0x18) and 0 <= self.Scanline < 240:
-                # During rendering, writes are ignored but OAMADDR is still incremented
-                # Handle misaligned OAM by allowing writes to any address
-                if 1 <= self.PPUCycles <= 64:
-                    # During secondary OAM clear: increment by 1
-                    self.OAMADDR = (self.OAMADDR + 1) & 0xFF
-                else:
-                    # During sprite evaluation/loading: allow any write but increment appropriately
-                    self.OAMADDR = (self.OAMADDR + 1) & 0xFF
-            else:
-                # Outside rendering - normal write and increment
+        elif reg == 0x04:
+            # OAMDATA (writing sprite memory)
+            # implement as you already do
+            try:
                 self.OAM[self.OAMADDR] = val
-                # Increment by 1 for writes outside rendering
                 self.OAMADDR = (self.OAMADDR + 1) & 0xFF
-            self.ppu_bus_latch = val
+            except Exception:
+                pass
+            return
 
         elif reg == 0x05:  # PPUSCROLL
             if not self.w:
@@ -479,7 +825,7 @@ class Emulator:
             increment = 32 if (self.PPUCTRL & 0x04) else 1
             self.v = (self.v + increment) & 0x7FFF
 
-    #@lru_cache(maxsize=None)
+    # @lru_cache(maxsize=None)
     def ReadOperands_AbsoluteAddressed(self):
         """Read 16-bit absolute address (little endian)."""
         self.current_instruction_mode = "absolute"
@@ -489,7 +835,7 @@ class Emulator:
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         self.addressBus = (high << 8) | low
 
-    #@lru_cache(maxsize=None)
+    # @lru_cache(maxsize=None)
     def ReadOperands_AbsoluteAddressed_YIndexed(self):
         """Read absolute address and add Y (Y is NOT modified)."""
         self.current_instruction_mode = "absolute_indexed"
@@ -508,16 +854,16 @@ class Emulator:
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
             # Dummy read from the BASE address (not final address)
             _ = self.Read(base_addr)
-            self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+            self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
 
-    #@lru_cache(maxsize=None)
+    # @lru_cache(maxsize=None)
     def ReadOperands_ZeroPage(self):
         """Read zero page address."""
         self.current_instruction_mode = "zeropage"
         self.addressBus = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
 
-    #@lru_cache(maxsize=None)
+    # @lru_cache(maxsize=None)
     def ReadOperands_ZeroPage_XIndexed(self):
         """Read zero page address and add X."""
         self.current_instruction_mode = "zeropage_indexed"
@@ -525,7 +871,7 @@ class Emulator:
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         self.addressBus = (addr + self.X) & 0xFF
 
-    #@lru_cache(maxsize=None)
+    # @lru_cache(maxsize=None)
     def ReadOperands_ZeroPage_YIndexed(self):
         """Read zero page address and add Y."""
         self.current_instruction_mode = "zeropage_indexed"
@@ -533,7 +879,7 @@ class Emulator:
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         self.addressBus = (addr + self.Y) & 0xFF
 
-    #@lru_cache(maxsize=None)
+    # @lru_cache(maxsize=None)
     def ReadOperands_IndirectAddressed_YIndexed(self):
         """Indirect indexed addressing (zero page),Y."""
         self.current_instruction_mode = "indirect_indexed"
@@ -552,9 +898,9 @@ class Emulator:
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
             # Dummy read from the BASE address (not final address)
             _ = self.Read(base_addr)
-            self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+            self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
 
-    #@lru_cache(maxsize=None)
+    # @lru_cache(maxsize=None)
     def ReadOperands_IndirectAddressed_XIndexed(self):
         """Indexed indirect addressing (zero page,X)."""
         self.current_instruction_mode = "indexed_indirect"
@@ -582,7 +928,7 @@ class Emulator:
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
             # Dummy read from the BASE address (not final address)
             _ = self.Read(base_addr)
-            self._cycles_extra = getattr(self, '_cycles_extra', 0) + 1
+            self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
 
     def Push(self, Value: int):
         """Push byte onto stack."""
@@ -603,7 +949,9 @@ class Emulator:
         status |= 0x02 if self.flag.Zero else 0
         status |= 0x04 if self.flag.InterruptDisable else 0
         status |= 0x08 if self.flag.Decimal else 0
-        status |= 0x10 if self.flag.Break else 0  # Break flag reflects flag.Break when pushing
+        status |= (
+            0x10 if self.flag.Break else 0
+        )  # Break flag reflects flag.Break when pushing
         status |= 0x20  # Unused (always 1)
         status |= 0x40 if self.flag.Overflow else 0
         status |= 0x80 if self.flag.Negative else 0
@@ -627,28 +975,28 @@ class Emulator:
         self.flag.Zero = bool(value == 0x00)
         self.flag.Negative = bool(value >= 0x80)
 
-    # OPERATIONS 
+    # OPERATIONS
 
     def Op_ASL(self, Address: int, Input: int):
         """Arithmetic Shift Left."""
         _ = self.Read(Address)  # Dummy read
         self.Write(Address, Input)  # Dummy write of original value
-        self.flag.Carry = (Input >= 0x80)
+        self.flag.Carry = Input >= 0x80
         result = (Input << 1) & 0xFF
         self.UpdateZeroNegativeFlags(result)
         self.Write(Address, result)  # Final write
         return result
-    
+
     def Op_ASL_A(self):
         """Arithmetic Shift Left A."""
-        self.flag.Carry = (self.A >= 0x80)
-        self.A = (self.A << 1)
+        self.flag.Carry = self.A >= 0x80
+        self.A = self.A << 1
         self.UpdateZeroNegativeFlags(self.A)
         return self.A
 
     def Op_SLO(self, Address: int, Input: int):
         """Shift Left and OR."""
-        self.flag.Carry = (Input >= 0x80)
+        self.flag.Carry = Input >= 0x80
         self.A <<= 1
         self.UpdateZeroNegativeFlags(self.A)
         return self.A
@@ -776,14 +1124,14 @@ class Emulator:
         self.flag.Zero = (self.A & Input) == 0
         self.flag.Negative = (Input & 0x80) != 0
         self.flag.Overflow = (Input & 0x40) != 0
-    
+
     def PollInterrupts(self):
         self.NMI.PreviousPinsSignal = self.NMI.PinsSignal
         self.NMI.PinsSignal = self.NMI.Line
         if self.NMI.PinsSignal and not self.NMI.PreviousPinsSignal:
             self.DoNMI = True
         self.DoIRQ = self.IRQ.Line and not self.flag.InterruptDisable
-    
+
     def PollInterrupts_CantDisableIRQ(self):
         self.NMI.PreviousPinsSignal = self.NMI.PinsSignal
         self.NMI.PinsSignal = self.NMI.Line
@@ -791,8 +1139,7 @@ class Emulator:
             self.DoNMI = True
         if not self.DoIRQ:
             self.DoIRQ = self.IRQ.Line and not self.flag.InterruptDisable
-            
-    
+
     def Branch(self, condition: bool):
         """Handle branch instruction."""
         offset = self.Read(self.ProgramCounter)
@@ -815,7 +1162,7 @@ class Emulator:
         """Reset the emulator state."""
         if self.cartridge is None:
             raise ValueError("load cartridge first and then reset the emulator")
-        
+
         self.ROM = self.cartridge.ROM
         self.CHRROM = self.cartridge.CHRROM
         self.PRGROM = self.cartridge.PRGROM
@@ -845,17 +1192,17 @@ class Emulator:
         self.PPUCycles = 0
         self.Scanline = 0
         self.FrameComplete = False
-        
+
         # debug
-        self.frame_complete_count = 0 # reset
+        self.frame_complete_count = 0  # reset
 
         # print(f"ROM Header: {self.cartridge.HeaderedROM[:0x10]}")
         # print(f"Reset Vector: ${self.ProgramCounter:04X}")
-    
+
     def Swap(self, cartridge: Cartridge):
         """
         This function is likely intended to swap a cartridge with another one.
-        
+
         :param cartridge: Cartridge object that represents the cartridge to be swapped
         :type cartridge: Cartridge
         """
@@ -865,13 +1212,15 @@ class Emulator:
         self.ROM = self.cartridge.ROM
         self.CHRROM = self.cartridge.CHRROM
         self.PRGROM = self.cartridge.PRGROM
-    
+
     def SwapAt(self, at_cycles: int, cartridge: Cartridge):
-        raise EmulatorError(NotImplementedError("Cartridge swapping at runtime is not yet implemented."))
-    
+        raise EmulatorError(
+            NotImplementedError("Cartridge swapping at runtime is not yet implemented.")
+        )
+
     def Input(self, controller_id: int, buttons: Dict[str, bool]):
         """Update the button states for the specified controller.
-        
+
         Args:
             controller_id: 1 for Controller 1, 2 for Controller 2.
             buttons: Dictionary with button names (A, B, Select, Start, Up, Down, Left, Right)
@@ -892,11 +1241,11 @@ class Emulator:
                 return
             self._emit("before_cycle", self.cycles)
             self.Emulate_CPU()
-            
+
             for _ in range(3):
                 self.Emulate_PPU()
-                self.apu.step() # async lol
-                
+                self.apu.step()  # async lol
+
             self.frame_count += 1
             current_time = time.time()
             if current_time - self.last_fps_time >= 1.0:
@@ -919,7 +1268,7 @@ class Emulator:
         """Run one CPU cycle and corresponding PPU cycles."""
         if not self.CPU_Halted:
             self._step()
-    
+
     def step_Frame(self):
         while not self.FrameComplete:
             self.step_Cycle()
@@ -944,7 +1293,7 @@ class Emulator:
     def Emulate_CPU(self):
         # Reset instruction mode at the start of each cycle
         self.current_instruction_mode = ""
-        
+
         # If an interrupt (NMI) was requested, handle it before fetching
         # the next opcode. This ensures NMI fires between instructions and
         # prevents overlap with other interrupt sequences (BRK/IRQ) that
@@ -953,14 +1302,15 @@ class Emulator:
             self.NMI.Pending = False
             self.NMI_RUN()
             return
-            
+
         # Check for IRQ
         if self.IRQ_Pending and not self.flag.InterruptDisable:
             self.IRQ_Pending = False
             self.IRQ_RUN()
             return
 
-        if self.cycles > 0: self.cycles = 0
+        if self.cycles > 0:
+            self.cycles = 0
 
         self.opcode = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
@@ -972,7 +1322,7 @@ class Emulator:
         self.ExecuteOpcode()
 
         # Apply any extra cycles recorded during operand fetch (page-cross, dummy reads)
-        extra = getattr(self, '_cycles_extra', 0)
+        extra = getattr(self, "_cycles_extra", 0)
         if extra:
             self.cycles += extra
             self._cycles_extra = 0
@@ -985,7 +1335,7 @@ class Emulator:
     def ExecuteOpcode(self):
         """Execute the current opcode."""
         match self.opcode:
-            # CONTROL FLOW 
+            # CONTROL FLOW
             case 0x00:  # BRK
                 self.IRQ_Pending = True
                 self.Read(self.ProgramCounter)
@@ -1046,19 +1396,27 @@ class Emulator:
                     self.cycles = 5
                 return
 
-            # BRANCH INSTRUCTIONS 
+            # BRANCH INSTRUCTIONS
             case 0x10 | 0x30 | 0x50 | 0x70 | 0x90 | 0xB0 | 0xD0 | 0xF0:
-                if self.opcode == 0x10: self.Branch(not self.flag.Negative)
-                elif self.opcode == 0x30: self.Branch(self.flag.Negative)
-                elif self.opcode == 0x50: self.Branch(not self.flag.Overflow)
-                elif self.opcode == 0x70: self.Branch(self.flag.Overflow)
-                elif self.opcode == 0x90: self.Branch(not self.flag.Carry)
-                elif self.opcode == 0xB0: self.Branch(self.flag.Carry)
-                elif self.opcode == 0xD0: self.Branch(not self.flag.Zero)
-                elif self.opcode == 0xF0: self.Branch(self.flag.Zero)
+                if self.opcode == 0x10:
+                    self.Branch(not self.flag.Negative)
+                elif self.opcode == 0x30:
+                    self.Branch(self.flag.Negative)
+                elif self.opcode == 0x50:
+                    self.Branch(not self.flag.Overflow)
+                elif self.opcode == 0x70:
+                    self.Branch(self.flag.Overflow)
+                elif self.opcode == 0x90:
+                    self.Branch(not self.flag.Carry)
+                elif self.opcode == 0xB0:
+                    self.Branch(self.flag.Carry)
+                elif self.opcode == 0xD0:
+                    self.Branch(not self.flag.Zero)
+                elif self.opcode == 0xF0:
+                    self.Branch(self.flag.Zero)
                 return
 
-            # LOAD INSTRUCTIONS - LDA 
+            # LOAD INSTRUCTIONS - LDA
             case 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1:
                 if self.opcode == 0xA9:  # LDA Immediate
                     self.A = self.Read(self.ProgramCounter)
@@ -1095,7 +1453,7 @@ class Emulator:
                 self.UpdateZeroNegativeFlags(self.A)
                 return
 
-            # LOAD INSTRUCTIONS - LDX 
+            # LOAD INSTRUCTIONS - LDX
             case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE:
                 if self.opcode == 0xA2:  # LDX Immediate
                     self.X = self.Read(self.ProgramCounter)
@@ -1120,7 +1478,7 @@ class Emulator:
                 self.UpdateZeroNegativeFlags(self.X)
                 return
 
-            # LOAD INSTRUCTIONS - LDY 
+            # LOAD INSTRUCTIONS - LDY
             case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC:
                 if self.opcode == 0xA0:  # LDY Immediate
                     self.Y = self.Read(self.ProgramCounter)
@@ -1145,7 +1503,7 @@ class Emulator:
                 self.UpdateZeroNegativeFlags(self.Y)
                 return
 
-            # STORE INSTRUCTIONS - STA 
+            # STORE INSTRUCTIONS - STA
             case 0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91:
                 if self.opcode == 0x85:  # STA Zero Page
                     self.ReadOperands_ZeroPage()
@@ -1177,7 +1535,7 @@ class Emulator:
                     self.Write(self.addressBus, self.A)
                 return
 
-            # STORE INSTRUCTIONS - STX/STY 
+            # STORE INSTRUCTIONS - STX/STY
             case 0x86 | 0x96 | 0x8E | 0x84 | 0x94 | 0x8C:
                 if self.opcode == 0x86:  # STX Zero Page
                     self.ReadOperands_ZeroPage()
@@ -1205,7 +1563,7 @@ class Emulator:
                     self.cycles = 4
                 return
 
-            # TRANSFER INSTRUCTIONS 
+            # TRANSFER INSTRUCTIONS
             case 0xAA | 0xA8 | 0x8A | 0x98 | 0xBA | 0x9A:
                 if self.opcode == 0xAA:  # TAX
                     self.X = self.A
@@ -1227,7 +1585,7 @@ class Emulator:
                 self.cycles = 2
                 return
 
-            # STACK INSTRUCTIONS 
+            # STACK INSTRUCTIONS
             case 0x48 | 0x68 | 0x08 | 0x28:
                 if self.opcode == 0x48:  # PHA
                     self.Push(self.A)
@@ -1244,7 +1602,7 @@ class Emulator:
                     self.cycles = 4
                 return
 
-            # LOGICAL INSTRUCTIONS - AND 
+            # LOGICAL INSTRUCTIONS - AND
             case 0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 | 0x32:
                 if self.opcode == 0x29:  # AND Immediate
                     value = self.Read(self.ProgramCounter)
@@ -1285,7 +1643,7 @@ class Emulator:
                 self.Op_AND(value)
                 return
 
-            # LOGICAL INSTRUCTIONS - ORA 
+            # LOGICAL INSTRUCTIONS - ORA
             case 0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11:
                 if self.opcode == 0x09:  # ORA Immediate
                     value = self.Read(self.ProgramCounter)
@@ -1322,7 +1680,7 @@ class Emulator:
                 self.Op_ORA(value)
                 return
 
-            # LOGICAL INSTRUCTIONS - EOR 
+            # LOGICAL INSTRUCTIONS - EOR
             case 0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51:
                 if self.opcode == 0x49:  # EOR Immediate
                     value = self.Read(self.ProgramCounter)
@@ -1359,7 +1717,7 @@ class Emulator:
                 self.Op_EOR(value)
                 return
 
-            # BIT INSTRUCTIONS 
+            # BIT INSTRUCTIONS
             case 0x24 | 0x2C:
                 if self.opcode == 0x24:  # BIT Zero Page
                     self.ReadOperands_ZeroPage()
@@ -1370,7 +1728,7 @@ class Emulator:
                 self.Op_BIT(self.Read(self.addressBus))
                 return
 
-            # ARITHMETIC INSTRUCTIONS - ADC 
+            # ARITHMETIC INSTRUCTIONS - ADC
             case 0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71:
                 if self.opcode == 0x69:  # ADC Immediate
                     value = self.Read(self.ProgramCounter)
@@ -1407,7 +1765,7 @@ class Emulator:
                 self.Op_ADC(value)
                 return
 
-            # ARITHMETIC INSTRUCTIONS - SBC 
+            # ARITHMETIC INSTRUCTIONS - SBC
             case 0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB:
                 if self.opcode in [0xE9, 0xEB]:  # SBC Immediate
                     value = self.Read(self.ProgramCounter)
@@ -1444,7 +1802,7 @@ class Emulator:
                 self.Op_SBC(value)
                 return
 
-            # COMPARE INSTRUCTIONS - CMP 
+            # COMPARE INSTRUCTIONS - CMP
             case 0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1:
                 if self.opcode == 0xC9:  # CMP Immediate
                     value = self.Read(self.ProgramCounter)
@@ -1481,7 +1839,7 @@ class Emulator:
                 self.Op_CMP(value)
                 return
 
-            # COMPARE INSTRUCTIONS - CPX/CPY 
+            # COMPARE INSTRUCTIONS - CPX/CPY
             case 0xE0 | 0xE4 | 0xEC | 0xC0 | 0xC4 | 0xCC:
                 if self.opcode == 0xE0:  # CPX Immediate
                     value = self.Read(self.ProgramCounter)
@@ -1514,7 +1872,7 @@ class Emulator:
                     self.Op_CPY(value)
                 return
 
-            # INCREMENT INSTRUCTIONS 
+            # INCREMENT INSTRUCTIONS
             case 0xE6 | 0xF6 | 0xEE | 0xFE | 0xE8 | 0xC8:
                 if self.opcode == 0xE6:  # INC Zero Page
                     self.ReadOperands_ZeroPage()
@@ -1542,7 +1900,7 @@ class Emulator:
                     self.cycles = 2
                 return
 
-            # DECREMENT INSTRUCTIONS 
+            # DECREMENT INSTRUCTIONS
             case 0xC6 | 0xD6 | 0xCE | 0xDE | 0xCA | 0x88:
                 if self.opcode == 0xC6:  # DEC Zero Page
                     self.ReadOperands_ZeroPage()
@@ -1570,7 +1928,7 @@ class Emulator:
                     self.cycles = 2
                 return
 
-            # SHIFT INSTRUCTIONS - ASL 
+            # SHIFT INSTRUCTIONS - ASL
             case 0x0A | 0x06 | 0x16 | 0x0E | 0x1E:
                 if self.opcode == 0x0A:  # ASL A
                     self.Read(self.ProgramCounter)
@@ -1596,7 +1954,7 @@ class Emulator:
                     self.cycles = 7
                 return
 
-            # SHIFT INSTRUCTIONS - LSR 
+            # SHIFT INSTRUCTIONS - LSR
             case 0x4A | 0x46 | 0x56 | 0x4E | 0x5E:
                 if self.opcode == 0x4A:  # LSR A
                     self.flag.Carry = (self.A & 0x01) != 0
@@ -1621,7 +1979,7 @@ class Emulator:
                     self.cycles = 7
                 return
 
-            # ROTATE INSTRUCTIONS - ROL 
+            # ROTATE INSTRUCTIONS - ROL
             case 0x2A | 0x26 | 0x36 | 0x2E | 0x3E:
                 if self.opcode == 0x2A:  # ROL A
                     carry_in = 1 if self.flag.Carry else 0
@@ -1647,7 +2005,7 @@ class Emulator:
                     self.cycles = 7
                 return
 
-            # ROTATE INSTRUCTIONS - ROR 
+            # ROTATE INSTRUCTIONS - ROR
             case 0x6A | 0x66 | 0x76 | 0x6E | 0x7E:
                 if self.opcode == 0x6A:  # ROR A
                     carry_in = 0x80 if self.flag.Carry else 0
@@ -1673,19 +2031,26 @@ class Emulator:
                     self.cycles = 7
                 return
 
-            # FLAG INSTRUCTIONS 
+            # FLAG INSTRUCTIONS
             case 0x18 | 0x38 | 0x58 | 0x78 | 0xB8 | 0xD8 | 0xF8:
-                if self.opcode == 0x18: self.flag.Carry = False
-                elif self.opcode == 0x38: self.flag.Carry = True
-                elif self.opcode == 0x58: self.flag.InterruptDisable = False
-                elif self.opcode == 0x78: self.flag.InterruptDisable = True
-                elif self.opcode == 0xB8: self.flag.Overflow = False
-                elif self.opcode == 0xD8: self.flag.Decimal = False
-                elif self.opcode == 0xF8: self.flag.Decimal = True
+                if self.opcode == 0x18:
+                    self.flag.Carry = False
+                elif self.opcode == 0x38:
+                    self.flag.Carry = True
+                elif self.opcode == 0x58:
+                    self.flag.InterruptDisable = False
+                elif self.opcode == 0x78:
+                    self.flag.InterruptDisable = True
+                elif self.opcode == 0xB8:
+                    self.flag.Overflow = False
+                elif self.opcode == 0xD8:
+                    self.flag.Decimal = False
+                elif self.opcode == 0xF8:
+                    self.flag.Decimal = True
                 self.cycles = 2
                 return
 
-            # NOP INSTRUCTIONS 
+            # NOP INSTRUCTIONS
             case 0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA:  # NOP variants
                 self.cycles = 2
                 return
@@ -1715,7 +2080,7 @@ class Emulator:
                 self.cycles = 4
                 return
 
-            # UNOFFICIAL/ILLEGAL OPCODES - SINGLE BYTE 
+            # UNOFFICIAL/ILLEGAL OPCODES - SINGLE BYTE
             case 0x02 | 0x72:  # KIL/JAM
                 self.CPU_Halted = True
                 self.cycles = 1
@@ -1779,7 +2144,7 @@ class Emulator:
                 self.cycles = 2
                 return
 
-            # UNOFFICIAL/ILLEGAL OPCODES - MEMORY 
+            # UNOFFICIAL/ILLEGAL OPCODES - MEMORY
             # SLO (ASL then ORA)
             case 0x03 | 0x07 | 0x0F | 0x13 | 0x1B | 0x1F | 0x17:
                 if self.opcode == 0x03:  # SLO (ind,X)
@@ -2031,7 +2396,7 @@ class Emulator:
                 self.Op_SBC(value)
                 return
 
-            # OBSCURE UNOFFICIAL OPCODES 
+            # OBSCURE UNOFFICIAL OPCODES
             case 0x93 | 0x9F | 0x9C | 0x9E | 0x9B | 0xBB:
                 if self.opcode == 0x93:  # SHA INDIRECT, Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
@@ -2068,10 +2433,14 @@ class Emulator:
                 return
 
             case _:  # Unknown opcode
-                print(f"Unknown opcode: ${self.opcode:02X} at PC=${self.ProgramCounter-1:04X}")
+                print(
+                    f"Unknown opcode: ${self.opcode:02X} at PC=${self.ProgramCounter - 1:04X}"
+                )
                 if self.debug.halt_on_unknown_opcode:
                     self.CPU_Halted = True
-                    raise Exception(f"Unknown opcode ${self.opcode:02X} encountered at ${self.ProgramCounter-1:04X}")
+                    raise Exception(
+                        f"Unknown opcode ${self.opcode:02X} encountered at ${self.ProgramCounter - 1:04X}"
+                    )
                 self.cycles = 2
                 return
 
@@ -2086,34 +2455,37 @@ class Emulator:
         self.ProgramCounter = (high << 8) | low
         self.cycles = 7
 
-    def CheckSpriteZeroHit(self, scanline: int, x: int, sprite_index: int, color_idx: int) -> bool:
+    def CheckSpriteZeroHit(
+        self, scanline: int, x: int, sprite_index: int, color_idx: int
+    ) -> bool:
         """Check if this sprite should trigger sprite 0 hit."""
         # Only sprite 0 (first sprite in OAM) can trigger the hit
         if sprite_index != 0:
             return False
-        
+
         # Both background and sprite rendering must be enabled
         if (self.PPUMASK & 0x18) != 0x18:
             return False
-        
+
         # Sprite must be non-transparent
         if color_idx == 0:
             return False
-        
+
         # Background pixel at this position must be opaque
-        if not (hasattr(self, '_bg_opaque_line') and self._bg_opaque_line[x]):
+        if not (hasattr(self, "_bg_opaque_line") and self._bg_opaque_line[x]):
             return False
-        
+
         # Can't occur at leftmost or rightmost pixel
         if x == 0 or x == 255:
             return False
-        
+
         # All conditions met
         return True
 
     def Emulate_PPU(self):
-        """Emulate one PPU cycle with precise VBlank and NMI timing."""
+        """Emulate one PPU cycle with precise VBlank, NMI, and delayed register timing."""
 
+        # VBlank set timing
         # VBlank flag is SET at scanline 241, cycle 1 (second cycle of scanline)
         if self.Scanline == 241 and self.PPUCycles == 1:
             self.PPUSTATUS |= 0x80  # Set VBlank flag
@@ -2121,13 +2493,21 @@ class Emulator:
             if self.PPUCTRL & 0x80:
                 self.NMI.Pending = True
 
-        # Pre-render scanline: clear VBlank and sprite flags
+        # Pre-render scanline behavior
+        # Clear VBlank and sprite flags at scanline 261, cycle 1
         if self.Scanline == 261 and self.PPUCycles == 1:
             self.PPUSTATUS &= 0x1F  # Clear VBlank (bit 7), sprite 0 hit (bit 6), sprite overflow (bit 5)
             self.NMI.Pending = False  # Clear any pending NMI
 
+        # Advance one PPU cycle
         self.PPUCycles += 1
 
+        # Apply delayed CPU->PPU writes (e.g. $2000)
+        # This ensures that when CPU writes PPUCTRL, the PPU sees the old value
+        # for 1 PPU cycle before applying the new one, matching hardware timing.
+        self._process_ppu_pending_writes()
+
+        # Handle end-of-scanline wraparound
         # 341 PPU cycles per scanline
         if self.PPUCycles >= 341:
             self.PPUCycles = 0
@@ -2143,7 +2523,6 @@ class Emulator:
                 self.frame_complete_count += 1
                 self.FrameComplete = False
 
-        # Visible scanlines (0-239)
         if 0 <= self.Scanline < 240:
             # Render at the start of each scanline
             if self.PPUCycles == 1:
@@ -2180,7 +2559,7 @@ class Emulator:
         scroll_y = self.PPUSCROLL[1]
 
         # Calculate which nametable to use
-        base_nametable = (self.PPUCTRL & 0x03)
+        base_nametable = self.PPUCTRL & 0x03
 
         # Universal background color (palette entry 0)
         backdrop_color = int(self.PaletteRAM[0])
@@ -2193,7 +2572,7 @@ class Emulator:
             # Determine which nametable (with horizontal and vertical wrapping)
             nt_h = (abs_x // 256) & 1  # Horizontal nametable select
             nt_v = (abs_y // 240) & 1  # Vertical nametable select
-            nametable = (base_nametable ^ nt_h ^ (nt_v << 1))
+            nametable = base_nametable ^ nt_h ^ (nt_v << 1)
             nametable_base = 0x2000 | (nametable << 10)
 
             # Tile position within nametable
@@ -2221,8 +2600,10 @@ class Emulator:
             color_idx = ((plane1 >> bit) & 1) | (((plane2 >> bit) & 1) << 1)
 
             if color_idx == 0:  # Background transparent -> draw backdrop color
-                self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
-                if hasattr(self, '_bg_opaque_line'):
+                self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(
+                    backdrop_color
+                )
+                if hasattr(self, "_bg_opaque_line"):
                     self._bg_opaque_line[x] = False
                 continue
 
@@ -2245,7 +2626,7 @@ class Emulator:
             self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
 
             # Mark opaque background at this pixel for sprite priority
-            if hasattr(self, '_bg_opaque_line'):
+            if hasattr(self, "_bg_opaque_line"):
                 # Left 8-pixel background clipping
                 if x < 8 and (self.PPUMASK & 0x02) == 0:
                     self._bg_opaque_line[x] = False
@@ -2256,7 +2637,7 @@ class Emulator:
         """Render up to 8 sprites on a given scanline into the framebuffer."""
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
         sprites_drawn = 0
-        
+
         # Clear sprite 0 hit flag at start of visible scanline
         if self.PPUCycles == 1 and 0 <= scanline < 240:
             self.PPUSTATUS &= ~0x40
@@ -2275,7 +2656,7 @@ class Emulator:
             sprites_drawn += 1
             if sprites_drawn > 8:
                 break
-            
+
             # Determine pattern table base (from PPUCTRL)
             pattern_table_base = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
 
@@ -2301,7 +2682,7 @@ class Emulator:
                 color_idx = (bit1 << 1) | bit0
                 if color_idx == 0:
                     continue  # transparent
-                
+
                 # Apply palette
                 palette_base = 0x10 + ((attributes & 0x03) << 2)
                 color = self.PaletteRAM[(palette_base + color_idx) & 0x1F]
@@ -2310,16 +2691,20 @@ class Emulator:
                 sx = x + col
                 if sx < 0 or sx >= 256:
                     continue  # skip pixels offscreen
-                
+
                 self.CheckSpriteZeroHit(scanline, sx, i // 4, color_idx)
-                
+
                 if 0 <= scanline < 240:
                     priority = (attributes >> 5) & 1
-                    bg_pixel_opaque = hasattr(self, '_bg_opaque_line') and self._bg_opaque_line[sx]
+                    bg_pixel_opaque = (
+                        hasattr(self, "_bg_opaque_line") and self._bg_opaque_line[sx]
+                    )
 
                     # Sprite 0 hit detection - only check if both background and sprites are enabled
                     if i == 0 and color_idx != 0 and (self.PPUMASK & 0x18) == 0x18:
-                        if bg_pixel_opaque and 1 <= sx <= 254:  # Sprite 0 hit can't occur at x=0 or x=255
+                        if (
+                            bg_pixel_opaque and 1 <= sx <= 254
+                        ):  # Sprite 0 hit can't occur at x=0 or x=255
                             self.PPUSTATUS |= 0x40  # Set sprite 0 hit flag
 
                     # Sprite priority: 0=front, 1=behind background
@@ -2344,13 +2729,15 @@ class Emulator:
 
                 # Only store first 8 sprites
                 if len(sprites) < 8:
-                    sprites.append({
-                        'index': i,
-                        'y': y,
-                        'tile': int(self.OAM[oam_addr + 1]),
-                        'attr': int(self.OAM[oam_addr + 2]),
-                        'x': int(self.OAM[oam_addr + 3]),
-                    })
+                    sprites.append(
+                        {
+                            "index": i,
+                            "y": y,
+                            "tile": int(self.OAM[oam_addr + 1]),
+                            "attr": int(self.OAM[oam_addr + 2]),
+                            "x": int(self.OAM[oam_addr + 3]),
+                        }
+                    )
 
         # Set sprite overflow flag (bit 5) if more than 8 sprites found
         # According to NES spec: flag is set when more than 8 sprites are detected
@@ -2365,10 +2752,10 @@ class Emulator:
     @memoize(maxsize=((len(nes_palette) + 1) * 3))
     def NESPaletteToRGB(self, color_idx: int) -> int:
         """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
-        
+
         return nes_palette[color_idx & 0x3F]
 
-    # DMA helpers 
+    # DMA helpers
     def _perform_oam_dma(self, page: int):
         """Copy 256 bytes from CPU page to OAM and add DMA cycles."""
         base = (page & 0xFF) << 8
@@ -2379,6 +2766,6 @@ class Emulator:
             self.data_bus = data
         # DMA takes 513 or 514 CPU cycles depending on alignment
         self.cycles += 513
-    
+
         # Also handle the case when reading from $4014
         self.oam_dma_page = page  # Store for reading

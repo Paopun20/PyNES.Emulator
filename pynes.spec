@@ -18,13 +18,6 @@ a = Analysis(
         ("app/icon.ico", "."),   # icon file (placed in root of bundle)
     ],
     hiddenimports=hiddenimports_np + [
-        "numpy._core._multiarray_umath",
-        "numpy._core._multiarray_tests",
-        "numpy._core._dtype_ctypes",
-        "numpy._core._exceptions",
-        "numpy.core._dtype",
-        "numpy.core._methods",
-        # Tkinter imports
         "tkinter",
         "tkinter.filedialog",
         "tkinter.messagebox",
