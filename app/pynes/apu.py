@@ -1,7 +1,8 @@
+import cython
 import numpy as np
 import pygame
-import cython
 from pygame import mixer
+
 
 @cython.cclass
 class APU:
@@ -9,16 +10,16 @@ class APU:
         # === Pygame mixer setup ===
         self.sample_rate = sample_rate
         self.buffer_size = buffer_size
-        
+
         # Initialize pygame mixer if not already initialized
         if not mixer.get_init():
             mixer.init(frequency=sample_rate, size=-16, channels=1, buffer=buffer_size)
-        
+
         # Create a sound channel for continuous playback
         self.channel = mixer.Channel(0)
         self.audio_buffer = np.zeros(buffer_size, dtype=np.int16)
         self.buffer_position = 0
-        
+
         # === Timing ===
         self.cpu_clock = 1789773
         self.cycle_counter = 0
@@ -36,14 +37,78 @@ class APU:
             [0, 1, 0, 0, 0, 0, 0, 0],  # 12.5%
             [0, 1, 1, 0, 0, 0, 0, 0],  # 25%
             [0, 1, 1, 1, 1, 0, 0, 0],  # 50%
-            [1, 0, 0, 1, 1, 1, 1, 1]   # 25% negated
+            [1, 0, 0, 1, 1, 1, 1, 1],  # 25% negated
         ]
         self.triangle_sequence = list(range(15, -1, -1)) + list(range(0, 16))
-        self.noise_periods = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068]
-        self.dmc_periods = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54]
+        self.noise_periods = [
+            4,
+            8,
+            16,
+            32,
+            64,
+            96,
+            128,
+            160,
+            202,
+            254,
+            380,
+            508,
+            762,
+            1016,
+            2034,
+            4068,
+        ]
+        self.dmc_periods = [
+            428,
+            380,
+            340,
+            320,
+            286,
+            254,
+            226,
+            214,
+            190,
+            160,
+            142,
+            128,
+            106,
+            84,
+            72,
+            54,
+        ]
         self.length_table = [
-            10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
-            12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
+            10,
+            254,
+            20,
+            2,
+            40,
+            4,
+            80,
+            6,
+            160,
+            8,
+            60,
+            10,
+            14,
+            12,
+            26,
+            14,
+            12,
+            16,
+            24,
+            18,
+            48,
+            20,
+            96,
+            22,
+            192,
+            24,
+            72,
+            26,
+            16,
+            28,
+            32,
+            30,
         ]
 
         # === Frame counter & IRQ ===
@@ -70,7 +135,7 @@ class APU:
             "timer": 0,
             "timer_period": 0,
             "sequence_pos": 0,
-            "length_halt": False
+            "length_halt": False,
         }
 
     def _init_triangle(self):
@@ -82,7 +147,7 @@ class APU:
             "timer": 0,
             "timer_period": 0,
             "sequence_pos": 0,
-            "length_halt": False
+            "length_halt": False,
         }
 
     def _init_noise(self):
@@ -97,7 +162,7 @@ class APU:
             "timer_period": 0,
             "shift_register": 1,
             "mode": False,  # 0=93Hz, 1=periodic
-            "length_halt": False
+            "length_halt": False,
         }
 
     def _init_dmc(self):
@@ -115,12 +180,12 @@ class APU:
             "loop": False,
             "irq_enabled": False,
             "silence": True,
-            "buffer": None
+            "buffer": None,
         }
 
     def write_register(self, addr, val):
         val &= 0xFF
-        
+
         # Pulse 1
         if addr == 0x4000:
             self.pulse1["duty"] = (val >> 6) & 3
@@ -136,7 +201,9 @@ class APU:
         elif addr == 0x4002:
             self.pulse1["timer_period"] = (self.pulse1["timer_period"] & 0x700) | val
         elif addr == 0x4003:
-            self.pulse1["timer_period"] = (self.pulse1["timer_period"] & 0xFF) | ((val & 7) << 8)
+            self.pulse1["timer_period"] = (self.pulse1["timer_period"] & 0xFF) | (
+                (val & 7) << 8
+            )
             if self.pulse1["enabled"]:
                 self.pulse1["length_counter"] = self.length_table[val >> 3]
             self.pulse1["sequence_pos"] = 0
@@ -158,7 +225,9 @@ class APU:
         elif addr == 0x4006:
             self.pulse2["timer_period"] = (self.pulse2["timer_period"] & 0x700) | val
         elif addr == 0x4007:
-            self.pulse2["timer_period"] = (self.pulse2["timer_period"] & 0xFF) | ((val & 7) << 8)
+            self.pulse2["timer_period"] = (self.pulse2["timer_period"] & 0xFF) | (
+                (val & 7) << 8
+            )
             if self.pulse2["enabled"]:
                 self.pulse2["length_counter"] = self.length_table[val >> 3]
             self.pulse2["sequence_pos"] = 0
@@ -170,9 +239,13 @@ class APU:
             self.triangle["length_halt"] = bool(val & 0x80)
             self.triangle["linear_counter"] = val & 0x7F
         elif addr == 0x400A:
-            self.triangle["timer_period"] = (self.triangle["timer_period"] & 0x700) | val
+            self.triangle["timer_period"] = (
+                self.triangle["timer_period"] & 0x700
+            ) | val
         elif addr == 0x400B:
-            self.triangle["timer_period"] = (self.triangle["timer_period"] & 0xFF) | ((val & 7) << 8)
+            self.triangle["timer_period"] = (self.triangle["timer_period"] & 0xFF) | (
+                (val & 7) << 8
+            )
             if self.triangle["enabled"]:
                 self.triangle["length_counter"] = self.length_table[val >> 3]
             self.triangle["linear_reload"] = True
@@ -236,13 +309,20 @@ class APU:
     def read_register(self, addr):
         if addr == 0x4015:
             status = 0
-            if self.pulse1["length_counter"] > 0: status |= 0x01
-            if self.pulse2["length_counter"] > 0: status |= 0x02
-            if self.triangle["length_counter"] > 0: status |= 0x04
-            if self.noise["length_counter"] > 0: status |= 0x08
-            if self.dmc["current_length"] > 0: status |= 0x10
-            if self.frame_irq: status |= 0x40
-            if self.dmc_irq: status |= 0x80
+            if self.pulse1["length_counter"] > 0:
+                status |= 0x01
+            if self.pulse2["length_counter"] > 0:
+                status |= 0x02
+            if self.triangle["length_counter"] > 0:
+                status |= 0x04
+            if self.noise["length_counter"] > 0:
+                status |= 0x08
+            if self.dmc["current_length"] > 0:
+                status |= 0x10
+            if self.frame_irq:
+                status |= 0x40
+            if self.dmc_irq:
+                status |= 0x80
             self.frame_irq = False
             return status
         return 0x00
@@ -250,7 +330,7 @@ class APU:
     def clock_frame_counter(self):
         """Clock the frame counter and handle envelope/linear/length updates"""
         self.frame_counter += 1
-        
+
         if self.frame_mode == 0:  # 4-step mode
             if self.frame_counter in [3728, 7456, 11185, 14914]:
                 self.clock_envelopes()
@@ -289,12 +369,20 @@ class APU:
     def clock_sweeps(self):
         """Clock sweep units for pulse channels"""
         for ch in [self.pulse1, self.pulse2]:
-            if ch["sweep_divider"] == 0 and ch["sweep_enabled"] and ch["sweep_shift"] > 0:
+            if (
+                ch["sweep_divider"] == 0
+                and ch["sweep_enabled"]
+                and ch["sweep_shift"] > 0
+            ):
                 new_period = self.calculate_sweep(ch)
                 if new_period <= 0x7FF and ch["timer_period"] >= 8:
                     ch["timer_period"] = new_period
             if ch["sweep_divider"] == 0 or ch["sweep_reload"]:
-                ch["sweep_divider"] = ch["sweep_divider"] if not ch["sweep_reload"] else ch["sweep_divider"]
+                ch["sweep_divider"] = (
+                    ch["sweep_divider"]
+                    if not ch["sweep_reload"]
+                    else ch["sweep_divider"]
+                )
                 ch["sweep_reload"] = False
             else:
                 ch["sweep_divider"] -= 1
@@ -326,7 +414,10 @@ class APU:
 
         if self.triangle["timer"] == 0:
             self.triangle["timer"] = self.triangle["timer_period"]
-            if self.triangle["length_counter"] > 0 and self.triangle["linear_counter"] > 0:
+            if (
+                self.triangle["length_counter"] > 0
+                and self.triangle["linear_counter"] > 0
+            ):
                 self.triangle["sequence_pos"] = (self.triangle["sequence_pos"] + 1) % 32
         else:
             self.triangle["timer"] -= 1
@@ -335,8 +426,12 @@ class APU:
         """Clock noise channel"""
         if self.noise["timer"] == 0:
             self.noise["timer"] = self.noise["timer_period"]
-            feedback = (self.noise["shift_register"] & 1) ^ ((self.noise["shift_register"] >> (6 if self.noise["mode"] else 1)) & 1)
-            self.noise["shift_register"] = (self.noise["shift_register"] >> 1) | (feedback << 14)
+            feedback = (self.noise["shift_register"] & 1) ^ (
+                (self.noise["shift_register"] >> (6 if self.noise["mode"] else 1)) & 1
+            )
+            self.noise["shift_register"] = (self.noise["shift_register"] >> 1) | (
+                feedback << 14
+            )
         else:
             self.noise["timer"] -= 1
 
@@ -351,10 +446,10 @@ class APU:
                 else:
                     if self.dmc["value"] >= 2:
                         self.dmc["value"] -= 2
-            
+
             self.dmc["shift_register"] >>= 1
             self.dmc["bit_count"] -= 1
-            
+
             if self.dmc["bit_count"] == 0:
                 self.dmc["bit_count"] = 8
                 if self.dmc["buffer"] is not None:
@@ -363,15 +458,17 @@ class APU:
                     self.dmc["buffer"] = None
                 else:
                     self.dmc["silence"] = True
-                
+
                 # Fetch next byte if needed
                 if self.dmc["current_length"] > 0 and self.dmc["buffer"] is None:
                     # In a real implementation, this would read from CPU memory
                     # For now, we'll simulate it with zeros
                     self.dmc["buffer"] = 0
-                    self.dmc["current_address"] = (self.dmc["current_address"] + 1) & 0xFFFF
+                    self.dmc["current_address"] = (
+                        self.dmc["current_address"] + 1
+                    ) & 0xFFFF
                     self.dmc["current_length"] -= 1
-                    
+
                     if self.dmc["current_length"] == 0:
                         if self.dmc["loop"]:
                             self.start_dmc_sample()
@@ -388,7 +485,12 @@ class APU:
 
     def get_pulse_output(self, ch):
         """Get pulse channel output"""
-        if not ch["enabled"] or ch["length_counter"] == 0 or ch["timer_period"] < 8 or ch["timer_period"] > 0x7FF:
+        if (
+            not ch["enabled"]
+            or ch["length_counter"] == 0
+            or ch["timer_period"] < 8
+            or ch["timer_period"] > 0x7FF
+        ):
             return 0
         if not self.duty_patterns[ch["duty"]][ch["sequence_pos"]]:
             return 0
@@ -396,7 +498,11 @@ class APU:
 
     def get_triangle_output(self):
         """Get triangle channel output"""
-        if not self.triangle["enabled"] or self.triangle["length_counter"] == 0 or self.triangle["linear_counter"] == 0:
+        if (
+            not self.triangle["enabled"]
+            or self.triangle["length_counter"] == 0
+            or self.triangle["linear_counter"] == 0
+        ):
             return 0
         return self.triangle_sequence[self.triangle["sequence_pos"]]
 
@@ -406,7 +512,11 @@ class APU:
             return 0
         if self.noise["shift_register"] & 1:
             return 0
-        return self.noise["volume"] if self.noise["constant_volume"] else self.noise["envelope_counter"]
+        return (
+            self.noise["volume"]
+            if self.noise["constant_volume"]
+            else self.noise["envelope_counter"]
+        )
 
     def get_dmc_output(self):
         """Get DMC channel output"""
@@ -450,12 +560,12 @@ class APU:
         # Generate audio sample
         if self.cycle_counter >= self.cycles_per_sample:
             self.cycle_counter -= self.cycles_per_sample
-            
+
             # Generate sample and add to buffer
             sample = int(self.mix_audio() * 32767)
             self.audio_buffer[self.buffer_position] = sample
             self.buffer_position += 1
-            
+
             # If buffer is full, play it
             if self.buffer_position >= self.buffer_size:
                 self.play_buffer()
@@ -463,7 +573,9 @@ class APU:
 
     def play_buffer(self):
         """Send audio buffer to Pygame mixer"""
-        stereo_buffer = np.column_stack((self.audio_buffer, self.audio_buffer))  # duplicate mono to L/R
+        stereo_buffer = np.column_stack(
+            (self.audio_buffer, self.audio_buffer)
+        )  # duplicate mono to L/R
         sound = pygame.sndarray.make_sound(stereo_buffer)
 
         if not self.channel.get_busy():

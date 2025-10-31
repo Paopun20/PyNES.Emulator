@@ -5,29 +5,25 @@ environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 from rich.traceback import install
 
 install()
-from __version__ import __version__
-
-from pynes.emulator import Emulator, EmulatorError
-from pynes.cartridge import Cartridge
-from pynes.api.discord import Presence  # type: ignore
+import threading
+import time
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
 
-import pygame
-import threading
-import time
 import numpy as np
-
-from pygame.locals import DOUBLEBUF, OPENGL
+import pygame
+from __version__ import __version__
+from backend.controller import Controller
+from objects.RenderSprite import RenderSprite
 from OpenGL.GL import *
 from OpenGL.GLU import *
-
+from pygame.locals import DOUBLEBUF, OPENGL
+from pynes.api.discord import Presence  # type: ignore
+from pynes.cartridge import Cartridge
+from pynes.emulator import Emulator, EmulatorError
+from pypresence.types import ActivityType, StatusDisplayType
 from rich.console import Console
 from rich.panel import Panel
-from pypresence.types import ActivityType, StatusDisplayType
-
-# new import
-from backend.controller import Controller
 
 console = Console()
 console.clear()
@@ -58,6 +54,7 @@ pygame.display.set_caption("PyNES Emulator")
 if icon_surface:
     pygame.display.set_icon(icon_surface)
 
+# OpenGL initial state
 glClearColor(0.0, 0.0, 0.0, 1.0)
 glEnable(GL_TEXTURE_2D)
 glDisable(GL_DEPTH_TEST)
@@ -65,33 +62,17 @@ glDisable(GL_LIGHTING)
 glViewport(0, 0, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 glMatrixMode(GL_PROJECTION)
 glLoadIdentity()
+# keep ortho for compatibility with some parts that use pixel coords
 glOrtho(0, NES_WIDTH * SCALE, NES_HEIGHT * SCALE, 0, -1, 1)
 glMatrixMode(GL_MODELVIEW)
 glLoadIdentity()
 
-texture_id = glGenTextures(1)
-glBindTexture(GL_TEXTURE_2D, texture_id)
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-
-empty_data = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
-glTexImage2D(
-    GL_TEXTURE_2D,
-    0,
-    GL_RGB,
-    NES_WIDTH,
-    NES_HEIGHT,
-    0,
-    GL_RGB,
-    GL_UNSIGNED_BYTE,
-    empty_data,
-)
+# create a sprite renderer (expects objects/RenderSprite.py to implement modern GL RenderSprite)
+sprite = RenderSprite(width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 
 clock = pygame.time.Clock()
 
-# init emulator
+# init emulator and controller
 nes_emu = Emulator()
 controller = Controller()
 
@@ -99,7 +80,7 @@ root = Tk()
 root.withdraw()
 try:
     root.iconbitmap(str(icon_path))
-except:
+except Exception:
     pass
 
 # === ROM Load ===
@@ -140,7 +121,7 @@ console.print(
         border_style="bright_blue",
     )
 )
-console.print(f"[green]Loaded:[/green] {nes_path}\n")
+console.print(f"[green]Loaded:[/green] [red]{Path(nes_path).name}[/red]")
 
 # === EMU LOOP ===
 nes_emu.Reset()
@@ -151,21 +132,98 @@ frame_lock = threading.Lock()
 latest_frame = None
 frame_ready = False
 
+cpu_clock: int = 1_790_000
+ppu_clock: int = 5_369_317
+all_clock: int = cpu_clock + ppu_clock
 
-def render_text_to_texture(text_lines, width, height):
+# Debug overlay texture cache
+_debug_tex_id = None
+_debug_tex_w = 0
+_debug_tex_h = 0
+_debug_prev_lines = None
+
+
+def render_text_to_surface(text_lines, width, height):
+    """Return a pygame Surface (RGBA) with the rendered text."""
     surf = pygame.Surface((width, height), pygame.SRCALPHA)
     surf.fill((0, 0, 0, 180))
     y_pos = 5
     for line in text_lines:
         surf.blit(font.render(line, True, (255, 255, 255)), (5, y_pos))
         y_pos += 20
+    return surf
+
+
+def update_debug_texture(text_lines, screen_w, screen_h):
+    """Create or update a GL texture for the debug overlay.
+    Uses a single texture and glTexSubImage2D when possible (no create/delete each frame)."""
+    global _debug_tex_id, _debug_tex_w, _debug_tex_h, _debug_prev_lines
+
+    # If same text, skip update
+    if _debug_prev_lines == tuple(text_lines):
+        return _debug_tex_id, _debug_tex_w, _debug_tex_h
+    _debug_prev_lines = tuple(text_lines)
+
+    debug_height = len(text_lines) * 20 + 10
+    tex_w = screen_w
+    tex_h = debug_height
+
+    surf = render_text_to_surface(text_lines, tex_w, tex_h)
     text_data = pygame.image.tostring(surf, "RGBA", True)
-    return text_data, surf.get_width(), surf.get_height()
 
+    if _debug_tex_id is None:
+        _debug_tex_id = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, _debug_tex_id)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        # allocate
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGBA,
+            tex_w,
+            tex_h,
+            0,
+            GL_RGBA,
+            GL_UNSIGNED_BYTE,
+            text_data,
+        )
+        _debug_tex_w, _debug_tex_h = tex_w, tex_h
+        glBindTexture(GL_TEXTURE_2D, 0)
+    else:
+        glBindTexture(GL_TEXTURE_2D, _debug_tex_id)
+        # if size changed, reallocate; else subimage
+        if tex_w != _debug_tex_w or tex_h != _debug_tex_h:
+            glTexImage2D(
+                GL_TEXTURE_2D,
+                0,
+                GL_RGBA,
+                tex_w,
+                tex_h,
+                0,
+                GL_RGBA,
+                GL_UNSIGNED_BYTE,
+                text_data,
+            )
+            _debug_tex_w, _debug_tex_h = tex_w, tex_h
+        else:
+            # update subimage
+            glTexSubImage2D(
+                GL_TEXTURE_2D,
+                0,
+                0,
+                0,
+                tex_w,
+                tex_h,
+                GL_RGBA,
+                GL_UNSIGNED_BYTE,
+                text_data,
+            )
+        glBindTexture(GL_TEXTURE_2D, 0)
 
-cpu_clock: int = 1_790_000
-ppu_clock: int = 5_369_317
-all_clock: int = cpu_clock + ppu_clock
+    return _debug_tex_id, _debug_tex_w, _debug_tex_h
 
 
 def draw_debug_overlay():
@@ -176,8 +234,8 @@ def draw_debug_overlay():
         f"NES File: {Path(nes_path).name}",
         f"ROM Header: {nes_emu.cartridge.HeaderedROM[:0x10]}",
         "",
-        f"EUM take (from start): ~{(time.time() - start_time):.2f}s",
-        f"IRL take (from start, based on CPU clock and PUU clock): ~{((time.time() - start_time) * (1/all_clock)):.2f}s",
+        f"EMU runtime: {(time.time() - start_time):.2f}s",
+        f"IRL estimate: {((time.time() - start_time) * (1 / all_clock)):.2f}s",
         f"CPU Halted: {nes_emu.CPU_Halted}",
         f"Frame Complete Count: {nes_emu.frame_complete_count}",
         f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
@@ -192,88 +250,67 @@ def draw_debug_overlay():
         f"{'C' if nes_emu.flag.Carry else '-'}"
         f"{'U' if nes_emu.flag.Unused else '-'}",
     ]
-    debug_height = len(debug_info) * 20 + 10
-    text_data, tex_width, tex_height = render_text_to_texture(
-        debug_info, NES_WIDTH * SCALE, debug_height
-    )
-    debug_tex = glGenTextures(1)
-    glBindTexture(GL_TEXTURE_2D, debug_tex)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGBA,
-        tex_width,
-        tex_height,
-        0,
-        GL_RGBA,
-        GL_UNSIGNED_BYTE,
-        text_data,
-    )
+
+    screen_w = NES_WIDTH * SCALE
+    screen_h = NES_HEIGHT * SCALE
+    tex_id, tex_w, tex_h = update_debug_texture(debug_info, screen_w, screen_h)
+
+    # draw quad with debug texture at top-left
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glBindTexture(GL_TEXTURE_2D, tex_id)
+
     glBegin(GL_QUADS)
+    # tex coords need flipping depending on how pygame.image.tostring arranged them (we used True for flipped)
     glTexCoord2f(0, 1)
     glVertex2f(0, 0)
     glTexCoord2f(1, 1)
-    glVertex2f(tex_width, 0)
+    glVertex2f(tex_w, 0)
     glTexCoord2f(1, 0)
-    glVertex2f(tex_width, tex_height)
+    glVertex2f(tex_w, tex_h)
     glTexCoord2f(0, 0)
-    glVertex2f(0, tex_height)
+    glVertex2f(0, tex_h)
     glEnd()
+
+    glBindTexture(GL_TEXTURE_2D, 0)
     glDisable(GL_BLEND)
-    glDeleteTextures([debug_tex])
-    glBindTexture(GL_TEXTURE_2D, texture_id)
 
 
+# updated render_frame uses sprite
 def render_frame(frame):
     try:
         frame_rgb = np.ascontiguousarray(frame, dtype=np.uint8)
+        # upload to sprite texture & draw
+        sprite.update_frame(frame_rgb)
         glClear(GL_COLOR_BUFFER_BIT)
-        glBindTexture(GL_TEXTURE_2D, texture_id)
-        glTexSubImage2D(
-            GL_TEXTURE_2D,
-            0,
-            0,
-            0,
-            NES_WIDTH,
-            NES_HEIGHT,
-            GL_RGB,
-            GL_UNSIGNED_BYTE,
-            frame_rgb,
-        )
-        glBegin(GL_QUADS)
-        glTexCoord2f(0, 0)
-        glVertex2f(0, 0)
-        glTexCoord2f(1, 0)
-        glVertex2f(NES_WIDTH * SCALE, 0)
-        glTexCoord2f(1, 1)
-        glVertex2f(NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
-        glTexCoord2f(0, 1)
-        glVertex2f(0, NES_HEIGHT * SCALE)
-        glEnd()
+        sprite.draw()
         draw_debug_overlay()
         pygame.display.flip()
     except Exception as e:
         print(f"Frame render error: {e}")
 
 
+next_run = False
+
+
+# subthread to run emulator cycles
 def subpro():
-    global running, paused
+    global running, paused, next_run
     while running:
         if paused:
             time.sleep(0.1)
             continue
-        try:
-            nes_emu.step_Cycle()
-        except EmulatorError as e:
-            print(f"{e.type.__name__}: {e.message}")
-            running = False
+        if not next_run:
+            try:
+                next_run = True
+                nes_emu.step_Cycle()
+                next_run = False
+            except EmulatorError as e:
+                print(f"{e.type.__name__}: {e.message}")
+                running = False
 
 
-subpro_thread = threading.Thread(target=subpro, daemon=True)
+subpro_thread = threading.Thread(target=subpro)
 subpro_thread.start()
 
 
@@ -287,7 +324,8 @@ def vm_frame(frame):
 
 @nes_emu.on("before_cycle")
 def cycle(_):
-    nes_emu.Input(1, controller.state)  # ✅ use controller
+    # feed controller state into emulator
+    nes_emu.Input(1, controller.state)
 
 
 glClear(GL_COLOR_BUFFER_BIT)
@@ -314,6 +352,8 @@ while running:
             elif event.key == pygame.K_F5:
                 show_debug = not show_debug
                 console.print(f"[cyan]Debug {'ON' if show_debug else 'OFF'}[/cyan]")
+                # force debug texture update next draw
+                _debug_prev_lines = None
                 if latest_frame is not None:
                     with frame_lock:
                         render_frame(latest_frame)
@@ -329,6 +369,12 @@ while running:
                 render_frame(latest_frame)
                 frame_ready = False
                 frame_count += 1
+            else:
+                if show_debug:
+                    render_frame(
+                        latest_frame
+                        or np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
+                    )
 
     title = "PyNES Emulator"
     if paused:
@@ -336,4 +382,17 @@ while running:
     pygame.display.set_caption(title)
     clock.tick(60)
 
+try:
+    if _debug_tex_id:
+        glDeleteTextures([_debug_tex_id])
+except Exception:
+    pass
+
+try:
+    sprite.destroy()
+except Exception:
+    pass
+
+subpro_thread.join()
+presence.close()
 pygame.quit()
