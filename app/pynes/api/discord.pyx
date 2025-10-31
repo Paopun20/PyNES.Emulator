@@ -96,9 +96,8 @@ cdef class Presence:
             try:
                 self.rpc.close()
                 self.connected = False
-                print("Discord RPC disconnected.")
             except Exception as e:
-                print(f"Error disconnecting from Discord RPC: {e}")
+                pass
 
     def reconnect(self):
         """Reconnect to Discord RPC."""

@@ -65,6 +65,7 @@ class RenderSprite:
         self.height = height
         self.scale = scale
         self._frameBuffer = np.zeros((height, width, 3), dtype=np.uint8)
+        self.current_fragment_shader = FRAGMENT_SHADER_SRC
 
         # compile shader program
         vs = compile_shader(VERTEX_SHADER_SRC, GL_VERTEX_SHADER)
@@ -79,27 +80,15 @@ class RenderSprite:
 
         # VBO for a single quad in pixel coords (x,y, u,v)
         # We'll create vertices for a quad covering [0..width*scale] x [0..height*scale]
-        W = width * scale
-        H = height * scale
+        W = float(width * scale)
+        H = float(height * scale)
         verts = np.array(
             [
                 # x,  y,   u, v
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                W,
-                0.0,
-                1.0,
-                0.0,
-                W,
-                H,
-                1.0,
-                1.0,
-                0.0,
-                H,
-                0.0,
-                1.0,
+                0.0, 0.0, 0.0, 0.0,
+                W,   0.0, 1.0, 0.0,
+                W,   H,   1.0, 1.0,
+                0.0, H,   0.0, 1.0,
             ],
             dtype=np.float32,
         )
@@ -119,13 +108,14 @@ class RenderSprite:
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, inds.nbytes, inds, GL_STATIC_DRAW)
 
         # position (vec2)
+        stride = 4 * ctypes.sizeof(ctypes.c_float)
         glEnableVertexAttribArray(self.a_pos)
         glVertexAttribPointer(
             self.a_pos,
             2,
             GL_FLOAT,
             GL_FALSE,
-            4 * ctypes.sizeof(ctypes.c_float),
+            stride,
             ctypes.c_void_p(0),
         )
         # uv (vec2)
@@ -135,7 +125,7 @@ class RenderSprite:
             2,
             GL_FLOAT,
             GL_FALSE,
-            4 * ctypes.sizeof(ctypes.c_float),
+            stride,
             ctypes.c_void_p(2 * ctypes.sizeof(ctypes.c_float)),
         )
 
@@ -186,6 +176,34 @@ class RenderSprite:
             frame_rgb,
         )
         glBindTexture(GL_TEXTURE_2D, 0)
+    
+    def set_fragment_shader(self, shader_src: str):
+        """Replace the current fragment shader with a new one."""
+        # Store the new shader source
+        self.current_fragment_shader = shader_src
+        
+        # Recreate the program
+        vs = compile_shader(VERTEX_SHADER_SRC, GL_VERTEX_SHADER)
+        fs = compile_shader(shader_src, GL_FRAGMENT_SHADER)
+        
+        # Delete old program
+        old_program = self.program
+        
+        # Create new program
+        self.program = link_program(vs, fs)
+        
+        # Delete old program
+        glDeleteProgram(old_program)
+        
+        # Update uniform/attribute locations
+        self.a_pos = glGetAttribLocation(self.program, "a_pos")
+        self.a_uv = glGetAttribLocation(self.program, "a_uv")
+        self.u_scale = glGetUniformLocation(self.program, "u_scale")
+        self.u_tex = glGetUniformLocation(self.program, "u_tex")
+    
+    def reset_shader(self):
+        """Reset to the default fragment shader."""
+        self.set_fragment_shader(FRAGMENT_SHADER_SRC)
 
     def draw(self):
         glUseProgram(self.program)

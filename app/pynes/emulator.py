@@ -1,5 +1,4 @@
 import array
-import sys
 
 # from disklist import DiskList
 # from datetime import datetime
@@ -9,7 +8,7 @@ import time  # for fps
 from collections import deque
 from dataclasses import dataclass
 from string import Template
-from typing import Dict, List, TypedDict
+from typing import Dict, List, Final, TypedDict
 
 import numpy as np
 from pynes.apu import APU
@@ -18,7 +17,7 @@ from pynes.controller import Controller
 from pynes.helper.memoize import memoize
 
 # DATA
-OpCodeNames: List[str] = [
+OpCodeNames: Final[List[str]] = [
     "BRK",
     "ORA",
     "HLT",
@@ -278,9 +277,9 @@ OpCodeNames: List[str] = [
 ]
 
 # Template
-TEMPLATE = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
+TEMPLATE: Final[Template] = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
 
-nes_palette: np.ndarray = np.array(
+nes_palette: Final[np.ndarray] = np.array(
     [
         (84, 84, 84),
         (0, 30, 116),
@@ -349,10 +348,6 @@ nes_palette: np.ndarray = np.array(
     ],
     dtype=np.uint8,
 )
-
-sys.set_int_max_str_digits(2**31 - 1)
-sys.setrecursionlimit(2**31 - 1)
-
 
 class EmulatorError(Exception):
     def __init__(self, exception: Exception):

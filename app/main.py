@@ -1,3 +1,13 @@
+if __import__("sys", globals=globals(), locals=locals()).version_info < (3, 13): raise RuntimeError("Python 3.13 or higher is required to run PyNES.")
+
+import sys
+sys.set_int_max_str_digits(2**31 - 1)
+sys.setrecursionlimit(2**31 - 1)
+sys.setswitchinterval(1e-322)
+sys.setrecursionlimit(2**31 - 1)
+sys.setprofile(None)
+sys.settrace(None)
+
 from os import environ
 
 environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
@@ -17,7 +27,7 @@ from backend.controller import Controller
 from objects.RenderSprite import RenderSprite
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from pygame.locals import DOUBLEBUF, OPENGL
+from pygame.locals import * #DOUBLEBUF, OPENGL
 from pynes.api.discord import Presence  # type: ignore
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
@@ -25,8 +35,23 @@ from pypresence.types import ActivityType, StatusDisplayType
 from rich.console import Console
 from rich.panel import Panel
 
+from shaders.crt import shader as test_shader
+
 console = Console()
-console.clear()
+
+console.print(
+    Panel.fit(
+        f"[bold cyan]PyNES Emulator [red]{__version__}[/red][/]",
+        border_style="bright_blue",
+    )
+)
+
+console.print(
+    Panel.fit(
+        f"[bold yellow]Using Python version: [green]{sys.version.split()[0]}[/green][/]",
+        border_style="bright_blue",
+    ),
+)
 
 presence = Presence(1429842237432266752)
 presence.connect()
@@ -67,8 +92,10 @@ glOrtho(0, NES_WIDTH * SCALE, NES_HEIGHT * SCALE, 0, -1, 1)
 glMatrixMode(GL_MODELVIEW)
 glLoadIdentity()
 
-# create a sprite renderer (expects objects/RenderSprite.py to implement modern GL RenderSprite)
+# create a sprite renderer
 sprite = RenderSprite(width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
+
+# sprite.set_fragment_shader(test_shader) # lol
 
 clock = pygame.time.Clock()
 
@@ -94,6 +121,9 @@ while True:
             continue
         break
     else:
+        if pygame.event.get(pygame.QUIT):
+            pygame.quit()
+            exit(0)
         messagebox.showerror("Error", "No NES file selected, please select a NES file")
         continue
 
@@ -106,7 +136,7 @@ presence.update(
     status_display_type=StatusDisplayType.STATE,
     activity_type=ActivityType.PLAYING,
     name="PyNES Emulator",
-    details="Running NES Game",
+    details=f"Play NES Game | PyNES Version: {__version__}",
     state=f"Play {Path(nes_path).name}",
 )
 
@@ -115,12 +145,6 @@ nes_emu.logging = True
 nes_emu.debug.Debug = False
 nes_emu.debug.halt_on_unknown_opcode = False
 
-console.print(
-    Panel.fit(
-        f"[bold cyan]PyNES Emulator [red]{__version__}[/red][/]",
-        border_style="bright_blue",
-    )
-)
 console.print(f"[green]Loaded:[/green] [red]{Path(nes_path).name}[/red]")
 
 # === EMU LOOP ===
