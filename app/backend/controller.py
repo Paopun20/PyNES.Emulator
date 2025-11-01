@@ -1,15 +1,16 @@
 import pygame
 from rich.console import Console
+from typing import Final
 
 console = Console()
 
 class Controller:
-    NES_KEYS = [
+    NES_KEYS: Final[list[str]]= [
         'A', 'B', 'Select', 'Start',
         'Up', 'Down', 'Left', 'Right'
     ]
 
-    KEY_MAPPING = {
+    KEY_MAPPING: Final[dict[int, str]]= {
         pygame.K_x: 'A',
         pygame.K_z: 'B',
         pygame.K_RSHIFT: 'Select',
@@ -20,14 +21,14 @@ class Controller:
         pygame.K_RIGHT: 'Right',
     }
 
-    GAMEPAD_BUTTON_MAP = {
+    GAMEPAD_BUTTON_MAP: Final[dict[int, str]]= {
         0: 'A',      # A
         1: 'B',      # B
         6: 'Select', # Back
         7: 'Start'   # Start
     }
 
-    AXIS_DEADZONE = 0.5
+    AXIS_DEADZONE: Final[float]= 0.5
 
     def __init__(self):
         self.state = {key: False for key in self.NES_KEYS}

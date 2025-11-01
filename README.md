@@ -41,6 +41,7 @@ The emulator is still under development, and performance is not yet optimized. E
 - **Controller Support**: Like **Input Emulation** but with Gamepad support. ( Xbox Controller recommended, IDK, what can use, I don't have those controllers 😭 ).
 - **ROM Loading**: Supports `.nes` ROM files.
 - **Debugging**: Basic FPS and CPU register display.
+- **Discord Rich Presence**: Support for displaying current game activity on Discord.
 
 ## Planned Features
 
@@ -62,6 +63,14 @@ The emulator is still under development, and performance is not yet optimized. E
 - APU: Work in progress.
 - Input: Basic keyboard mapping.
 - Performance: Not optimized for speed; primarily for educational purposes.
+- Mapper: Basic NROM mapper implemented.
+
+## Compatibility
+
+- **Operating Systems**:
+  - Windows: Fully supported.
+  - macOS: Partially supported (Old builds available, but may have minor issues).
+  - Linux: Partially supported (Old builds available, but may have minor issues).
 
 ## Installation
 
@@ -80,7 +89,7 @@ If you want to use a ready-made executable:
 
 ### Run emulator from source code (for developers)
 
-1. Ensure you have Python 3.8 or higher installed.
+1. Ensure you have Python 3.13 or higher installed.
 2. Clone this repository.
 
 ```bash
