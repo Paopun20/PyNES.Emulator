@@ -46,7 +46,7 @@ The emulator is still under development, and performance is not yet optimized. E
 ## Planned Features
 
 - **TAS (Tool-Assisted Speedruns or Tool-Assisted Superplays)**: Implement features to support TAS creation and playback.
-- **Enhanced PPU Features**: Complete implementation of PPU core.
+- **Complete PPU Features**: Complete implementation of PPU core.
 - **Complete APU Emulation**: Full sound channel support and audio effects.
 - **Save States**: Implement save and load state functionality.
 - **GUI Enhancements**: Improve the user interface for better usability and aesthetics.
@@ -55,6 +55,9 @@ The emulator is still under development, and performance is not yet optimized. E
 - **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
 - **Cross-Platform Support**: Ensure compatibility across Windows, macOS, and Linux.
 - **Multiplayer Support**: Implement support for multiple controllers for two-player games.
+- **Fun Settings**: Add features like cheat codes, graphical filters, and custom key mappings.
+- **Documentation**: Improve documentation for users and developers.
+- **Add more Rust components**: Move more performance-critical parts to Rust for better speed. (You can help me with this if you know Rust language).
 
 ## Current Status
 
@@ -96,11 +99,15 @@ If you want to use a ready-made executable:
 git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
 ```
 
-3. Create and activate a virtual environment:
+3. Create and activate a virtual environment (optional but recommended):
+
+Create a virtual environment:
 
 ```bash
 python -m venv env
 ```
+
+Activate the virtual environment:
 
 ```bash
 # windows:
@@ -155,6 +162,10 @@ python app/main.py
 ## Contributing (a.k.a “Fix it for me?”)
 
 Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes. Please test your code and submit it with a detailed description of the changes and screenshots of the test results, and **DON'T PUT MALWARE IN YOUR PULL REQUEST, I WILL CLOSE YOUR PULL REQUEST IMMEDIATELY**, and make sure your code is readable and well-documented.
+
+## Security
+
+For information on how to report security vulnerabilities, please refer to our [Security Policy](SECURITY.md).
 
 ## License
 
