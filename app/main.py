@@ -390,12 +390,12 @@ while running:
 
     if frame_ready:
         with frame_lock:
-            try:
-                sprite.set_fragment_config(
-                    "u_time",
-                    frame_ui/15,
-                    )
-            except: pass
+            # try:
+            #     sprite.set_fragment_config(
+            #         "u_time",
+            #         frame_ui/15,
+            #         )
+            # except: pass
             
             if latest_frame is not None:
                 render_frame(latest_frame)
