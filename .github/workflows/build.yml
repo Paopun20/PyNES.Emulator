@@ -21,6 +21,8 @@ jobs:
         exclude:
           - os: macos-latest
             bit: 32
+          - os: ubuntu-latest
+            bit: 32
 
     defaults:
       run:
