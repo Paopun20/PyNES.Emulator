@@ -35,7 +35,7 @@ from pypresence.types import ActivityType, StatusDisplayType
 from rich.console import Console
 from rich.panel import Panel
 
-from shaders.crt import shader as test_shader
+from shaders.retro import shader as test_shader
 
 console = Console()
 
@@ -110,7 +110,7 @@ try:
 except Exception:
     pass
 
-# === ROM Load ===
+# ROM Load
 while True:
     nes_path = filedialog.askopenfilename(
         title="Select a NES file", filetypes=[("NES file", "*.nes")]
@@ -147,7 +147,7 @@ nes_emu.debug.halt_on_unknown_opcode = False
 
 console.print(f"[green]Loaded:[/green] [red]{Path(nes_path).name}[/red]")
 
-# === EMU LOOP ===
+# EMU LOOP
 nes_emu.Reset()
 running, paused, show_debug = True, False, False
 frame_count = 0
@@ -322,7 +322,6 @@ def subpro():
     global running, paused, next_run
     while running:
         if paused:
-            time.sleep(0.1)
             continue
         if not next_run:
             try:
@@ -354,6 +353,8 @@ def cycle(_):
 
 glClear(GL_COLOR_BUFFER_BIT)
 pygame.display.flip()
+
+frame_ui = 0
 
 while running:
     events = pygame.event.get()
@@ -389,6 +390,13 @@ while running:
 
     if frame_ready:
         with frame_lock:
+            try:
+                sprite.set_fragment_config(
+                    "u_time",
+                    frame_ui/15,
+                    )
+            except: pass
+            
             if latest_frame is not None:
                 render_frame(latest_frame)
                 frame_ready = False
@@ -404,6 +412,7 @@ while running:
     if paused:
         title += " [PAUSED]"
     pygame.display.set_caption(title)
+    frame_ui += 1
     clock.tick(60)
 
 try:

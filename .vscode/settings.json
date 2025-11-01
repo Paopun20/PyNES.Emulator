@@ -1,4 +1,17 @@
 {
     "python.REPL.enableREPLSmartSend": false,
-    "discord.enabled": false
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/.pytest_cache": true,
+        "**/.mypy_cache": true,
+        "env": true,
+        "build": true,
+        "dist": true,
+        "__PatreonRoms": true,
+        "AccuracyCoin-Link": true,
+        "art": true,
+        "docs": true,
+        "tests": true
+    }
 }

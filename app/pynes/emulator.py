@@ -8,13 +8,17 @@ import time  # for fps
 from collections import deque
 from dataclasses import dataclass
 from string import Template
-from typing import Dict, List, Final, TypedDict
+from typing import Dict, List, Final, TypedDict, Union
 
 import numpy as np
 from pynes.apu import APU
 from pynes.cartridge import Cartridge
 from pynes.controller import Controller
 from pynes.helper.memoize import memoize
+
+import asyncio
+import inspect
+import threading
 
 # DATA
 OpCodeNames: Final[List[str]] = [
@@ -401,7 +405,7 @@ class Emulator:
     def __init__(self):
         # CPU initialization
         self.cartridge: Cartridge = None
-        self._events: Dict[str, List[callable]] = {}
+        self._events: Dict[str, List[callable[Union[any | None]]]] = {}
         self.apu: APU = APU(sample_rate=44100, buffer_size=1024)
         self.RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
         self.ROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
@@ -497,19 +501,30 @@ class Emulator:
         def decorator(callback: callable) -> callable:
             if callback is None:
                 raise ValueError("Callback cannot be None")
-            if not hasattr(self, "_events"):
-                self._events = {}
-
-            self._events.setdefault(event_name, []).append(callback)
-            return callback
+            if callable(callback):
+                if event_name not in self._events:
+                    self._events[event_name] = []
+                self._events[event_name].append(callback)
+                return callback
+            else:
+                raise ValueError("Callback must be callable")
 
         return decorator
 
-    def _emit(self, event_name: str, *args: any, **kwargs: any):
+    def _emit(self, event_name: str, *args, **kwargs):
         """Emit an event to all registered callbacks."""
-        if hasattr(self, "_events") and event_name in self._events:
-            for callback in self._events.get(event_name, []):
-                callback(*args, **kwargs)
+        events = getattr(self, "_events", None)
+        if not events:
+            return
+    
+        callbacks = events.get(event_name)
+        if not callbacks:
+            return
+    
+        for callback in callbacks:
+            if not callable(callback):
+                raise ValueError(f"Callback {callback} is not callable")
+            callback(*args, **kwargs)
 
     def Read(self, Address: int) -> int:
         """Read from CPU or PPU memory with proper mirroring."""
