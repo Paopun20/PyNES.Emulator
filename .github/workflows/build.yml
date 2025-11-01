@@ -15,8 +15,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest] # ubuntu-latest, macos-latest # Temporarily disabled on linux and macOS due to build issues
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        bit: [32, 64]
         python-version: ["3.13.7"]
+        exclude:
+          - os: macos-latest
+            bit: 32
 
     defaults:
       run:
@@ -30,9 +34,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+          architecture: ${{ matrix.bit == 32 && 'x86' || 'x64' }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.bit == 32 && 'i686-unknown-linux-gnu' || '' }}${{ matrix.os == 'windows-latest' && matrix.bit == 32 && 'i686-pc-windows-msvc' || '' }}
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -43,9 +50,9 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             app/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('app/**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.bit }}bit-cargo-${{ hashFiles('app/**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-${{ matrix.bit }}bit-cargo-
 
       - name: Get pip cache dir
         id: pip-cache-dir
@@ -58,16 +65,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.pip-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('app/requirements.txt') }}
+          key: ${{ runner.os }}-${{ matrix.bit }}bit-pip-${{ matrix.python-version }}-${{ hashFiles('app/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-${{ matrix.bit }}bit-pip-${{ matrix.python-version }}-
+            ${{ runner.os }}-${{ matrix.bit }}bit-pip-
 
       - name: Install OS dependencies
         run: |
           if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
             sudo apt-get update
-            sudo apt-get install -y libgl1 libglib2.0-0 libxrender1 libgomp1
+            if [[ "${{ matrix.bit }}" == "32" ]]; then
+              sudo dpkg --add-architecture i386
+              sudo apt-get update
+              sudo apt-get install -y gcc-multilib g++-multilib libgl1:i386 libglib2.0-0:i386 libxrender1:i386 libgomp1:i386
+            else
+              sudo apt-get install -y libgl1 libglib2.0-0 libxrender1 libgomp1
+            fi
           elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
             brew install libomp
           fi
@@ -86,9 +99,15 @@ jobs:
           elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             if ! winget install --id=UPX.UPX -e --accept-source-agreements --accept-package-agreements --silent; then
               echo "Winget install failed, attempting direct download..."
-              curl -L -o upx.zip https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win64.zip
-              unzip -q upx.zip
-              upx_dir="$(pwd)/upx-5.0.2-win64"
+              if [[ "${{ matrix.bit }}" == "32" ]]; then
+                curl -L -o upx.zip https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win32.zip
+                unzip -q upx.zip
+                upx_dir="$(pwd)/upx-5.0.2-win32"
+              else
+                curl -L -o upx.zip https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win64.zip
+                unzip -q upx.zip
+                upx_dir="$(pwd)/upx-5.0.2-win64"
+              fi
               echo "upx_path=$upx_dir/upx.exe" >> $GITHUB_OUTPUT
             else
               userprofile_win="$USERPROFILE"
@@ -140,7 +159,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: steps.build.outputs.build_success == 'true'
         with:
-          name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
+          name: pynes-${{ matrix.os }}-${{ matrix.bit }}bit-py${{ matrix.python-version }}
           path: |
             dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
             app/icon.ico

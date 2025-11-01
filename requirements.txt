@@ -4,7 +4,7 @@ cython # Cython
 setuptools-rust # Rust build
 
 # game development
-pygame # game library
+pygame-ce # community edition of pygame
 
 # emulator backend
 pypresence # discord rich presence

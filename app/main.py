@@ -193,7 +193,7 @@ def update_debug_texture(text_lines, screen_w, screen_h):
     tex_h = debug_height
 
     surf = render_text_to_surface(text_lines, tex_w, tex_h)
-    text_data = pygame.image.tostring(surf, "RGBA", True)
+    text_data = pygame.image.tobytes(surf, "RGBA", True)
 
     if _debug_tex_id is None:
         _debug_tex_id = glGenTextures(1)
