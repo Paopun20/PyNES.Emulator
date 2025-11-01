@@ -1,25 +1,18 @@
-if __import__("sys", globals=globals(), locals=locals()).version_info < (3, 13): raise RuntimeError("Python 3.13 or higher is required to run PyNES.")
+if __import__("sys", globals=globals(), locals=locals()).version_info < (3, 13):
+    raise RuntimeError("Python 3.13 or higher is required to run PyNES.")
+
+if __import__("os").environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
+    __import__("os").environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+
+if __name__ != "__main__":
+    raise ImportError("This file is not meant to be imported as a module.")
 
 import sys
-sys.set_int_max_str_digits(2**31 - 1)
-sys.setrecursionlimit(2**31 - 1)
-sys.setswitchinterval(1e-322)
-sys.setrecursionlimit(2**31 - 1)
-sys.setprofile(None)
-sys.settrace(None)
-
-from os import environ
-
-environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
-
 from rich.traceback import install
-
-install()
 import threading
 import time
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
-
 import numpy as np
 import pygame
 from __version__ import __version__
@@ -27,31 +20,79 @@ from backend.controller import Controller
 from objects.RenderSprite import RenderSprite
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from pygame.locals import * #DOUBLEBUF, OPENGL
+from pygame.locals import *  # DOUBLEBUF, OPENGL
 from pynes.api.discord import Presence  # type: ignore
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
 from pypresence.types import ActivityType, StatusDisplayType
-from rich.console import Console
-from rich.panel import Panel
+from rich.logging import RichHandler
+
+from datetime import datetime
+import logging
 
 from shaders.retro import shader as test_shader
 
-console = Console()
+log_root = Path("log").resolve()
+log_root.mkdir(exist_ok=True)
 
-console.print(
-    Panel.fit(
-        f"[bold cyan]PyNES Emulator [red]{__version__}[/red][/]",
-        border_style="bright_blue",
-    )
-)
 
-console.print(
-    Panel.fit(
-        f"[bold yellow]Using Python version: [green]{sys.version.split()[0]}[/green][/]",
-        border_style="bright_blue",
-    ),
+class PynesFileHandler(logging.StreamHandler):
+    def __init__(self, file_name):
+        super().__init__()
+        self.file_name = file_name
+
+    def emit(self, record):
+        log_entry = self.format(record)
+        with open(self.file_name, "a") as f:
+            # add cool log
+            f.write(f"{log_entry}\n")
+
+
+logging.basicConfig(
+    level=logging.INFO if sys.argv.count("--debug") == 0 else logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        RichHandler(
+            rich_tracebacks=True,
+            show_path=False,
+        ),
+        PynesFileHandler(
+            log_root / f"pynes_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+        ),
+    ],
 )
+log = logging.getLogger("PyNES")
+log.info("Starting PyNES Emulator")
+
+sys.set_int_max_str_digits(2**31 - 1)
+sys.setrecursionlimit(2**31 - 1)
+sys.setswitchinterval(1e-322)
+sys.settrace(None)
+
+
+def sub_profile():
+    def profile(frame, event, arg):
+        try:
+            if event == "call" or event == "c_call":
+                log.debug(f"Calling {frame.f_code.co_name}")
+            elif event == "return" or event == "c_return":
+                log.debug(f"Returning from {frame.f_code.co_name}")
+            elif event == "exception" or event == "c_exception":
+                log.debug(f"Exception in {frame.f_code.co_name}: {arg}")
+            elif event == "line" or event == "c_line":
+                log.debug(f"Line {arg} in {frame.f_code.co_name}")
+        except Exception:
+            pass
+
+        return profile
+
+    sys.setprofile(profile)
+
+
+sub_profile()
+
+install()
 
 presence = Presence(1429842237432266752)
 presence.connect()
@@ -70,10 +111,10 @@ try:
     icon_surface = pygame.image.load(icon_path)
 except Exception:
     icon_surface = None
-    console.print("[bold yellow]⚠️ Icon not found[/bold yellow]")
+    log.error(f"Failed to load icon: {icon_path}")
 
 screen = pygame.display.set_mode(
-    (NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL
+    (NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE
 )
 pygame.display.set_caption("PyNES Emulator")
 if icon_surface:
@@ -95,7 +136,7 @@ glLoadIdentity()
 # create a sprite renderer
 sprite = RenderSprite(width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 
-# sprite.set_fragment_shader(test_shader) # lol
+# sprite.set_fragment_shader(test_shader)  # lol
 
 clock = pygame.time.Clock()
 
@@ -145,7 +186,7 @@ nes_emu.logging = True
 nes_emu.debug.Debug = False
 nes_emu.debug.halt_on_unknown_opcode = False
 
-console.print(f"[green]Loaded:[/green] [red]{Path(nes_path).name}[/red]")
+log.info(f"Loaded: {Path(nes_path).name}")
 
 # EMU LOOP
 nes_emu.Reset()
@@ -352,8 +393,8 @@ def cycle(_):
 
 
 glClear(GL_COLOR_BUFFER_BIT)
-pygame.display.flip()
 
+last_render = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
 frame_ui = 0
 
 while running:
@@ -368,50 +409,36 @@ while running:
                 running = False
             elif event.key == pygame.K_p:
                 paused = not paused
-                console.print(
-                    f"[bold yellow]{'⏸️ Paused' if paused else '▶️ Resumed'}[/bold yellow]"
-                )
-                if paused and latest_frame is not None:
-                    with frame_lock:
-                        render_frame(latest_frame)
+                log.info(f"{'Paused' if paused else 'Resumed'}")
             elif event.key == pygame.K_F5:
                 show_debug = not show_debug
-                console.print(f"[cyan]Debug {'ON' if show_debug else 'OFF'}[/cyan]")
-                # force debug texture update next draw
+                log.info(f"Debug {'ON' if show_debug else 'OFF'}")
                 _debug_prev_lines = None
-                if latest_frame is not None:
-                    with frame_lock:
-                        render_frame(latest_frame)
             elif event.key == pygame.K_r:
-                console.print("[bold red]🔄 Resetting emulator...[/bold red]")
+                log.info("Resetting emulator")
                 nes_emu.Reset()
                 frame_count = 0
                 start_time = time.time()
 
     if frame_ready:
         with frame_lock:
-            # try:
-            #     sprite.set_fragment_config(
-            #         "u_time",
-            #         frame_ui/15,
-            #         )
-            # except: pass
-            
             if latest_frame is not None:
-                render_frame(latest_frame)
-                frame_ready = False
-                frame_count += 1
-            else:
-                if show_debug:
-                    render_frame(
-                        latest_frame
-                        or np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
-                    )
+                last_render[:] = latest_frame
+            frame_ready = False
 
+    try:
+        sprite.set_fragment_config("u_time", frame_ui / 15.0)
+    except Exception:
+        pass
+
+    render_frame(last_render)
+
+    # title update
     title = "PyNES Emulator"
     if paused:
         title += " [PAUSED]"
     pygame.display.set_caption(title)
+
     frame_ui += 1
     clock.tick(60)
 

@@ -12,56 +12,52 @@ float rand(vec2 co) {
 void main() {
     vec2 uv = v_uv;
 
-    // Horizontal wavy distortion (signal wobble)
-    uv.x += sin(uv.y * 6.0 + u_time * 2.0) * 0.002;
+    // Slight wobble for analog signal
+    uv.x += sin(uv.y * 5.0 + u_time * 1.5) * 0.0015;
 
     // Curvature
     vec2 curve = uv * 2.0 - 1.0;
-    curve *= 1.0 + 0.08 * dot(curve, curve);
+    curve *= 1.0 + 0.07 * dot(curve, curve);
     curve = (curve + 1.0) * 0.5;
 
-    // Out of bounds = black
     if (curve.x < 0.0 || curve.x > 1.0 || curve.y < 0.0 || curve.y > 1.0) {
-        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        fragColor = vec4(0.0);
         return;
     }
 
-    // Chromatic Aberration (RGB split)
-    float ca_strength = 0.003;
+    // Chromatic aberration with edge dependence
+    float ca_strength = 0.002 + 0.002 * length(curve - 0.5);
     vec3 col;
     col.r = texture(u_tex, curve + vec2(ca_strength, 0.0)).r;
     col.g = texture(u_tex, curve).g;
     col.b = texture(u_tex, curve - vec2(ca_strength, 0.0)).b;
 
-    // Glow / Bloom
-    vec2 glowOffset = 1.0 / vec2(textureSize(u_tex, 0)) * 2.0;
-    vec3 glow = vec3(0.0);
-    glow += texture(u_tex, curve + vec2(-glowOffset.x, 0.0)).rgb;
-    glow += texture(u_tex, curve + vec2(glowOffset.x, 0.0)).rgb;
-    glow += texture(u_tex, curve + vec2(0.0, -glowOffset.y)).rgb;
-    glow += texture(u_tex, curve + vec2(0.0, glowOffset.y)).rgb;
-    glow *= 0.25;
-    col = mix(col, glow, 0.35);
+    // Simulate color bleed (retro composite effect)
+    vec3 bleed = vec3(
+        texture(u_tex, curve + vec2(0.002, 0.0)).r,
+        texture(u_tex, curve).g,
+        texture(u_tex, curve - vec2(0.002, 0.0)).b
+    );
+    col = mix(col, bleed, 0.25);
 
-    // Scanlines
-    float scanline = 0.9 + 0.1 * sin((uv.y + u_time * 0.5) * 480.0);
+    // Scanlines — darker and tighter like CRT
+    float scanline = 0.85 + 0.15 * sin((uv.y) * 720.0);
     col *= scanline;
 
-    // Flicker
-    float flicker = 0.95 + 0.05 * sin(u_time * 100.0);
-    col *= flicker;
+    // Slight flicker
+    col *= 0.97 + 0.03 * sin(u_time * 60.0);
 
-    // Noise / Grain
-    float noise = (rand(uv * u_time * 100.0) - 0.5) * 0.08;
+    // Add analog noise
+    float noise = (rand(uv * u_time * 50.0) - 0.5) * 0.06;
     col += noise;
 
-    // Vignette
+    // Mild vignette
     vec2 center = uv - 0.5;
-    float vignette = 1.0 - dot(center, center) * 0.7;
+    float vignette = 1.0 - dot(center, center) * 0.5;
     col *= vignette;
 
-    // Slight color saturation boost
-    col = pow(col, vec3(0.9)); // punchy retro colors
+    // Slight gamma/saturation tweak
+    col = pow(col, vec3(0.92));
 
     fragColor = vec4(col, 1.0);
 }

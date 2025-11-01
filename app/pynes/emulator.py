@@ -16,10 +16,6 @@ from pynes.cartridge import Cartridge
 from pynes.controller import Controller
 from pynes.helper.memoize import memoize
 
-import asyncio
-import inspect
-import threading
-
 # DATA
 OpCodeNames: Final[List[str]] = [
     "BRK",
@@ -1255,13 +1251,6 @@ class Emulator:
             for _ in range(3):
                 self.Emulate_PPU()
                 self.apu.step()  # async lol
-
-            self.frame_count += 1
-            current_time = time.time()
-            if current_time - self.last_fps_time >= 1.0:
-                self.fps = self.frame_count / (current_time - self.last_fps_time)
-                self.frame_count = 0
-                self.last_fps_time = current_time
             self._emit("after_cycle", self.cycles)
 
         except MemoryError as e:
@@ -2527,6 +2516,13 @@ class Emulator:
             if self.Scanline >= 262:
                 self.Scanline = 0  # Start new frame at scanline 0
                 self.FrameComplete = True
+
+                self.frame_count += 1
+                current_time = time.time()
+                if current_time - self.last_fps_time >= 1.0:
+                    self.fps = self.frame_count / (current_time - self.last_fps_time)
+                    self.frame_count = 0
+                    self.last_fps_time = current_time
 
                 # Emit frame event
                 self._emit("frame_complete", self.FrameBuffer)

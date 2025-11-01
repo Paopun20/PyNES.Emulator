@@ -51,7 +51,7 @@ def link_program(vs: int, fs: int) -> int:
         err = glGetProgramInfoLog(p).decode(errors="ignore")
         glDeleteProgram(p)
         raise RuntimeError(f"Program link error:\n{err}")
-    # detach and delete shaders (they're no longer needed)
+    
     try:
         glDetachShader(p, vs)
         glDetachShader(p, fs)
@@ -210,7 +210,7 @@ class RenderSprite:
         with self.UseProgram(self.program):
             loc = glGetUniformLocation(self.program, shader_config_name)
             if loc == -1:
-                print(f"Warning: uniform '{shader_config_name}' not found in current shader")
+                # print(f"Warning: uniform '{shader_config_name}' not found in current shader")
                 return
 
             # single float
