@@ -7,9 +7,12 @@ if __import__("os").environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
 if __name__ != "__main__":
     raise ImportError("This file is not meant to be imported as a module.")
 
+import os
 import sys
+import psutil
 from rich.traceback import install
 import threading
+import multiprocessing
 import time
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
@@ -17,10 +20,13 @@ import numpy as np
 import pygame
 from __version__ import __version__
 from backend.controller import Controller
+from backend.CPUMonitor import ThreadCPUMonitor
+from backend.GPUMonitor import GPUMonitor
 from objects.RenderSprite import RenderSprite
+from objects.graph import Graph
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from pygame.locals import *  # DOUBLEBUF, OPENGL
+from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE
 from pynes.api.discord import Presence  # type: ignore
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
@@ -32,8 +38,13 @@ import logging
 
 from shaders.retro import shader as test_shader
 
+from helper.pyWindowColorMode import pyWindowColorMode
+
 log_root = Path("log").resolve()
 log_root.mkdir(exist_ok=True)
+
+process = psutil.Process(os.getpid())
+process.nice(psutil.HIGH_PRIORITY_CLASS)
 
 
 class PynesFileHandler(logging.StreamHandler):
@@ -44,12 +55,16 @@ class PynesFileHandler(logging.StreamHandler):
     def emit(self, record):
         log_entry = self.format(record)
         with open(self.file_name, "a") as f:
-            # add cool log
             f.write(f"{log_entry}\n")
 
 
+debug_mode = "--debug" in sys.argv or "--realdebug" in sys.argv
+profile_mode = "--profile" in sys.argv
+
+level = logging.DEBUG if debug_mode else logging.INFO
+
 logging.basicConfig(
-    level=logging.INFO if sys.argv.count("--debug") == 0 else logging.DEBUG,
+    level=level,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
@@ -68,32 +83,34 @@ log.info("Starting PyNES Emulator")
 sys.set_int_max_str_digits(2**31 - 1)
 sys.setrecursionlimit(2**31 - 1)
 sys.setswitchinterval(1e-322)
-sys.settrace(None)
+
+multiprocessing.freeze_support()
 
 
-def sub_profile():
-    def profile(frame, event, arg):
-        try:
-            if event == "call" or event == "c_call":
-                log.debug(f"Calling {frame.f_code.co_name}")
-            elif event == "return" or event == "c_return":
-                log.debug(f"Returning from {frame.f_code.co_name}")
-            elif event == "exception" or event == "c_exception":
-                log.debug(f"Exception in {frame.f_code.co_name}: {arg}")
-            elif event == "line" or event == "c_line":
-                log.debug(f"Line {arg} in {frame.f_code.co_name}")
-        except Exception:
-            pass
+def threadProfile(frame, event, arg):
+    co_name = frame.f_code.co_name
 
-        return profile
+    if event in {"call", "c_call"}:
+        log.debug(f"Calling {co_name}")
+    elif event in {"return", "c_return"}:
+        log.debug(f"Returning from {co_name}")
+    elif event in {"exception", "c_exception"}:
+        exc_type, exc_value, _tb = arg
+        log.debug(f"Exception {exc_type.__name__} in {co_name}: {exc_value}")
+    elif event in {"line", "c_line"}:
+        log.debug(f"Line {frame.f_lineno} in {co_name}")
+    elif event in {"opcode", "c_opcode"}:
+        log.debug(f"Opcode {arg} in {co_name}")
 
-    sys.setprofile(profile)
+    return threadProfile
 
-
-sub_profile()
+if "--realdebug" in sys.argv and debug_mode:
+    threading.setprofile_all_threads(threadProfile)
+    threading.settrace_all_threads(threadProfile)
 
 install()
 
+log.info("Starting Discord presence")
 presence = Presence(1429842237432266752)
 presence.connect()
 
@@ -101,6 +118,7 @@ NES_WIDTH = 256
 NES_HEIGHT = 240
 SCALE = 3
 
+log.info(f"Starting pygame community edition {pygame.__version__}")
 pygame.init()
 pygame.font.init()
 
@@ -120,6 +138,10 @@ pygame.display.set_caption("PyNES Emulator")
 if icon_surface:
     pygame.display.set_icon(icon_surface)
 
+pyWindow = pyWindowColorMode(pygame.display.get_wm_info()['window'])
+pyWindow.dark_mode = True
+
+log.info("Starting OpenGL")
 # OpenGL initial state
 glClearColor(0.0, 0.0, 0.0, 1.0)
 glEnable(GL_TEXTURE_2D)
@@ -128,21 +150,34 @@ glDisable(GL_LIGHTING)
 glViewport(0, 0, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 glMatrixMode(GL_PROJECTION)
 glLoadIdentity()
-# keep ortho for compatibility with some parts that use pixel coords
 glOrtho(0, NES_WIDTH * SCALE, NES_HEIGHT * SCALE, 0, -1, 1)
 glMatrixMode(GL_MODELVIEW)
 glLoadIdentity()
 
+
 # create a sprite renderer
+log.info("Starting sprite renderer")
 sprite = RenderSprite(width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
+cpu_use_graph = Graph(width=100, height=50, scale=2)
+mem_use_graph = Graph(width=100, height=50, scale=2)
 
 # sprite.set_fragment_shader(test_shader)  # lol
 
 clock = pygame.time.Clock()
 
 # init emulator and controller
+log.info("Starting emulator")
 nes_emu = Emulator()
+log.info("Starting controller")
 controller = Controller()
+log.info("Starting CPU monitor")
+cpu_monitor = ThreadCPUMonitor(process, update_interval=1.0)
+cpu_monitor.start()
+gpu_monitor = GPUMonitor()
+if gpu_monitor.is_available():
+    log.info("GPU monitor initialized")
+else:
+    log.warning("GPU monitor not available")
 
 root = Tk()
 root.withdraw()
@@ -291,42 +326,99 @@ def update_debug_texture(text_lines, screen_w, screen_h):
     return _debug_tex_id, _debug_tex_w, _debug_tex_h
 
 
+debug_mode_index = 0
+
+
 def draw_debug_overlay():
+    global debug_mode_index
     if not show_debug:
         return
+
     debug_info = [
-        f"PyNES Emulator {__version__} [Debug Menu]",
-        f"NES File: {Path(nes_path).name}",
-        f"ROM Header: {nes_emu.cartridge.HeaderedROM[:0x10]}",
-        "",
-        f"EMU runtime: {(time.time() - start_time):.2f}s",
-        f"IRL estimate: {((time.time() - start_time) * (1 / all_clock)):.2f}s",
-        f"CPU Halted: {nes_emu.CPU_Halted}",
-        f"Frame Complete Count: {nes_emu.frame_complete_count}",
-        f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
-        f"PC: ${nes_emu.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
-        f"A: ${nes_emu.A:02X} X: ${nes_emu.X:02X} Y: ${nes_emu.Y:02X}",
-        f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
-        f"{'V' if nes_emu.flag.Overflow else '-'}"
-        f"{'B' if nes_emu.flag.Break else '-'}"
-        f"{'D' if nes_emu.flag.Decimal else '-'}"
-        f"{'I' if nes_emu.flag.InterruptDisable else '-'}"
-        f"{'Z' if nes_emu.flag.Zero else '-'}"
-        f"{'C' if nes_emu.flag.Carry else '-'}"
-        f"{'U' if nes_emu.flag.Unused else '-'}",
+        f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})"
     ]
+
+    match debug_mode_index:
+        case 0:
+            debug_info += [
+                f"NES File: {Path(nes_path).name}",
+                f"ROM Header: {nes_emu.cartridge.HeaderedROM[:0x10]}",
+                "",
+                f"EMU runtime: {(time.time() - start_time):.2f}s",
+                f"IRL estimate: {((time.time() - start_time) * (1 / all_clock)):.2f}s",
+                f"CPU Halted: {nes_emu.CPU_Halted}",
+                f"Frame Complete Count: {nes_emu.frame_complete_count}",
+                f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
+                f"PC: ${nes_emu.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
+                f"A: ${nes_emu.A:02X} X: ${nes_emu.X:02X} Y: ${nes_emu.Y:02X}",
+                f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
+                f"{'V' if nes_emu.flag.Overflow else '-'}"
+                f"{'B' if nes_emu.flag.Break else '-'}"
+                f"{'D' if nes_emu.flag.Decimal else '-'}"
+                f"{'I' if nes_emu.flag.InterruptDisable else '-'}"
+                f"{'Z' if nes_emu.flag.Zero else '-'}"
+                f"{'C' if nes_emu.flag.Carry else '-'}"
+                f"{'U' if nes_emu.flag.Unused else '-'}",
+            ]
+        case 1:
+            # Get CPU percentages without blocking (instant)
+            thread_cpu_percent = cpu_monitor.get_cpu_percents()
+
+            debug_info += [
+                f"Process CPU: {cpu_monitor.get_all_cpu_percent():.2f}%",
+                f"Memory use: {process.memory_percent():.2f}%",
+            ]
+            
+            if gpu_monitor.is_available():
+                gpu_util = gpu_monitor.get_gpu_utilization()
+                mem_util = gpu_monitor.get_memory_utilization()
+                debug_info.append(f"GPU Util: {gpu_util}%, Mem Util: {mem_util}%")
+            else:
+                debug_info.append("GPU monitor not available")
+            
+            debug_info.append("")
+            
+            for thread in threading.enumerate():
+                if thread.ident in thread_cpu_percent:
+                    debug_info.append(
+                        f"  Thread {thread.name} (ID: {thread.ident}): {thread_cpu_percent[thread.ident]:.2f}% CPU"
+                    )
+
+            # Prepare graph data
+            cpu_data: list = []
+            # mem_data: list = []
+            max_data: int = 20
+            cpum = cpu_monitor.get_graph()
+            # cpum.reverse()
+            
+            for index_cpu in cpum:
+                for k, v in index_cpu.items():
+                    if len(cpu_data) >= max_data:
+                        cpu_data.pop(0)
+                    cpu_data.append(v)
+            
+            # Update graph framebuffer
+            if cpu_data:
+                cpu_use_graph.clear((30, 30, 30))  # Dark background
+                cpu_use_graph.plot_list(cpu_data, color=(0, 255, 0), line_width=1)
+                cpu_use_graph.update()
+
+        case _:
+            debug_mode_index = 0
+            draw_debug_overlay()
+            return
 
     screen_w = NES_WIDTH * SCALE
     screen_h = NES_HEIGHT * SCALE
+    
+    # Draw text overlay first
     tex_id, tex_w, tex_h = update_debug_texture(debug_info, screen_w, screen_h)
 
-    # draw quad with debug texture at top-left
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glBindTexture(GL_TEXTURE_2D, tex_id)
 
     glBegin(GL_QUADS)
-    # tex coords need flipping depending on how pygame.image.tostring arranged them (we used True for flipped)
     glTexCoord2f(0, 1)
     glVertex2f(0, 0)
     glTexCoord2f(1, 1)
@@ -338,6 +430,44 @@ def draw_debug_overlay():
     glEnd()
 
     glBindTexture(GL_TEXTURE_2D, 0)
+    
+    # Draw graph overlay if in debug mode 1
+    if debug_mode_index == 1 and cpu_data:
+        # Save current OpenGL state
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+        
+        # Position the graph below the text overlay
+        graph_y_offset = 200 * SCALE  # Position below "Memory use:" line
+        
+        # Draw graph at specific position using manual quad rendering
+        graph_w = cpu_use_graph.width * cpu_use_graph.scale
+        graph_h = cpu_use_graph.height * cpu_use_graph.scale
+        graph_x = 10
+        graph_y = graph_y_offset
+        
+        # Bind graph texture
+        glBindTexture(GL_TEXTURE_2D, cpu_use_graph.tex)
+        
+        glBegin(GL_QUADS)
+        # Bottom-left
+        glTexCoord2f(0, 0)
+        glVertex2f(graph_x, graph_y + graph_h)
+        # Bottom-right
+        glTexCoord2f(1, 0)
+        glVertex2f(graph_x + graph_w, graph_y + graph_h)
+        # Top-right
+        glTexCoord2f(1, 1)
+        glVertex2f(graph_x + graph_w, graph_y)
+        # Top-left
+        glTexCoord2f(0, 1)
+        glVertex2f(graph_x, graph_y)
+        glEnd()
+        
+        glBindTexture(GL_TEXTURE_2D, 0)
+        
+        # Restore OpenGL state
+        glPopAttrib()
+    
     glDisable(GL_BLEND)
 
 
@@ -374,7 +504,7 @@ def subpro():
                 running = False
 
 
-subpro_thread = threading.Thread(target=subpro)
+subpro_thread = threading.Thread(name="emulator_thread", target=subpro)
 subpro_thread.start()
 
 
@@ -414,6 +544,8 @@ while running:
                 show_debug = not show_debug
                 log.info(f"Debug {'ON' if show_debug else 'OFF'}")
                 _debug_prev_lines = None
+            elif event.key == pygame.K_F6 and show_debug:
+                debug_mode_index += 1
             elif event.key == pygame.K_r:
                 log.info("Resetting emulator")
                 nes_emu.Reset()
@@ -453,6 +585,7 @@ try:
 except Exception:
     pass
 
+cpu_monitor.stop()
 subpro_thread.join()
 presence.close()
 pygame.quit()

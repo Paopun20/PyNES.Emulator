@@ -393,7 +393,7 @@ class PPUPendingWrites(TypedDict):
     remaining_ppu_cycles: int
 
 
-class Emulator:
+class Emulator(object):
     """
     NES emulator with CPU, PPU, APU, and Controller support.
     """

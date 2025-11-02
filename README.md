@@ -137,6 +137,12 @@ python app/main.py
 
 7. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
+> Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.
+
+> Advance Tip: 
+
+> Additional Tip: If you encounter issues with missing dependencies, ensure all required packages are installed as per the `requirements.txt` file.
+
 ## Controls
 
 | NES Button | Keyboard    | Xbox Controller | PS4/PS5 Controller | Switch Pro Controller |
@@ -150,12 +156,13 @@ python app/main.py
 | Select     | Right Shift | Back (6)        | Share / Back       | Minus (-)             |
 | Start      | Enter       | Start (7)       | Options / Start    | Plus (+)              |
 
-| Emulator Controls | Keyboard | Xbox / PS / Switch Controller |
-| ----------------- | -------- | ----------------------------- |
-| Pause             | P        | N/A                           |
-| Debug Overlay     | F5       | N/A                           |
-| Reset             | R        | N/A                           |
-| Quit              | ESC      | N/A                           |
+| Emulator Controls            | Keyboard | Xbox / PS / Switch Controller |
+| ---------------------------- | -------- | ----------------------------- |
+| Pause                        | P        | N/A                           |
+| Debug Overlay                | F5       | N/A                           |
+| Next Mode (`Debug Overlay`)  | F6       | N/A                           |
+| Reset                        | R        | N/A                           |
+| Quit                         | ESC      | N/A                           |
 
 > ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly. It is recommended to use an Xbox controller for the best compatibility.
 

@@ -18,3 +18,12 @@ PyOpenGL-accelerate # gpu rendering
 
 # data processing
 numpy # numerical computing
+
+# debug
+psutil # process and system utilities
+
+# GPU monitoring
+GPUtil # GPU monitoring (supports both NVIDIA and AMD GPUs)
+
+# Windows specific
+pywin32;platform_system=="Windows" # Windows API

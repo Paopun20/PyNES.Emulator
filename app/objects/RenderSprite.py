@@ -71,7 +71,7 @@ class RenderSprite:
         def __exit__(self, exc_type, exc_val, exc_tb):
             glUseProgram(0)
 
-    def __init__(self, width=256, height=240, scale=1):
+    def __init__(self, width=256, height=240, x: int = 0, y: int = 0, scale=3):
         self.width = int(width)
         self.height = int(height)
         self.scale = int(scale)

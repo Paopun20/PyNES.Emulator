@@ -44,7 +44,7 @@ cdef class Presence:
 
             if self.auto_update:
                 self._stop_event.clear()
-                self._thread = threading.Thread(target=self._background_update, daemon=True)
+                self._thread = threading.Thread(name="discord_rpc_background_update", target=self._background_update, daemon=True)
                 self._thread.start()
 
         except Exception as e:
