@@ -1,9 +1,14 @@
 altgraph==0.17.4
 Cython==3.1.6
+dearpygui==2.1.0
+# Editable install with no version control (disklist==0.0.0.dev0)
+-e e:\pynes\pynes\rust\disklist
+glcontext==3.0.0
 GPUtil==1.4.0
 markdown-it-py==4.0.0
 maturin==1.9.6
 mdurl==0.1.2
+moderngl==5.12.0
 numpy==2.3.4
 nvidia-ml-py==13.580.82
 pefile==2024.8.26
@@ -16,8 +21,8 @@ pyinstaller-hooks-contrib==2024.9
 PyOpenGL==3.1.10
 PyOpenGL-accelerate==3.1.10
 pypresence==4.6.1
-pywin32==311;platform_system=="Windows"
-pywin32-ctypes==0.2.3;platform_system=="Windows"
+pywin32==311
+pywin32-ctypes==0.2.3
 rich==14.2.0
 semantic-version==2.10.0
 setuptools==80.9.0
