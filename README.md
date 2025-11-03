@@ -139,7 +139,7 @@ python app/main.py
 
 > Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.
 
-> Advance Tip: 
+> Advance Tip: Nope, there is no advance tip.
 
 > Additional Tip: If you encounter issues with missing dependencies, ensure all required packages are installed as per the `requirements.txt` file.
 
@@ -156,19 +156,19 @@ python app/main.py
 | Select     | Right Shift | Back (6)        | Share / Back       | Minus (-)             |
 | Start      | Enter       | Start (7)       | Options / Start    | Plus (+)              |
 
-| Emulator Controls            | Keyboard | Xbox / PS / Switch Controller |
-| ---------------------------- | -------- | ----------------------------- |
-| Pause                        | P        | N/A                           |
-| Debug Overlay                | F5       | N/A                           |
-| Next Mode (`Debug Overlay`)  | F6       | N/A                           |
-| Reset                        | R        | N/A                           |
-| Quit                         | ESC      | N/A                           |
+| Emulator Controls           | Keyboard | Xbox / PS / Switch Controller |
+| --------------------------- | -------- | ----------------------------- |
+| Pause                       | P        | N/A                           |
+| Debug Overlay               | F5       | N/A                           |
+| Next Mode (`Debug Overlay`) | F6       | N/A                           |
+| Reset                       | R        | N/A                           |
+| Quit                        | ESC      | N/A                           |
 
 > ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly. It is recommended to use an Xbox controller for the best compatibility.
 
 ## Contributing (a.k.a “Fix it for me?”)
 
-Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes. Please test your code and submit it with a detailed description of the changes and screenshots of the test results, and **DON'T PUT MALWARE IN YOUR PULL REQUEST, I WILL CLOSE YOUR PULL REQUEST IMMEDIATELY**, and make sure your code is readable and well-documented.
+Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes. Please test your code and submit it with a detailed description of the changes and screenshots of the test results if you edit [emulator file](./app/pynes/emulator.py), and **DON'T PUT MALWARE IN YOUR PULL REQUEST, I WILL CLOSE YOUR PULL REQUEST IMMEDIATELY**, and make sure your code is readable and well-documented.
 
 ## Security
 
