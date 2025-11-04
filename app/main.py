@@ -24,7 +24,6 @@ from backend.controller import Controller
 from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
 from objects.RenderSprite import RenderSprite
-from objects.graph import Graph
 from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE
 from pynes.api.discord import Presence  # type: ignore
 from pynes.cartridge import Cartridge
@@ -71,9 +70,7 @@ logging.basicConfig(
             rich_tracebacks=True,
             show_path=False,
         ),
-        PynesFileHandler(
-            log_root / f"pynes_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
-        ),
+        PynesFileHandler(log_root / f"pynes_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"),
     ],
 )
 log = logging.getLogger("PyNES")
@@ -103,6 +100,7 @@ def threadProfile(frame, event, arg):
 
     return threadProfile
 
+
 if "--realdebug" in sys.argv and debug_mode:
     threading.setprofile_all_threads(threadProfile)
     threading.settrace_all_threads(threadProfile)
@@ -130,9 +128,7 @@ except Exception:
     icon_surface = None
     log.error(f"Failed to load icon: {icon_path}")
 
-screen = pygame.display.set_mode(
-    (NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE
-)
+screen = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE)
 pygame.display.set_caption("PyNES Emulator")
 if icon_surface:
     pygame.display.set_icon(icon_surface)
@@ -157,14 +153,14 @@ ctx.clear_color = (0.0, 0.0, 0.0, 1.0)
 # Debug overlay helper class
 class DebugOverlay:
     """Manages a ModernGL texture for rendering debug text overlay."""
-    
+
     def __init__(self, ctx: moderngl.Context, screen_w: int, screen_h: int):
         self.ctx = ctx
         self.screen_w = screen_w
         self.screen_h = screen_h
         self.texture = None
         self.prev_lines = None
-        
+
         # Create shader program for overlay rendering
         vertex_shader = """
         #version 330 core
@@ -183,7 +179,7 @@ class DebugOverlay:
             v_uv = vec2(in_uv.x, 1.0 - in_uv.y);
         }
         """
-        
+
         fragment_shader = """
         #version 330 core
         in vec2 v_uv;
@@ -194,31 +190,39 @@ class DebugOverlay:
             fragColor = texture(u_texture, v_uv);
         }
         """
-        
-        self.program = ctx.program(
-            vertex_shader=vertex_shader,
-            fragment_shader=fragment_shader
-        )
-        
+
+        self.program = ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
+
         # Create quad for rendering
-        vertices = np.array([
-            # x,   y,   u,   v
-            0.0, 0.0, 0.0, 0.0,
-            1.0, 0.0, 1.0, 0.0,
-            1.0, 1.0, 1.0, 1.0,
-            0.0, 1.0, 0.0, 1.0,
-        ], dtype=np.float32)
-        
+        vertices = np.array(
+            [
+                # x,   y,   u,   v
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                1.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                0.0,
+                1.0,
+                0.0,
+                1.0,
+            ],
+            dtype=np.float32,
+        )
+
         indices = np.array([0, 1, 2, 2, 3, 0], dtype=np.int32)
-        
+
         self.vbo = ctx.buffer(vertices.tobytes())
         self.ibo = ctx.buffer(indices.tobytes())
-        self.vao = ctx.vertex_array(
-            self.program,
-            [(self.vbo, '2f 2f', 'in_pos', 'in_uv')],
-            self.ibo
-        )
-    
+        self.vao = ctx.vertex_array(self.program, [(self.vbo, "2f 2f", "in_pos", "in_uv")], self.ibo)
+
     def render_text_to_surface(self, text_lines, width, height):
         """Return a pygame Surface (RGBA) with the rendered text."""
         surf = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -228,44 +232,44 @@ class DebugOverlay:
             surf.blit(font.render(line, True, (255, 255, 255)), (5, y_pos))
             y_pos += 20
         return surf
-    
+
     def update(self, text_lines):
         """Update the debug overlay texture with new text."""
         # If same text, skip update
         if self.prev_lines == tuple(text_lines):
             return
         self.prev_lines = tuple(text_lines)
-        
+
         tex_h = len(text_lines) * 20 + 10
         tex_w = self.screen_w
-        
+
         surf = self.render_text_to_surface(text_lines, tex_w, tex_h)
         text_data = pygame.image.tobytes(surf, "RGBA", True)
-        
+
         # Create or update texture
         if self.texture is None or self.texture.size != (tex_w, tex_h):
             if self.texture:
                 self.texture.release()
             self.texture = self.ctx.texture((tex_w, tex_h), 4)
             self.texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        
+
         self.texture.write(text_data)
-    
+
     def draw(self, offset=(0, 0)):
         """Draw the overlay at the specified offset."""
         if self.texture is None:
             return
-        
+
         tex_w, tex_h = self.texture.size
-        
-        self.program['u_resolution'].value = (self.screen_w, self.screen_h)
-        self.program['u_offset'].value = offset
-        self.program['u_size'].value = (tex_w, tex_h)
-        self.program['u_texture'].value = 0
-        
+
+        self.program["u_resolution"].value = (self.screen_w, self.screen_h)
+        self.program["u_offset"].value = offset
+        self.program["u_size"].value = (tex_w, tex_h)
+        self.program["u_texture"].value = 0
+
         self.texture.use(0)
         self.vao.render(moderngl.TRIANGLES)
-    
+
     def destroy(self):
         """Release resources."""
         if self.texture:
@@ -310,9 +314,7 @@ except Exception:
 
 # ROM Load
 while True:
-    nes_path = filedialog.askopenfilename(
-        title="Select a NES file", filetypes=[("NES file", "*.nes")]
-    )
+    nes_path = filedialog.askopenfilename(title="Select a NES file", filetypes=[("NES file", "*.nes")])
     if nes_path:
         if not nes_path.endswith(".nes"):
             messagebox.showerror("Error", "Invalid file type, please select a NES file")
@@ -366,9 +368,7 @@ def draw_debug_overlay():
     if not show_debug:
         return
 
-    debug_info = [
-        f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})"
-    ]
+    debug_info = [f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})"]
 
     match debug_mode_index:
         case 0:
@@ -400,16 +400,16 @@ def draw_debug_overlay():
                 f"Process CPU: {cpu_monitor.get_all_cpu_percent():.2f}%",
                 f"Memory use: {process.memory_percent():.2f}%",
             ]
-            
+
             if gpu_monitor.is_available():
                 gpu_util = gpu_monitor.get_gpu_utilization()
                 mem_util = gpu_monitor.get_memory_utilization()
                 debug_info.append(f"GPU Util: {gpu_util}%, Mem Util: {mem_util}%")
             else:
                 debug_info.append("GPU monitor not available")
-            
+
             debug_info.append("")
-            
+
             for thread in threading.enumerate():
                 if thread.ident in thread_cpu_percent:
                     debug_info.append(
@@ -420,7 +420,7 @@ def draw_debug_overlay():
             cpu_data: list = []
             max_data: int = 20
             cpum = cpu_monitor.get_graph()
-            
+
             for index_cpu in cpum:
                 for k, v in index_cpu.items():
                     if len(cpu_data) >= max_data:
