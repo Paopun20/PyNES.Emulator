@@ -1,4 +1,4 @@
-name: "CodeQL"
+name: "CodeQL Security Analysis"
 
 on:
   push:
@@ -13,51 +13,99 @@ jobs:
   analyze:
     name: CodeQL Analyze (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     permissions:
       security-events: write
       packages: read
       actions: read
       contents: read
-
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-
+        
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Install system dependencies for pygame
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libfreetype6-dev \
+            libportmidi-dev \
+            libjpeg-dev \
+            python3-dev
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+          cache: 'pip'
+          cache-dependency-path: |
+            **/requirements.txt
+            **/pyproject.toml
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
+          components: rustfmt, clippy
 
-      - name: Cache pip
+      - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
           path: |
-            ${{ runner.os == 'Windows' && env.LOCALAPPDATA || '~/.cache/pip' }}
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         shell: bash
         run: |
-          python -m pip install --upgrade pip setuptools wheel cython setuptools-rust
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade cython setuptools-rust
+          
+          # Install pygame with pre-built wheels when possible
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f pyproject.toml ]; then
+            pip install -e .
+          fi
+          
+          # Ensure pygame is installed (fallback)
+          pip install pygame || echo "::warning::Pygame installation failed"
 
-      - name: Build hybrid Python + Rust extension (setup.py)
+      - name: Verify pygame installation
+        shell: bash
+        run: |
+          python -c "import pygame; print(f'Pygame version: {pygame.version.ver}')" || echo "::warning::Pygame not available"
+
+      - name: Build hybrid Python + Rust extension
         shell: bash
         run: |
           if [ -f setup.py ]; then
-            echo "Detected setup.py — building combined Python/Rust extension..."
-            python setup.py build_ext --inplace
+            echo "Building combined Python/Rust extension..."
+            python setup.py build_ext --inplace || {
+              echo "::warning::Build failed, continuing for analysis"
+              exit 0
+            }
+          elif [ -f Cargo.toml ]; then
+            echo "Building Rust project..."
+            cargo build --release || {
+              echo "::warning::Rust build failed, continuing for analysis"
+              exit 0
+            }
           fi
 
       - name: Initialize CodeQL
@@ -65,9 +113,25 @@ jobs:
         with:
           languages: python,rust
           build-mode: none
-          queries: +security-extended +security-and-quality
+          queries: +security-extended,+security-and-quality
+          config: |
+            paths-ignore:
+              - '**/test/**'
+              - '**/tests/**'
+              - '**/node_modules/**'
+              - '**/target/debug/**'
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
-          category: "/hybrid:python-rust"
+          category: "/language:${{ matrix.os }}"
+          output: sarif-results
+          upload: true
+
+      - name: Upload SARIF as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-results-${{ matrix.os }}
+          path: sarif-results
+          retention-days: 90
