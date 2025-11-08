@@ -6,6 +6,11 @@ from PySide6 import QtGui, QtWidgets, QtOpenGLWidgets
 class Canvas(QtOpenGLWidgets.QOpenGLWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        self._pix = QtGui.QPixmap(120, 100)
+        self._pix.fill(QtGui.QColor(255, 255, 255))
+        self._painter = QtGui.QPainter(self._pix)
+
 
         self.ctx = None
 
@@ -72,25 +77,3 @@ class Canvas(QtOpenGLWidgets.QOpenGLWidget):
         self.ctx.clear()
 
         self._vao.render(moderngl.TRIANGLES)
-
-
-class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.resize(120, 100)
-
-        self._canvas = Canvas(self)
-        self.setCentralWidget(self._canvas)
-
-
-fmt = QtGui.QSurfaceFormat()
-fmt.setVersion(4, 1)
-fmt.setProfile(QtGui.QSurfaceFormat.CoreProfile)
-fmt.setDepthBufferSize(24)
-QtGui.QSurfaceFormat.setDefaultFormat(fmt)
-
-app = QtWidgets.QApplication()
-main_window = MainWindow()
-main_window.show()
-app.exec()

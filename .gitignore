@@ -5,7 +5,7 @@ __PatreonRoms/*
 test_nes_files/*
 
 # pycache
-__pycache__/*
+__pycache__
 
 # pycache files
 *.pyc

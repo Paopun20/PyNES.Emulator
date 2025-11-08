@@ -15,269 +15,12 @@ from pynes.apu import APU
 from pynes.cartridge import Cartridge
 from pynes.controller import Controller
 from pynes.helper.memoize import memoize
-
-# DATA
-OpCodeNames: Final[List[str]] = [
-    "BRK",
-    "ORA",
-    "HLT",
-    "SLO",
-    "NOP",
-    "ORA",
-    "ASL",
-    "SLO",
-    "PHP",
-    "ORA",
-    "ASL",
-    "ANC",
-    "NOP",
-    "ORA",
-    "ASL",
-    "SLO",
-    "BPL",
-    "ORA",
-    "HLT",
-    "SLO",
-    "NOP",
-    "ORA",
-    "ASL",
-    "SLO",
-    "CLC",
-    "ORA",
-    "NOP",
-    "SLO",
-    "NOP",
-    "ORA",
-    "ASL",
-    "SLO",
-    "JSR",
-    "AND",
-    "HLT",
-    "RLA",
-    "BIT",
-    "AND",
-    "ROL",
-    "RLA",
-    "PLP",
-    "AND",
-    "ROL",
-    "ANC",
-    "BIT",
-    "AND",
-    "ROL",
-    "RLA",
-    "BMI",
-    "AND",
-    "HLT",
-    "RLA",
-    "NOP",
-    "AND",
-    "ROL",
-    "RLA",
-    "SEC",
-    "AND",
-    "NOP",
-    "RLA",
-    "NOP",
-    "AND",
-    "ROL",
-    "RLA",
-    "RTI",
-    "EOR",
-    "HLT",
-    "SRE",
-    "NOP",
-    "EOR",
-    "LSR",
-    "SRE",
-    "PHA",
-    "EOR",
-    "LSR",
-    "ALR",
-    "JMP",
-    "EOR",
-    "LSR",
-    "SRE",
-    "BVC",
-    "EOR",
-    "HLT",
-    "SRE",
-    "NOP",
-    "EOR",
-    "LSR",
-    "SRE",
-    "CLI",
-    "EOR",
-    "NOP",
-    "SRE",
-    "NOP",
-    "EOR",
-    "LSR",
-    "SRE",
-    "RTS",
-    "ADC",
-    "HLT",
-    "RRA",
-    "NOP",
-    "ADC",
-    "ROR",
-    "RRA",
-    "PLA",
-    "ADC",
-    "ROR",
-    "ARR",
-    "JMP",
-    "ADC",
-    "ROR",
-    "RRA",
-    "BVS",
-    "ADC",
-    "HLT",
-    "RRA",
-    "NOP",
-    "ADC",
-    "ROR",
-    "RRA",
-    "SEI",
-    "ADC",
-    "NOP",
-    "RRA",
-    "NOP",
-    "ADC",
-    "ROR",
-    "RRA",
-    "NOP",
-    "STA",
-    "NOP",
-    "SAX",
-    "STY",
-    "STA",
-    "STX",
-    "SAX",
-    "DEY",
-    "NOP",
-    "TXA",
-    "ANE",
-    "STY",
-    "STA",
-    "STX",
-    "SAX",
-    "BCC",
-    "STA",
-    "HLT",
-    "SHA",
-    "STY",
-    "STA",
-    "STX",
-    "SAX",
-    "TYA",
-    "STA",
-    "TXS",
-    "SHS",
-    "SHY",
-    "STA",
-    "SHX",
-    "SHA",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "TAY",
-    "LDA",
-    "TAX",
-    "LXA",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "BCS",
-    "LDA",
-    "HLT",
-    "LAX",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "CLV",
-    "LDA",
-    "TSX",
-    "LAE",
-    "LDY",
-    "LDA",
-    "LDX",
-    "LAX",
-    "CPY",
-    "CMP",
-    "NOP",
-    "DCP",
-    "CPY",
-    "CMP",
-    "DEC",
-    "DCP",
-    "INY",
-    "CMP",
-    "DEX",
-    "AXS",
-    "CPY",
-    "CMP",
-    "DEC",
-    "DCP",
-    "BNE",
-    "CMP",
-    "HLT",
-    "DCP",
-    "NOP",
-    "CMP",
-    "DEC",
-    "DCP",
-    "CLD",
-    "CMP",
-    "NOP",
-    "DCP",
-    "NOP",
-    "CMP",
-    "DEC",
-    "DCP",
-    "CPX",
-    "SBC",
-    "NOP",
-    "ISC",
-    "CPX",
-    "SBC",
-    "INC",
-    "ISC",
-    "INX",
-    "SBC",
-    "NOP",
-    "SBC",
-    "CPX",
-    "SBC",
-    "INC",
-    "ISC",
-    "BEQ",
-    "SBC",
-    "HLT",
-    "ISC",
-    "NOP",
-    "SBC",
-    "INC",
-    "ISC",
-    "SED",
-    "SBC",
-    "NOP",
-    "ISC",
-    "NOP",
-    "SBC",
-    "INC",
-    "ISC",
-]
+from pynes.util.OpCodes import OpCodes
 
 # Template
 TEMPLATE: Final[Template] = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
+
+OpCodeClass = OpCodes()  # can more one
 
 nes_palette: Final[np.ndarray] = np.array(
     [
@@ -349,6 +92,7 @@ nes_palette: Final[np.ndarray] = np.array(
     dtype=np.uint8,
 )
 
+
 class EmulatorError(Exception):
     def __init__(self, exception: Exception):
         self.type = type(exception)
@@ -385,6 +129,13 @@ class NMI:
 @dataclass
 class IRQ:
     Line: bool = False
+
+
+@dataclass
+class DoTask:
+    NMI_pending: bool = False
+    IRQ_pending: bool = False
+    BRK_pending: bool = False
 
 
 class PPUPendingWrites(TypedDict):
@@ -512,11 +263,11 @@ class Emulator(object):
         events = getattr(self, "_events", None)
         if not events:
             return
-    
+
         callbacks = events.get(event_name)
         if not callbacks:
             return
-    
+
         for callback in callbacks:
             if not callable(callback):
                 raise ValueError(f"Callback {callback} is not callable")
@@ -719,9 +470,7 @@ class Emulator(object):
         # collect entries ready to apply (remaining <= 0)
         ready = [e for e in self._ppu_pending_writes if e["remaining_ppu_cycles"] <= 0]
         # keep rest
-        self._ppu_pending_writes = [
-            e for e in self._ppu_pending_writes if e["remaining_ppu_cycles"] > 0
-        ]
+        self._ppu_pending_writes = [e for e in self._ppu_pending_writes if e["remaining_ppu_cycles"] > 0]
 
         # apply ready writes in order they were queued (FIFO)
         for entry in ready:
@@ -955,9 +704,7 @@ class Emulator(object):
         status |= 0x02 if self.flag.Zero else 0
         status |= 0x04 if self.flag.InterruptDisable else 0
         status |= 0x08 if self.flag.Decimal else 0
-        status |= (
-            0x10 if self.flag.Break else 0
-        )  # Break flag reflects flag.Break when pushing
+        status |= 0x10 if self.flag.Break else 0  # Break flag reflects flag.Break when pushing
         status |= 0x20  # Unused (always 1)
         status |= 0x40 if self.flag.Overflow else 0
         status |= 0x80 if self.flag.Negative else 0
@@ -1220,9 +967,7 @@ class Emulator(object):
         self.PRGROM = self.cartridge.PRGROM
 
     def SwapAt(self, at_cycles: int, cartridge: Cartridge):
-        raise EmulatorError(
-            NotImplementedError("Cartridge swapping at runtime is not yet implemented.")
-        )
+        raise EmulatorError(NotImplementedError("Cartridge swapping at runtime is not yet implemented."))
 
     def Input(self, controller_id: int, buttons: Dict[str, bool]):
         """Update the button states for the specified controller.
@@ -1331,6 +1076,10 @@ class Emulator(object):
             self._perform_oam_dma(self._oam_dma_pending_page)
             self._oam_dma_pending_page = None
 
+    def endExecute(self):
+        self.cycles = OpCodeClass.GetCycles(self.opcode)
+        return self.cycles
+
     def ExecuteOpcode(self):
         """Execute the current opcode."""
         match self.opcode:
@@ -1346,8 +1095,7 @@ class Emulator(object):
                 low = self.Read(0xFFFE)
                 high = self.Read(0xFFFF)
                 self.ProgramCounter = (high << 8) | low
-                self.cycles = 7
-                return
+                return self.endExecute()
 
             case 0x20:  # JSR
                 low = self.Read(self.ProgramCounter)
@@ -1359,8 +1107,7 @@ class Emulator(object):
                 self.Push(ret_addr & 0xFF)
                 self.data_bus = high
                 self.ProgramCounter = (high << 8) | low
-                self.cycles = 6
-                return
+                return self.endExecute()
 
             case 0x40 | 0x60:  # RTI (0x40), RTS (0x60)
                 if self.opcode == 0x40:  # RTI
@@ -1368,14 +1115,12 @@ class Emulator(object):
                     low = self.Pop()
                     high = self.Pop()
                     self.ProgramCounter = (high << 8) | low
-                    self.cycles = 6
                 else:  # RTS
                     low = self.Pop()
                     high = self.Pop()
                     self.ProgramCounter = ((high << 8) | low) + 1
                     self.ProgramCounter &= 0xFFFF
-                    self.cycles = 6
-                return
+                return self.endExecute()
 
             case 0x4C | 0x6C:  # JMP Absolute (0x4C), JMP Indirect (0x6C)
                 if self.opcode == 0x4C:  # JMP Absolute
@@ -1383,7 +1128,6 @@ class Emulator(object):
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                     high = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (high << 8) | low
-                    self.cycles = 3
                 else:  # JMP Indirect
                     ptr_low = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
@@ -1392,8 +1136,7 @@ class Emulator(object):
                     low = self.Read(ptr)
                     high = self.Read((ptr & 0xFF00) | ((ptr + 1) & 0xFF))
                     self.ProgramCounter = (high << 8) | low
-                    self.cycles = 5
-                return
+                return self.endExecute()
 
             # BRANCH INSTRUCTIONS
             case 0x10 | 0x30 | 0x50 | 0x70 | 0x90 | 0xB0 | 0xD0 | 0xF0:
@@ -1420,147 +1163,140 @@ class Emulator(object):
                 if self.opcode == 0xA9:  # LDA Immediate
                     self.A = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0xA5:  # LDA Zero Page
                     self.ReadOperands_ZeroPage()
                     self.A = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0xB5:  # LDA Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.A = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xAD:  # LDA Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.A = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xBD:  # LDA Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.A = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xB9:  # LDA Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     self.A = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xA1:  # LDA (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     self.A = self.Read(self.addressBus)
-                    self.cycles = 6
+
                 elif self.opcode == 0xB1:  # LDA (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     self.A = self.Read(self.addressBus)
-                    self.cycles = 5  # Base cycles only, extra cycles handled separately
                 self.UpdateZeroNegativeFlags(self.A)
-                return
+                return self.endExecute()
 
             # LOAD INSTRUCTIONS - LDX
             case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE:
                 if self.opcode == 0xA2:  # LDX Immediate
                     self.X = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0xA6:  # LDX Zero Page
                     self.ReadOperands_ZeroPage()
                     self.X = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0xB6:  # LDX Zero Page,Y
                     self.ReadOperands_ZeroPage_YIndexed()
                     self.X = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xAE:  # LDX Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.X = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xBE:  # LDX Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     self.X = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 self.UpdateZeroNegativeFlags(self.X)
-                return
+                return self.endExecute()
 
             # LOAD INSTRUCTIONS - LDY
             case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC:
                 if self.opcode == 0xA0:  # LDY Immediate
                     self.Y = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0xA4:  # LDY Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Y = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0xB4:  # LDY Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Y = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xAC:  # LDY Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Y = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xBC:  # LDY Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Y = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 self.UpdateZeroNegativeFlags(self.Y)
-                return
+                return self.endExecute()
 
             # STORE INSTRUCTIONS - STA
             case 0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91:
                 if self.opcode == 0x85:  # STA Zero Page
                     self.ReadOperands_ZeroPage()
-                    self.cycles = 3
+
                     self.Write(self.addressBus, self.A)
                 elif self.opcode == 0x95:  # STA Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.cycles = 4
+
                     self.Write(self.addressBus, self.A)
                 elif self.opcode == 0x8D:  # STA Absolute
                     self.ReadOperands_AbsoluteAddressed()
-                    self.cycles = 4
+
                     self.Write(self.addressBus, self.A)
                 elif self.opcode == 0x9D:  # STA Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
-                    self.cycles = 5
+
                     self.Write(self.addressBus, self.A)
                 elif self.opcode == 0x99:  # STA Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.cycles = 5
+
                     self.Write(self.addressBus, self.A)
                 elif self.opcode == 0x81:  # STA (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.cycles = 6
+
                     self.Write(self.addressBus, self.A)
                 elif self.opcode == 0x91:  # STA (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
-                    self.cycles = 5
+
                     self.Write(self.addressBus, self.A)
-                return
+                return self.endExecute()
 
             # STORE INSTRUCTIONS - STX/STY
             case 0x86 | 0x96 | 0x8E | 0x84 | 0x94 | 0x8C:
                 if self.opcode == 0x86:  # STX Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Write(self.addressBus, self.X)
-                    self.cycles = 3
                 elif self.opcode == 0x96:  # STX Zero Page,Y
                     self.ReadOperands_ZeroPage_YIndexed()
                     self.Write(self.addressBus, self.X)
-                    self.cycles = 4
                 elif self.opcode == 0x8E:  # STX Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Write(self.addressBus, self.X)
-                    self.cycles = 4
                 elif self.opcode == 0x84:  # STY Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Write(self.addressBus, self.Y)
-                    self.cycles = 3
                 elif self.opcode == 0x94:  # STY Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Write(self.addressBus, self.Y)
-                    self.cycles = 4
                 elif self.opcode == 0x8C:  # STY Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Write(self.addressBus, self.Y)
-                    self.cycles = 4
-                return
+                return self.endExecute()
 
             # TRANSFER INSTRUCTIONS
             case 0xAA | 0xA8 | 0x8A | 0x98 | 0xBA | 0x9A:
@@ -1581,351 +1317,339 @@ class Emulator(object):
                     self.UpdateZeroNegativeFlags(self.X)
                 elif self.opcode == 0x9A:  # TXS
                     self.stackPointer = self.X
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             # STACK INSTRUCTIONS
             case 0x48 | 0x68 | 0x08 | 0x28:
                 if self.opcode == 0x48:  # PHA
                     self.Push(self.A)
-                    self.cycles = 3
                 elif self.opcode == 0x68:  # PLA
                     self.A = self.Pop()
                     self.UpdateZeroNegativeFlags(self.A)
-                    self.cycles = 4
                 elif self.opcode == 0x08:  # PHP
                     self.Push(self.GetProcessorStatus() | 0x10)
-                    self.cycles = 3
                 elif self.opcode == 0x28:  # PLP
                     self.SetProcessorStatus(self.Pop())
-                    self.cycles = 4
-                return
+                return self.endExecute()
 
             # LOGICAL INSTRUCTIONS - AND
             case 0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 | 0x32:
                 if self.opcode == 0x29:  # AND Immediate
                     value = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0x25:  # AND Zero Page
                     self.ReadOperands_ZeroPage()
                     value = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0x35:  # AND Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x2D:  # AND Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x3D:  # AND Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x39:  # AND Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x21:  # AND (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 6
+
                 elif self.opcode == 0x31:  # AND (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 5
+
                 elif self.opcode == 0x32:  # AND Immediate,X
                     self.ReadOperands_Immediate_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 6
+
                 self.Op_AND(value)
-                return
+                return self.endExecute()
 
             # LOGICAL INSTRUCTIONS - ORA
             case 0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11:
                 if self.opcode == 0x09:  # ORA Immediate
                     value = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0x05:  # ORA Zero Page
                     self.ReadOperands_ZeroPage()
                     value = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0x15:  # ORA Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x0D:  # ORA Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x1D:  # ORA Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x19:  # ORA Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x01:  # ORA (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 6
+
                 elif self.opcode == 0x11:  # ORA (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 5
+
                 self.Op_ORA(value)
-                return
+                return self.endExecute()
 
             # LOGICAL INSTRUCTIONS - EOR
             case 0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51:
                 if self.opcode == 0x49:  # EOR Immediate
                     value = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0x45:  # EOR Zero Page
                     self.ReadOperands_ZeroPage()
                     value = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0x55:  # EOR Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x4D:  # EOR Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x5D:  # EOR Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x59:  # EOR Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x41:  # EOR (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 6
+
                 elif self.opcode == 0x51:  # EOR (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 5
+
                 self.Op_EOR(value)
-                return
+                return self.endExecute()
 
             # BIT INSTRUCTIONS
             case 0x24 | 0x2C:
                 if self.opcode == 0x24:  # BIT Zero Page
                     self.ReadOperands_ZeroPage()
-                    self.cycles = 3
+
                 elif self.opcode == 0x2C:  # BIT Absolute
                     self.ReadOperands_AbsoluteAddressed()
-                    self.cycles = 4
+
                 self.Op_BIT(self.Read(self.addressBus))
-                return
+                return self.endExecute()
 
             # ARITHMETIC INSTRUCTIONS - ADC
             case 0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71:
                 if self.opcode == 0x69:  # ADC Immediate
                     value = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0x65:  # ADC Zero Page
                     self.ReadOperands_ZeroPage()
                     value = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0x75:  # ADC Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x6D:  # ADC Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x7D:  # ADC Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x79:  # ADC Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0x61:  # ADC (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 6
+
                 elif self.opcode == 0x71:  # ADC (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 5
+
                 self.Op_ADC(value)
-                return
+                return self.endExecute()
 
             # ARITHMETIC INSTRUCTIONS - SBC
             case 0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB:
                 if self.opcode in [0xE9, 0xEB]:  # SBC Immediate
                     value = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0xE5:  # SBC Zero Page
                     self.ReadOperands_ZeroPage()
                     value = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0xF5:  # SBC Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xED:  # SBC Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xFD:  # SBC Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xF9:  # SBC Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xE1:  # SBC (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 6
+
                 elif self.opcode == 0xF1:  # SBC (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 5
+
                 self.Op_SBC(value)
-                return
+                return self.endExecute()
 
             # COMPARE INSTRUCTIONS - CMP
             case 0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1:
                 if self.opcode == 0xC9:  # CMP Immediate
                     value = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0xC5:  # CMP Zero Page
                     self.ReadOperands_ZeroPage()
                     value = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0xD5:  # CMP Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xCD:  # CMP Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xDD:  # CMP Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xD9:  # CMP Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xC1:  # CMP (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 6
+
                 elif self.opcode == 0xD1:  # CMP (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 5
+
                 self.Op_CMP(value)
-                return
+                return self.endExecute()
 
             # COMPARE INSTRUCTIONS - CPX/CPY
             case 0xE0 | 0xE4 | 0xEC | 0xC0 | 0xC4 | 0xCC:
                 if self.opcode == 0xE0:  # CPX Immediate
                     value = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0xE4:  # CPX Zero Page
                     self.ReadOperands_ZeroPage()
                     value = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0xEC:  # CPX Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
+
                 elif self.opcode == 0xC0:  # CPY Immediate
                     value = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                    self.cycles = 2
+
                 elif self.opcode == 0xC4:  # CPY Zero Page
                     self.ReadOperands_ZeroPage()
                     value = self.Read(self.addressBus)
-                    self.cycles = 3
+
                 elif self.opcode == 0xCC:  # CPY Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     value = self.Read(self.addressBus)
-                    self.cycles = 4
 
                 if self.opcode in [0xE0, 0xE4, 0xEC]:
                     self.Op_CPX(value)
                 else:
                     self.Op_CPY(value)
-                return
+                return self.endExecute()
 
             # INCREMENT INSTRUCTIONS
             case 0xE6 | 0xF6 | 0xEE | 0xFE | 0xE8 | 0xC8:
                 if self.opcode == 0xE6:  # INC Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_INC(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 5
                 elif self.opcode == 0xF6:  # INC Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Op_INC(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
                 elif self.opcode == 0xEE:  # INC Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Op_INC(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
                 elif self.opcode == 0xFE:  # INC Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_INC(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 7
                 elif self.opcode == 0xE8:  # INX
                     self.X = (self.X + 1) & 0xFF
                     self.UpdateZeroNegativeFlags(self.X)
-                    self.cycles = 2
                 elif self.opcode == 0xC8:  # INY
                     self.Y = (self.Y + 1) & 0xFF
                     self.UpdateZeroNegativeFlags(self.Y)
-                    self.cycles = 2
-                return
+                return self.endExecute()
 
             # DECREMENT INSTRUCTIONS
             case 0xC6 | 0xD6 | 0xCE | 0xDE | 0xCA | 0x88:
                 if self.opcode == 0xC6:  # DEC Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_DEC(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 5
+
                 elif self.opcode == 0xD6:  # DEC Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Op_DEC(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0xCE:  # DEC Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Op_DEC(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0xDE:  # DEC Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_DEC(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 7
+
                 elif self.opcode == 0xCA:  # DEX
                     self.X = (self.X - 1) & 0xFF
                     self.UpdateZeroNegativeFlags(self.X)
-                    self.cycles = 2
+
                 elif self.opcode == 0x88:  # DEY
                     self.Y = (self.Y - 1) & 0xFF
                     self.UpdateZeroNegativeFlags(self.Y)
-                    self.cycles = 2
-                return
+
+                return self.endExecute()
 
             # SHIFT INSTRUCTIONS - ASL
             case 0x0A | 0x06 | 0x16 | 0x0E | 0x1E:
@@ -1934,24 +1658,24 @@ class Emulator(object):
                     self.flag.Carry = (self.A & 0x80) != 0
                     self.A = (self.A << 1) & 0xFF
                     self.UpdateZeroNegativeFlags(self.A)
-                    self.cycles = 2
+
                 elif self.opcode == 0x06:  # ASL Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_ASL(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 5
+
                 elif self.opcode == 0x16:  # ASL Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Op_ASL(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0x0E:  # ASL Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Op_ASL(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0x1E:  # ASL Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_ASL(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 7
-                return
+
+                return self.endExecute()
 
             # SHIFT INSTRUCTIONS - LSR
             case 0x4A | 0x46 | 0x56 | 0x4E | 0x5E:
@@ -1959,24 +1683,24 @@ class Emulator(object):
                     self.flag.Carry = (self.A & 0x01) != 0
                     self.A = (self.A >> 1) & 0xFF
                     self.UpdateZeroNegativeFlags(self.A)
-                    self.cycles = 2
+
                 elif self.opcode == 0x46:  # LSR Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_LSR(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 5
+
                 elif self.opcode == 0x56:  # LSR Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Op_LSR(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0x4E:  # LSR Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Op_LSR(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0x5E:  # LSR Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_LSR(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 7
-                return
+
+                return self.endExecute()
 
             # ROTATE INSTRUCTIONS - ROL
             case 0x2A | 0x26 | 0x36 | 0x2E | 0x3E:
@@ -1985,24 +1709,24 @@ class Emulator(object):
                     self.flag.Carry = (self.A & 0x80) != 0
                     self.A = ((self.A << 1) | carry_in) & 0xFF
                     self.UpdateZeroNegativeFlags(self.A)
-                    self.cycles = 2
+
                 elif self.opcode == 0x26:  # ROL Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_ROL(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 5
+
                 elif self.opcode == 0x36:  # ROL Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Op_ROL(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0x2E:  # ROL Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Op_ROL(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0x3E:  # ROL Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_ROL(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 7
-                return
+
+                return self.endExecute()
 
             # ROTATE INSTRUCTIONS - ROR
             case 0x6A | 0x66 | 0x76 | 0x6E | 0x7E:
@@ -2011,24 +1735,24 @@ class Emulator(object):
                     self.flag.Carry = (self.A & 0x01) != 0
                     self.A = ((self.A >> 1) | carry_in) & 0xFF
                     self.UpdateZeroNegativeFlags(self.A)
-                    self.cycles = 2
+
                 elif self.opcode == 0x66:  # ROR Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_ROR(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 5
+
                 elif self.opcode == 0x76:  # ROR Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Op_ROR(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0x6E:  # ROR Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Op_ROR(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 6
+
                 elif self.opcode == 0x7E:  # ROR Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_ROR(self.addressBus, self.Read(self.addressBus))
-                    self.cycles = 7
-                return
+
+                return self.endExecute()
 
             # FLAG INSTRUCTIONS
             case 0x18 | 0x38 | 0x58 | 0x78 | 0xB8 | 0xD8 | 0xF8:
@@ -2046,52 +1770,43 @@ class Emulator(object):
                     self.flag.Decimal = False
                 elif self.opcode == 0xF8:
                     self.flag.Decimal = True
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             # NOP INSTRUCTIONS
             case 0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA:  # NOP variants
-                self.cycles = 2
-                return
+                return self.endExecute()  # DON'T EDIT
 
             case 0x80 | 0x82 | 0x89 | 0xC2 | 0xE2:  # NOP Immediate
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             case 0x04 | 0x44 | 0x64:  # NOP Zero Page
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                self.cycles = 3
-                return
+                return self.endExecute()
 
             case 0x14 | 0x34 | 0x54 | 0x74 | 0xD4 | 0xF4:  # NOP Zero Page,X
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                self.cycles = 4
-                return
+                return self.endExecute()
 
             case 0x0C:  # NOP Absolute
                 self.ProgramCounter = (self.ProgramCounter + 2) & 0xFFFF
-                self.cycles = 4
-                return
+                return self.endExecute()
 
             case 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC:  # NOP Absolute,X
                 self.ProgramCounter = (self.ProgramCounter + 2) & 0xFFFF
-                self.cycles = 4
-                return
+                return self.endExecute()
 
             # UNOFFICIAL/ILLEGAL OPCODES - SINGLE BYTE
             case 0x02 | 0x72:  # KIL/JAM
                 self.CPU_Halted = True
-                self.cycles = 1
-                return
+                return self.endExecute()
 
             case 0x0B | 0x2B:  # ANC imm
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 self.Op_AND(val)
                 self.flag.Carry = self.flag.Negative
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             case 0x4B:  # ALR imm
                 val = self.Read(self.ProgramCounter)
@@ -2100,8 +1815,7 @@ class Emulator(object):
                 self.flag.Carry = (self.A & 0x01) != 0
                 self.A = (self.A >> 1) & 0xFF
                 self.UpdateZeroNegativeFlags(self.A)
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             case 0x6B:  # ARR imm
                 val = self.Read(self.ProgramCounter)
@@ -2114,24 +1828,21 @@ class Emulator(object):
                 self.flag.Carry = bit6
                 self.flag.Overflow = bit6 ^ bit5
                 self.UpdateZeroNegativeFlags(self.A)
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             case 0x8B:  # ANE imm
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 self.A = self.X & val
                 self.UpdateZeroNegativeFlags(self.A)
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             case 0xAB:  # LAX imm
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 self.A = self.X = val & 0xFF
                 self.UpdateZeroNegativeFlags(self.A)
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             case 0xCB:  # AXS imm
                 val = self.Read(self.ProgramCounter)
@@ -2140,33 +1851,31 @@ class Emulator(object):
                 self.flag.Carry = tmp >= 0
                 self.X = tmp & 0xFF
                 self.UpdateZeroNegativeFlags(self.X)
-                self.cycles = 2
-                return
+                return self.endExecute()
 
             # UNOFFICIAL/ILLEGAL OPCODES - MEMORY
             # SLO (ASL then ORA)
             case 0x03 | 0x07 | 0x0F | 0x13 | 0x1B | 0x1F | 0x17:
                 if self.opcode == 0x03:  # SLO (ind,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.cycles = 8
+
                 elif self.opcode == 0x07:  # SLO zp
                     self.ReadOperands_ZeroPage()
-                    self.cycles = 5
+
                 elif self.opcode == 0x0F:  # SLO abs
                     self.ReadOperands_AbsoluteAddressed()
-                    self.cycles = 6
+
                 elif self.opcode == 0x13:  # SLO (ind),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
-                    self.cycles = 8
+
                 elif self.opcode == 0x1B:  # SLO abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.cycles = 7
+
                 elif self.opcode == 0x1F:  # SLO abs,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
-                    self.cycles = 7
+
                 elif self.opcode == 0x17:  # SLO zp,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.cycles = 6
 
                 value = self.Read(self.addressBus)
                 self.Write(self.addressBus, value)  # Dummy write
@@ -2174,31 +1883,30 @@ class Emulator(object):
                 value = (value << 1) & 0xFF
                 self.Write(self.addressBus, value)  # Actual write
                 self.Op_ORA(value)
-                return
+                return self.endExecute()
 
             # RLA (ROL then AND)
             case 0x23 | 0x27 | 0x2F | 0x33 | 0x37 | 0x3B | 0x3F:
                 if self.opcode == 0x23:  # RLA (ind,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.cycles = 8
+
                 elif self.opcode == 0x27:  # RLA zp
                     self.ReadOperands_ZeroPage()
-                    self.cycles = 5
+
                 elif self.opcode == 0x2F:  # RLA abs
                     self.ReadOperands_AbsoluteAddressed()
-                    self.cycles = 6
+
                 elif self.opcode == 0x33:  # RLA (ind),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
-                    self.cycles = 8
+
                 elif self.opcode == 0x37:  # RLA zp,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.cycles = 6
+
                 elif self.opcode == 0x3B:  # RLA abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.cycles = 7
+
                 elif self.opcode == 0x3F:  # RLA abs,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
-                    self.cycles = 7
 
                 value = self.Read(self.addressBus)
                 self.Write(self.addressBus, value)  # Dummy write
@@ -2207,31 +1915,30 @@ class Emulator(object):
                 value = ((value << 1) | carry_in) & 0xFF
                 self.Write(self.addressBus, value)  # Actual write
                 self.Op_AND(value)
-                return
+                return self.endExecute()
 
             # SRE (LSR then EOR)
             case 0x43 | 0x47 | 0x4F | 0x53 | 0x57 | 0x5B | 0x5F:
                 if self.opcode == 0x43:  # SRE (ind,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.cycles = 8
+
                 elif self.opcode == 0x47:  # SRE zp
                     self.ReadOperands_ZeroPage()
-                    self.cycles = 5
+
                 elif self.opcode == 0x4F:  # SRE abs
                     self.ReadOperands_AbsoluteAddressed()
-                    self.cycles = 6
+
                 elif self.opcode == 0x53:  # SRE (ind),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
-                    self.cycles = 8
+
                 elif self.opcode == 0x57:  # SRE zp,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.cycles = 6
+
                 elif self.opcode == 0x5B:  # SRE abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.cycles = 7
+
                 elif self.opcode == 0x5F:  # SRE abs,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
-                    self.cycles = 7
 
                 value = self.Read(self.addressBus)
                 self.Write(self.addressBus, value)  # Dummy write
@@ -2239,31 +1946,30 @@ class Emulator(object):
                 value >>= 1
                 self.Write(self.addressBus, value)  # Actual write
                 self.Op_EOR(value)
-                return
+                return self.endExecute()
 
             # RRA (ROR then ADC)
             case 0x63 | 0x67 | 0x6F | 0x73 | 0x77 | 0x7B | 0x7F:
                 if self.opcode == 0x63:  # RRA (ind,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.cycles = 8
+
                 elif self.opcode == 0x67:  # RRA zp
                     self.ReadOperands_ZeroPage()
-                    self.cycles = 5
+
                 elif self.opcode == 0x6F:  # RRA abs
                     self.ReadOperands_AbsoluteAddressed()
-                    self.cycles = 6
+
                 elif self.opcode == 0x73:  # RRA (ind),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
-                    self.cycles = 8
+
                 elif self.opcode == 0x77:  # RRA zp,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.cycles = 6
+
                 elif self.opcode == 0x7B:  # RRA abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.cycles = 7
+
                 elif self.opcode == 0x7F:  # RRA abs,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
-                    self.cycles = 7
 
                 value = self.Read(self.addressBus)
                 self.Write(self.addressBus, value)  # Dummy write
@@ -2272,50 +1978,49 @@ class Emulator(object):
                 value = ((value >> 1) | carry_in) & 0xFF
                 self.Write(self.addressBus, value)  # Actual write
                 self.Op_ADC(value)
-                return
+                return self.endExecute()
 
             # SAX (STA & STX)
             case 0x87 | 0x8F | 0x83 | 0x97:
                 if self.opcode == 0x87:  # SAX zp
                     self.ReadOperands_ZeroPage()
-                    self.cycles = 3
+
                 elif self.opcode == 0x8F:  # SAX abs
                     self.ReadOperands_AbsoluteAddressed()
-                    self.cycles = 4
+
                 elif self.opcode == 0x83:  # SAX (ind,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.cycles = 6
+
                 elif self.opcode == 0x97:  # SAX zp,Y
                     self.ReadOperands_ZeroPage_YIndexed()
-                    self.cycles = 4
+
                 self.Write(self.addressBus, self.A & self.X)
-                return
+                return self.endExecute()
 
             # LAX (LDA & LDX)
             case 0xA3 | 0xA7 | 0xAF | 0xB3 | 0xB7 | 0xBF:
                 if self.opcode == 0xA3:  # LAX (ind,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.cycles = 6
+
                 elif self.opcode == 0xA7:  # LAX zp
                     self.ReadOperands_ZeroPage()
-                    self.cycles = 3
+
                 elif self.opcode == 0xAF:  # LAX abs
                     self.ReadOperands_AbsoluteAddressed()
-                    self.cycles = 4
+
                 elif self.opcode == 0xB3:  # LAX (ind),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
-                    self.cycles = 5
+
                 elif self.opcode == 0xB7:  # LAX zp,Y
                     self.ReadOperands_ZeroPage_YIndexed()
-                    self.cycles = 4
+
                 elif self.opcode == 0xBF:  # LAX abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.cycles = 4
 
                 value = self.Read(self.addressBus)
                 self.A = self.X = value
                 self.UpdateZeroNegativeFlags(self.A)
-                return
+                return self.endExecute()
 
             # DCP (DEC then CMP)
             case 0xC3 | 0xC7 | 0xCF | 0xD3 | 0xD7 | 0xDB | 0xDF:
@@ -2324,37 +2029,36 @@ class Emulator(object):
                     orig = self.Read(self.addressBus)
                     self.Write(self.addressBus, orig)  # Dummy write
                     value = (orig - 1) & 0xFF
-                    self.cycles = 8
+
                 elif self.opcode == 0xC7:  # DCP zp
                     self.ReadOperands_ZeroPage()
                     value = (self.Read(self.addressBus) - 1) & 0xFF
-                    self.cycles = 5
+
                 elif self.opcode == 0xCF:  # DCP abs
                     self.ReadOperands_AbsoluteAddressed()
                     orig = self.Read(self.addressBus)
                     self.Write(self.addressBus, orig)  # Dummy write
                     value = (orig - 1) & 0xFF
-                    self.cycles = 6
+
                 elif self.opcode == 0xD3:  # DCP (ind),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     value = (self.Read(self.addressBus) - 1) & 0xFF
-                    self.cycles = 8
+
                 elif self.opcode == 0xD7:  # DCP zp,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     value = (self.Read(self.addressBus) - 1) & 0xFF
-                    self.cycles = 6
+
                 elif self.opcode == 0xDB:  # DCP abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = (self.Read(self.addressBus) - 1) & 0xFF
-                    self.cycles = 7
+
                 elif self.opcode == 0xDF:  # DCP abs,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     value = (self.Read(self.addressBus) - 1) & 0xFF
-                    self.cycles = 7
 
                 self.Write(self.addressBus, value)
                 self.Op_CMP(value)
-                return
+                return self.endExecute()
 
             # ISC (INC then SBC)
             case 0xE3 | 0xE7 | 0xEF | 0xF3 | 0xF7 | 0xFB | 0xFF:
@@ -2363,37 +2067,36 @@ class Emulator(object):
                     orig = self.Read(self.addressBus)
                     self.Write(self.addressBus, orig)  # Dummy write
                     value = (orig + 1) & 0xFF
-                    self.cycles = 8
+
                 elif self.opcode == 0xE7:  # ISC zp
                     self.ReadOperands_ZeroPage()
                     value = (self.Read(self.addressBus) + 1) & 0xFF
-                    self.cycles = 5
+
                 elif self.opcode == 0xEF:  # ISC abs
                     self.ReadOperands_AbsoluteAddressed()
                     orig = self.Read(self.addressBus)
                     self.Write(self.addressBus, orig)  # Dummy write
                     value = (orig + 1) & 0xFF
-                    self.cycles = 6
+
                 elif self.opcode == 0xF3:  # ISC (ind),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     value = (self.Read(self.addressBus) + 1) & 0xFF
-                    self.cycles = 8
+
                 elif self.opcode == 0xF7:  # ISC zp,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     value = (self.Read(self.addressBus) + 1) & 0xFF
-                    self.cycles = 6
+
                 elif self.opcode == 0xFB:  # ISC abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = (self.Read(self.addressBus) + 1) & 0xFF
-                    self.cycles = 7
+
                 elif self.opcode == 0xFF:  # ISC abs,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     value = (self.Read(self.addressBus) + 1) & 0xFF
-                    self.cycles = 7
 
                 self.Write(self.addressBus, value)
                 self.Op_SBC(value)
-                return
+                return self.endExecute()
 
             # OBSCURE UNOFFICIAL OPCODES
             case 0x93 | 0x9F | 0x9C | 0x9E | 0x9B | 0xBB:
@@ -2401,47 +2104,41 @@ class Emulator(object):
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                     self.Write(self.addressBus, (self.A & hb1) & 0xFF)
-                    self.cycles = 5
+
                 elif self.opcode == 0x9F:  # AHX abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                     self.Write(self.addressBus, (self.A & hb1) & 0xFF)
-                    self.cycles = 5
+
                 elif self.opcode == 0x9C:  # SHY abs,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                     self.Write(self.addressBus, (self.Y & hb1) & 0xFF)
-                    self.cycles = 5
+
                 elif self.opcode == 0x9E:  # SHX abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                     self.Write(self.addressBus, (self.X & hb1) & 0xFF)
-                    self.cycles = 5
+
                 elif self.opcode == 0x9B:  # TAS/SHS abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     self.stackPointer = self.A & self.X
                     hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                     self.Write(self.addressBus, (self.stackPointer & hb1) & 0xFF)
-                    self.cycles = 5
+
                 elif self.opcode == 0xBB:  # LAS abs,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     value = self.Read(self.addressBus) & self.stackPointer
                     self.A = self.X = self.stackPointer = value & 0xFF
                     self.UpdateZeroNegativeFlags(self.A)
-                    self.cycles = 4
-                return
+                return self.endExecute()
 
             case _:  # Unknown opcode
-                print(
-                    f"Unknown opcode: ${self.opcode:02X} at PC=${self.ProgramCounter - 1:04X}"
-                )
+                print(f"Unknown opcode: ${self.opcode:02X} at PC=${self.ProgramCounter - 1:04X}")
                 if self.debug.halt_on_unknown_opcode:
                     self.CPU_Halted = True
-                    raise Exception(
-                        f"Unknown opcode ${self.opcode:02X} encountered at ${self.ProgramCounter - 1:04X}"
-                    )
-                self.cycles = 2
-                return
+                    raise Exception(f"Unknown opcode ${self.opcode:02X} encountered at ${self.ProgramCounter - 1:04X}")
+                return self.endExecute()
 
     def NMI_RUN(self):
         """Handle Non-Maskable Interrupt."""
@@ -2454,9 +2151,7 @@ class Emulator(object):
         self.ProgramCounter = (high << 8) | low
         self.cycles = 7
 
-    def CheckSpriteZeroHit(
-        self, scanline: int, x: int, sprite_index: int, color_idx: int
-    ) -> bool:
+    def CheckSpriteZeroHit(self, scanline: int, x: int, sprite_index: int, color_idx: int) -> bool:
         """Check if this sprite should trigger sprite 0 hit."""
         # Only sprite 0 (first sprite in OAM) can trigger the hit
         if sprite_index != 0:
@@ -2606,9 +2301,7 @@ class Emulator(object):
             color_idx = ((plane1 >> bit) & 1) | (((plane2 >> bit) & 1) << 1)
 
             if color_idx == 0:  # Background transparent -> draw backdrop color
-                self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(
-                    backdrop_color
-                )
+                self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
                 if hasattr(self, "_bg_opaque_line"):
                     self._bg_opaque_line[x] = False
                 continue
@@ -2702,15 +2395,11 @@ class Emulator(object):
 
                 if 0 <= scanline < 240:
                     priority = (attributes >> 5) & 1
-                    bg_pixel_opaque = (
-                        hasattr(self, "_bg_opaque_line") and self._bg_opaque_line[sx]
-                    )
+                    bg_pixel_opaque = hasattr(self, "_bg_opaque_line") and self._bg_opaque_line[sx]
 
                     # Sprite 0 hit detection - only check if both background and sprites are enabled
                     if i == 0 and color_idx != 0 and (self.PPUMASK & 0x18) == 0x18:
-                        if (
-                            bg_pixel_opaque and 1 <= sx <= 254
-                        ):  # Sprite 0 hit can't occur at x=0 or x=255
+                        if bg_pixel_opaque and 1 <= sx <= 254:  # Sprite 0 hit can't occur at x=0 or x=255
                             self.PPUSTATUS |= 0x40  # Set sprite 0 hit flag
 
                     # Sprite priority: 0=front, 1=behind background
