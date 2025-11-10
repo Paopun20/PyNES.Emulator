@@ -4,7 +4,7 @@ cython # Cython
 setuptools-rust # Rust build
 
 # game development
-pygame # game library
+pygame-ce # community edition of pygame
 
 # emulator backend
 pypresence # discord rich presence
@@ -15,6 +15,16 @@ rich # rich terminal output
 # rendering
 PyOpenGL # gpu rendering
 PyOpenGL-accelerate # gpu rendering
+moderngl # modern OpenGL wrapper
 
 # data processing
 numpy # numerical computing
+
+# debug
+psutil # process and system utilities
+
+# GPU monitoring
+GPUtil # GPU monitoring (supports both NVIDIA and AMD GPUs)
+
+# Windows specific
+pywin32;platform_system=="Windows" # Windows API

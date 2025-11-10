@@ -1,21 +1,27 @@
 {
-    "python.REPL.enableREPLSmartSend": false,
-    "files.exclude": {
-        "**/__pycache__": true,
-        "**/*.pyc": true,
-        "**/.pytest_cache": true,
-        "**/.mypy_cache": true,
-        "env": true,
-        "build": true,
-        "dist": true,
-        "__PatreonRoms": true,
-        "AccuracyCoin-Link": true,
-        "art": true,
-        "docs": true,
-        "tests": true,
-    },
-    "editor.formatOnSave": true,
-    "editor.formatOnType": true,
-    "editor.formatOnPaste": true,
-    "editor.formatOnSaveMode": "file"
+  "python.REPL.enableREPLSmartSend": false,
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "env": true,
+    "build": true,
+    "dist": true,
+    "__PatreonRoms": true,
+    "AccuracyCoin-Link": true,
+    "art": true,
+    "docs": true,
+    "tests": true,
+    "git-update.cmd":true
+  },
+  // "editor.formatOnSave": true,
+  // "editor.formatOnType": true,
+  // "editor.formatOnPaste": true,
+  "editor.formatOnSaveMode": "file",
+  "markdownlint.config": {
+    "MD033": false // Allow inline HTML in markdown files
+    
+  },
+  "ruff.enable": true,
 }

@@ -1,4 +1,4 @@
-name: "CodeQL Security Analysis"
+name: "CodeQL"
 
 on:
   push:
@@ -19,6 +19,7 @@ jobs:
       packages: read
       actions: read
       contents: read
+
     strategy:
       fail-fast: false
       matrix:

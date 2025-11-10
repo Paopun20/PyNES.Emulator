@@ -1,0 +1,15 @@
+default: true
+
+MD013:  # Line length
+  line_length: 213
+  heading_line_length: 120
+  code_block_line_length: 0
+
+MD029:  # Ordered list style
+  style: ordered
+
+MD033: false  # Allow inline HTML
+MD041: false  # No need for top-level heading
+MD036: false  # Emphasis style can vary (for dev docs)
+MD024:  # Allow same headings at different levels
+  siblings_only: true

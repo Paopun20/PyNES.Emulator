@@ -38,7 +38,7 @@ The emulator is still under development, and performance is not yet optimized. E
 - **PPU Emulation**: Basic PPU functionality for rendering graphics ( BUG ).
 - **APU Emulation**: Basic sound emulation ( WIP ).
 - **Input Emulation**: Keyboard support.
-- **Controller Support**: Like **Input Emulation** but with Gamepad support. ( Xbox Controller recommended, IDK, what can use, I don't have those controllers 😭 ).
+- **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), I can support all of them but I recommended to use Xbox controller)
 - **ROM Loading**: Supports `.nes` ROM files.
 - **Debugging**: Basic FPS and CPU register display.
 - **Discord Rich Presence**: Support for displaying current game activity on Discord.
@@ -137,31 +137,38 @@ python app/main.py
 
 7. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
+> Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.
+
+> Advance Tip: Nope, there is no advance tip.
+
+> Additional Tip: If you encounter issues with missing dependencies, ensure all required packages are installed as per the `requirements.txt` file.
+
 ## Controls
 
-| NES Button | Keyboard    | Xbox Controller |
-| ---------- | ----------- | --------------- |
-| Up         | ↑           | D-Pad Up        |
-| Down       | ↓           | D-Pad Down      |
-| Left       | ←           | D-Pad Left      |
-| Right      | →           | D-Pad Right     |
-| A          | X           | B (physical A)  |
-| B          | Z           | A (physical B)  |
-| Select     | Right Shift | Back            |
-| Start      | Enter       | Start           |
+| NES Button | Keyboard    | Xbox Controller | PS4/PS5 Controller | Switch Pro Controller |
+| ---------- | ----------- | --------------- | ------------------ | --------------------- |
+| Up         | ↑           | D-Pad Up        | D-Pad Up           | D-Pad Up              |
+| Down       | ↓           | D-Pad Down      | D-Pad Down         | D-Pad Down            |
+| Left       | ←           | D-Pad Left      | D-Pad Left         | D-Pad Left            |
+| Right      | →           | D-Pad Right     | D-Pad Right        | D-Pad Right           |
+| A          | X           | B (physical A)  | Cross (✕)          | B                     |
+| B          | Z           | A (physical B)  | Circle (○)         | A                     |
+| Select     | Right Shift | Back (6)        | Share / Back       | Minus (-)             |
+| Start      | Enter       | Start (7)       | Options / Start    | Plus (+)              |
 
-| Emulator Controls | Keyboard | Xbox Controller |
-| ----------------- | -------- | --------------- |
-| Pause             | P        | N/A             |
-| Debug Overlay     | F5       | N/A             |
-| Reset             | R        | N/A             |
-| Quit              | ESC      | N/A             |
+| Emulator Controls           | Keyboard | Xbox / PS / Switch Controller |
+| --------------------------- | -------- | ----------------------------- |
+| Pause                       | P        | N/A                           |
+| Debug Overlay               | F5       | N/A                           |
+| Next Mode (`Debug Overlay`) | F6       | N/A                           |
+| Reset                       | R        | N/A                           |
+| Quit                        | ESC      | N/A                           |
 
-> ⚠️ Note: Controller button mapping may vary depending on the controller brand/model. You may need to adjust button indices for non-Xbox controllers.
+> ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly. It is recommended to use an Xbox controller for the best compatibility.
 
 ## Contributing (a.k.a “Fix it for me?”)
 
-Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes. Please test your code and submit it with a detailed description of the changes and screenshots of the test results, and **DON'T PUT MALWARE IN YOUR PULL REQUEST, I WILL CLOSE YOUR PULL REQUEST IMMEDIATELY**, and make sure your code is readable and well-documented.
+Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes. Please test your code and submit it with a detailed description of the changes and screenshots of the test results if you edit [emulator file](./app/pynes/emulator.py), and **DON'T PUT MALWARE IN YOUR PULL REQUEST, I WILL CLOSE YOUR PULL REQUEST IMMEDIATELY**, and make sure your code is readable and well-documented.
 
 ## Security
 
