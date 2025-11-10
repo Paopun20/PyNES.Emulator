@@ -1,4 +1,4 @@
-name: "CodeQL"
+name: "CodeQL Security Analysis"
 
 on:
   push:
@@ -11,128 +11,73 @@ on:
 
 jobs:
   analyze:
-    name: CodeQL Analyze (${{ matrix.os }})
+    name: Analyze (${{ matrix.language }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 360
     permissions:
+      # required for all workflows
       security-events: write
+      # required to fetch internal or private CodeQL packs
       packages: read
+      # only required for workflows in private repositories
       actions: read
       contents: read
-
+    
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        
+        include:
+          # GitHub Actions scanning (YAML files)
+          - language: actions
+            build-mode: none
+            os: ubuntu-latest
+          
+          # Python scanning
+          - language: python
+            build-mode: none
+            os: ubuntu-latest
+          
+          # Rust scanning on Ubuntu
+          - language: rust
+            build-mode: none
+            os: ubuntu-latest
+          
+          # Rust scanning on Windows (if platform-specific code exists)
+          - language: rust
+            build-mode: none
+            os: windows-latest
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # Install system dependencies for pygame
-      - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-mixer-dev \
-            libsdl2-ttf-dev \
-            libfreetype6-dev \
-            libportmidi-dev \
-            libjpeg-dev \
-            python3-dev
-
+      
+      # Setup Rust toolchain for Rust analysis
+      - name: Setup Rust toolchain
+        if: matrix.language == 'rust'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # Use stable by default, adjust if needed
+          toolchain: stable
+      
+      # Setup Python for better analysis
       - name: Setup Python
+        if: matrix.language == 'python'
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
-          cache: 'pip'
-          cache-dependency-path: |
-            **/requirements.txt
-            **/pyproject.toml
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Install Python dependencies
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install --upgrade cython setuptools-rust
-          
-          # Install pygame with pre-built wheels when possible
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          elif [ -f pyproject.toml ]; then
-            pip install -e .
-          fi
-          
-          # Ensure pygame is installed (fallback)
-          pip install pygame || echo "::warning::Pygame installation failed"
-
-      - name: Verify pygame installation
-        shell: bash
-        run: |
-          python -c "import pygame; print(f'Pygame version: {pygame.version.ver}')" || echo "::warning::Pygame not available"
-
-      - name: Build hybrid Python + Rust extension
-        shell: bash
-        run: |
-          if [ -f setup.py ]; then
-            echo "Building combined Python/Rust extension..."
-            python setup.py build_ext --inplace || {
-              echo "::warning::Build failed, continuing for analysis"
-              exit 0
-            }
-          elif [ -f Cargo.toml ]; then
-            echo "Building Rust project..."
-            cargo build --release || {
-              echo "::warning::Rust build failed, continuing for analysis"
-              exit 0
-            }
-          fi
-
+          python-version: '3.x'
+      
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: python,rust
-          build-mode: none
-          queries: +security-extended,+security-and-quality
-          config: |
-            paths-ignore:
-              - '**/test/**'
-              - '**/tests/**'
-              - '**/node_modules/**'
-              - '**/target/debug/**'
-
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # Use security-extended for more comprehensive scanning
+          # Options: security-extended, security-and-quality
+          queries: security-extended
+      
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
-          category: "/language:${{ matrix.os }}"
-          output: sarif-results
+          category: "/language:${{ matrix.language }}/os:${{ matrix.os }}"
+          # Upload results even if there are errors
           upload: true
-
-      - name: Upload SARIF as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: codeql-results-${{ matrix.os }}
-          path: sarif-results
-          retention-days: 90
