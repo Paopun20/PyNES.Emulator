@@ -251,7 +251,7 @@ sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 # Create debug overlay
 debug_overlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
-sprite.set_fragment_shader(test_shader)  # lol
+# sprite.set_fragment_shader(test_shader)  # lol
 
 clock = pygame.time.Clock()
 
