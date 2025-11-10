@@ -1,0 +1,20 @@
+{
+  "name": "NES.Dev",
+  "image": "mcr.microsoft.com/devcontainers/python:3.13.7",
+
+  "postCreateCommand": [
+    "pip install --upgrade pip",
+    "pip install --upgrade -r requirements.txt",
+    "python -m venv .env",
+    "python setup.py build_ext --inplace"
+  ],
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ]
+    }
+  }
+}
