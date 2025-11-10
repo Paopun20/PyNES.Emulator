@@ -24,13 +24,15 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 
 ## Development Status
 
-This emulator is a work in progress. Many features are incomplete or missing, and bugs are likely present. Please refer to the "Current Status" section below for more details on what is currently implemented and what is planned for future development.
+This emulator is a work in progress. Many features are incomplete or missing,
+and bugs are likely present. Please refer to the "Current Status" section below for more details on what is currently implemented and what is planned for future development.
 
 Some code may be messy or not well-optimized as this is a learning project. Contributions are welcome!
 
 ## Performance
 
-The emulator is still under development, and performance is not yet optimized. Expect some slowdowns, especially on less powerful machines. We are actively working on improving performance through various optimizations, including the integration of Cython for critical components.
+The emulator is still under development, and performance is not yet optimized. Expect some slowdowns, especially on less powerful machines. We are actively working on improving performance through various optimizations,
+including the integration of Cython for critical components.
 
 ## Features (some work in progress)
 
@@ -166,9 +168,9 @@ python app/main.py
 
 > ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly. It is recommended to use an Xbox controller for the best compatibility.
 
-## Contributing (a.k.a “Fix it for me?”)
+## Contributing
 
-Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes. Please test your code and submit it with a detailed description of the changes and screenshots of the test results if you edit [emulator file](./app/pynes/emulator.py), and **DON'T PUT MALWARE IN YOUR PULL REQUEST, I WILL CLOSE YOUR PULL REQUEST IMMEDIATELY**, and make sure your code is readable and well-documented.
+Pls see [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this project.
 
 ## Security
 

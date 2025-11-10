@@ -1,3 +1,9 @@
-## Contributing (a.k.a “Fix it for me?”)
+## Contributing (a.k.a. “Fix it for me?”)
 
-Pull requests are welcome! If you want to contribute, please fork the repository and submit a pull request with your changes. Please test your code and submit it with a detailed description of the changes and screenshots of the test results if you edit [emulator file](./app/pynes/emulator.py), and **DON'T PUT MALWARE IN YOUR PULL REQUEST, I WILL CLOSE YOUR PULL REQUEST IMMEDIATELY**, and make sure your code is readable and well-documented.
+Pull requests are welcome! If you’d like to contribute, fork the repository and open a PR with your changes. Please test your updates,
+and if you modify the emulator file, include a clear description of what you changed along with screenshots of the test results.
+
+And seriously — DON'T PUT MALWARE IN YOUR PULL REQUEST. NOT EVEN AS A JOKE.
+If you try it, your PR will be closed instantly and without ceremony.
+
+Make sure your contributions are readable, maintainable, and well-documented.

@@ -4,9 +4,6 @@ if __import__("sys", globals=globals(), locals=locals()).version_info < (3, 13):
 if __import__("os").environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
     __import__("os").environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
-if __name__ != "__main__":
-    raise ImportError("This file is not meant to be imported as a module.")
-
 import os
 import sys
 import psutil
@@ -29,51 +26,12 @@ from pynes.api.discord import Presence  # type: ignore
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
 from pypresence.types import ActivityType, StatusDisplayType
-from rich.logging import RichHandler
-
-from datetime import datetime
-import logging
+from logger import log, debug_mode
 
 from shaders.retro import shader as test_shader
 
 from helper.pyWindowColorMode import pyWindowColorMode
 
-log_root = Path("log").resolve()
-log_root.mkdir(exist_ok=True)
-
-process = psutil.Process(os.getpid())
-process.nice(psutil.HIGH_PRIORITY_CLASS)
-
-
-class PynesFileHandler(logging.StreamHandler):
-    def __init__(self, file_name):
-        super().__init__()
-        self.file_name = file_name
-
-    def emit(self, record):
-        log_entry = self.format(record)
-        with open(self.file_name, "a") as f:
-            f.write(f"{log_entry}\n")
-
-
-debug_mode = "--debug" in sys.argv or "--realdebug" in sys.argv
-profile_mode = "--profile" in sys.argv
-
-level = logging.DEBUG if debug_mode else logging.INFO
-
-logging.basicConfig(
-    level=level,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        RichHandler(
-            rich_tracebacks=True,
-            show_path=False,
-        ),
-        PynesFileHandler(log_root / f"pynes_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"),
-    ],
-)
-log = logging.getLogger("PyNES")
 log.info("Starting PyNES Emulator")
 
 sys.set_int_max_str_digits(2**31 - 1)
@@ -100,6 +58,12 @@ def threadProfile(frame, event, arg):
 
     return threadProfile
 
+process = psutil.Process(os.getpid())
+process.nice(psutil.REALTIME_PRIORITY_CLASS)
+try:
+    process.ionice(psutil.IOPRIO_NORMAL)
+except psutil.AccessDenied as e:
+    log.warning(f"Failed to set I/O priority: {e}")
 
 if "--realdebug" in sys.argv and debug_mode:
     threading.setprofile_all_threads(threadProfile)

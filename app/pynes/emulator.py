@@ -1076,6 +1076,22 @@ class Emulator(object):
             self._perform_oam_dma(self._oam_dma_pending_page)
             self._oam_dma_pending_page = None
 
+        # CLI and SE are special: they affect the interrupt disable flag,
+        # which in turn affects whether IRQs are processed.
+        # CLI (0x58) clears the interrupt disable flag.
+        # SEI (0x78) sets the interrupt disable flag.
+        # PLP (0x28) can also clear/set the interrupt disable flag.
+        # These instructions have a 1-cycle delay before the new interrupt
+        # disable state takes effect for IRQs.
+        # NMI is not affected by the interrupt disable flag.
+        # The PollInterrupts_CantDisableIRQ function is used for these
+        # cases to ensure NMI is always checked, but IRQ checking is
+        # delayed or handled specially.
+        if self.opcode in [0x58, 0x28]:
+            self.PollInterrupts_CantDisableIRQ()
+        else:
+            self.PollInterrupts()
+
     def endExecute(self):
         self.cycles = OpCodeClass.GetCycles(self.opcode)
         return self.cycles
