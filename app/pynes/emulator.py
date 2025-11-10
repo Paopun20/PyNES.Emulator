@@ -18,7 +18,12 @@ from pynes.helper.memoize import memoize
 from pynes.util.OpCodes import OpCodes
 
 # Template
-TEMPLATE: Final[Template] = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
+# TEMPLATE: Final[Template] = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
+TEMPLATE: Final[Template] = Template(
+    "Run at line: ${PC} | opcode: ${OP} | "
+    "A: ${A} | X: ${X} | Y: ${Y} | SP: ${SP} | "
+    "Flags: N=${N} V=${V} D=${D} I=${I} Z=${Z} C=${C}"
+)
 
 OpCodeClass = OpCodes()  # can more one
 
@@ -232,12 +237,12 @@ class Emulator(object):
             X=f"{self.X:02X}",
             Y=f"{self.Y:02X}",
             SP=f"{self.stackPointer:02X}",
-            N="N" if self.flag.Negative else "n",
-            V="V" if self.flag.Overflow else "v",
-            D="D" if self.flag.Decimal else "d",
-            I="I" if self.flag.InterruptDisable else "i",
-            Z="Z" if self.flag.Zero else "z",
-            C="C" if self.flag.Carry else "c",
+            N="1" if self.flag.Negative else "0",
+            V="1" if self.flag.Overflow else "0",
+            D="1" if self.flag.Decimal else "0",
+            I="1" if self.flag.InterruptDisable else "0",
+            Z="1" if self.flag.Zero else "0",
+            C="1" if self.flag.Carry else "0",
         )
 
         self.tracelog.append(line)
@@ -2111,21 +2116,32 @@ class Emulator(object):
         return True
 
     def Emulate_PPU(self):
-        """Emulate one PPU cycle with precise VBlank, NMI, and delayed register timing."""
+        """
+        Emulate one PPU cycle with precise VBlank, NMI, sprite 0 hit, and rendering timing.
+        
+        PPU runs at 3x CPU speed (5.369 MHz NTSC).
+        Each scanline = 341 PPU cycles.
+        Each frame = 262 scanlines (261.5 for odd frames with rendering enabled).
+        
+        Scanline breakdown:
+        - 0-239: Visible scanlines (rendering)
+        - 240: Post-render (idle)
+        - 241-260: VBlank
+        - 261: Pre-render scanline
+        """
 
         # VBlank set timing
         # VBlank flag is SET at scanline 241, cycle 1 (second cycle of scanline)
-        if self.Scanline == 241 and self.PPUCycles == 1:
-            self.PPUSTATUS |= 0x80  # Set VBlank flag
-            # NMI should trigger if NMI is enabled
-            if self.PPUCTRL & 0x80:
-                self.NMI.Pending = True
+        if self.Scanline == 261 and self.PPUCycles == 1:
+            self.PPUSTATUS &= 0x1F  # Clear VBlank, sprite 0 hit, sprite overflow
+            self.NMI.Pending = False
 
         # Pre-render scanline behavior
         # Clear VBlank and sprite flags at scanline 261, cycle 1
-        if self.Scanline == 261 and self.PPUCycles == 1:
-            self.PPUSTATUS &= 0x1F  # Clear VBlank (bit 7), sprite 0 hit (bit 6), sprite overflow (bit 5)
-            self.NMI.Pending = False  # Clear any pending NMI
+        if self.Scanline == 241 and self.PPUCycles == 1:
+            self.PPUSTATUS |= 0x80  # Set VBlank flag
+            if self.PPUCTRL & 0x80:  # NMI enabled
+                self.NMI.Pending = True
 
         # Advance one PPU cycle
         self.PPUCycles += 1
@@ -2137,23 +2153,29 @@ class Emulator(object):
 
         # Handle end-of-scanline wraparound
         # 341 PPU cycles per scanline
-        if self.PPUCycles >= 341:
+        if self.PPUCycles > 340:
             self.PPUCycles = 0
             self.Scanline += 1
 
-            # Scanline 261: End of frame
+            # Odd frame skip (NTSC) if rendering enabled
+            if self.Scanline == 261 and self.FrameComplete and self.PPUCTRL & 0x18:
+                if self.frame_count % 2 == 1:
+                    self.PPUCycles += 1  # skip a cycle on odd frames
+
+            # End of frame
             if self.Scanline >= 262:
-                self.Scanline = 0  # Start new frame at scanline 0
+                self.Scanline = 0
                 self.FrameComplete = True
 
+                # Track FPS
                 self.frame_count += 1
-                current_time = time.time()
-                if current_time - self.last_fps_time >= 1.0:
-                    self.fps = self.frame_count / (current_time - self.last_fps_time)
+                now = time.time()
+                elapsed = now - self.last_fps_time
+                if elapsed >= 1.0:
+                    self.fps = self.frame_count / elapsed
                     self.frame_count = 0
-                    self.last_fps_time = current_time
+                    self.last_fps_time = now
 
-                # Emit frame event
                 self._emit("frame_complete", self.FrameBuffer)
                 self.frame_complete_count += 1
                 self.FrameComplete = False
@@ -2185,21 +2207,35 @@ class Emulator(object):
             self.RenderSprites(self.Scanline)
 
     def RenderBackground(self):
-        """Render background for current scanline with proper scrolling."""
+        """
+        Render background for current scanline with proper scrolling.
+        Uses PPU scroll registers (v, t, x) for accurate scrolling.
+        """
         # Check if background is enabled
         if not (self.PPUMASK & 0x08):
             return
 
+        # Get scroll position from legacy PPUSCROLL for compatibility
         scroll_x = self.PPUSCROLL[0]
         scroll_y = self.PPUSCROLL[1]
 
-        # Calculate which nametable to use
+        # Calculate which nametable to use from PPUCTRL
         base_nametable = self.PPUCTRL & 0x03
 
         # Universal background color (palette entry 0)
         backdrop_color = int(self.PaletteRAM[0])
 
+        # Left 8-pixel clipping check
+        clip_left = (self.PPUMASK & 0x02) == 0
+
+        # Render each pixel on the scanline
         for x in range(256):
+            # Skip rendering left 8 pixels if clipping enabled
+            if clip_left and x < 8:
+                self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
+                self._bg_opaque_line[x] = False
+                continue
+            
             # Calculate absolute scroll position
             abs_x = x + scroll_x
             abs_y = self.Scanline + scroll_y
@@ -2219,27 +2255,28 @@ class Emulator(object):
             vram_addr = (nametable_base + tile_offset) & 0x0FFF
             tile_index = int(self.VRAM[vram_addr])
 
-            # Get pattern table base
+            # Get pattern table base from PPUCTRL
             pattern_base = 0x1000 if (self.PPUCTRL & 0x10) else 0x0000
             tile_addr = pattern_base + tile_index * 16
 
-            # Get tile row and column
+            # Get pixel within tile
             tile_row = abs_y % 8
             pixel_x = abs_x % 8
 
+            # Read pattern data (2 bit planes)
             plane1 = int(self.CHRROM[tile_addr + tile_row])
             plane2 = int(self.CHRROM[tile_addr + tile_row + 8])
 
-            # Get pixel color
+            # Extract pixel color index (2 bits)
             bit = 7 - pixel_x
             color_idx = ((plane1 >> bit) & 1) | (((plane2 >> bit) & 1) << 1)
 
-            if color_idx == 0:  # Background transparent -> draw backdrop color
+            # If transparent (color 0), draw backdrop
+            if color_idx == 0:
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
-                if hasattr(self, "_bg_opaque_line"):
-                    self._bg_opaque_line[x] = False
+                self._bg_opaque_line[x] = False
                 continue
-
+            
             # Get palette from attribute table
             attr_x = tile_x // 4
             attr_y = tile_y // 4
@@ -2252,99 +2289,155 @@ class Emulator(object):
             attr_shift = (quadrant_y * 2 + quadrant_x) * 2
             palette_idx = (attr_byte >> attr_shift) & 0x03
 
-            # Get final color
+            # Get final color from palette RAM
             palette_addr = (palette_idx * 4 + color_idx) & 0x1F
             color = int(self.PaletteRAM[palette_addr])
 
+            # Draw pixel
             self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
 
-            # Mark opaque background at this pixel for sprite priority
-            if hasattr(self, "_bg_opaque_line"):
-                # Left 8-pixel background clipping
-                if x < 8 and (self.PPUMASK & 0x02) == 0:
-                    self._bg_opaque_line[x] = False
-                else:
-                    self._bg_opaque_line[x] = True
+            # Mark as opaque background for sprite priority
+            self._bg_opaque_line[x] = True
 
     def RenderSprites(self, scanline: int):
-        """Render up to 8 sprites on a given scanline into the framebuffer."""
+        """
+        Render up to 8 sprites on the given scanline.
+        Handles sprite priority, sprite 0 hit detection, and 8x8/8x16 modes.
+
+        Args:
+            scanline: Current scanline (0-239)
+        """
+        if not (self.PPUMASK & 0x10):  # Sprites disabled
+            return
+
+        # Get sprite height from PPUCTRL
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
+
+        # Left 8-pixel sprite clipping
+        clip_left = (self.PPUMASK & 0x04) == 0
+
+        # Track sprites drawn (for overflow)
         sprites_drawn = 0
 
         # Clear sprite 0 hit flag at start of visible scanline
         if self.PPUCycles == 1 and 0 <= scanline < 240:
             self.PPUSTATUS &= ~0x40
 
-        for i in range(0, 256, 4):  # each sprite = 4 bytes
-            y = self.OAM[i] + 1
+        # Iterate through all 64 sprites in OAM
+        for i in range(0, 256, 4):  # Each sprite = 4 bytes
+            y = self.OAM[i] + 1  # Y position (+ 1 because sprites are delayed by 1)
             tile_index = self.OAM[i + 1]
             attributes = self.OAM[i + 2]
             x = self.OAM[i + 3]
 
-            # Check visibility - sprite must be on current scanline
+            # Check if sprite is visible on this scanline
             if not (y <= scanline < y + sprite_height):
                 continue
-
-            # Sprite overflow (more than 8 on same line)
+            
+            # Sprite overflow (more than 8 sprites on same line)
             sprites_drawn += 1
             if sprites_drawn > 8:
+                self.PPUSTATUS |= 0x20  # Set sprite overflow flag
                 break
-
-            # Determine pattern table base (from PPUCTRL)
-            pattern_table_base = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
-
-            # Handle 8x16 sprites
+            
+            # Determine pattern table base
             if sprite_height == 16:
+                # 8x16 mode: pattern table from bit 0 of tile index
                 pattern_table_base = (tile_index & 1) * 0x1000
-                tile_index &= 0xFE  # even index only
+                tile_index &= 0xFE  # Use even tile index
+            else:
+                # 8x8 mode: pattern table from PPUCTRL bit 3
+                pattern_table_base = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
 
-            # Fetch tile row
+            # Calculate which row of the sprite to render
             row = scanline - y
-            if attributes & 0x80:
-                row = sprite_height - 1 - row  # vertical flip
 
+            # Vertical flip
+            if attributes & 0x80:
+                row = sprite_height - 1 - row
+
+            # For 8x16 sprites, handle top/bottom tile
+            if sprite_height == 16:
+                if row >= 8:
+                    tile_index |= 1  # Bottom tile
+                    row -= 8
+
+            # Fetch pattern data for this row
             pattern_addr = pattern_table_base + (tile_index * 16) + row
             low = self.CHRROM[pattern_addr]
             high = self.CHRROM[pattern_addr + 8]
 
-            # Draw 8 pixels
+            # Draw 8 pixels of the sprite
             for col in range(8):
-                px = 7 - col if (attributes & 0x40) else col  # horizontal flip
+                # Horizontal flip
+                if attributes & 0x40:
+                    px = 7 - col
+                else:
+                    px = col
+
+                # Extract 2-bit color index
                 bit0 = (low >> (7 - px)) & 1
                 bit1 = (high >> (7 - px)) & 1
                 color_idx = (bit1 << 1) | bit0
+
+                # Skip transparent pixels
                 if color_idx == 0:
-                    continue  # transparent
-
-                # Apply palette
-                palette_base = 0x10 + ((attributes & 0x03) << 2)
-                color = self.PaletteRAM[(palette_base + color_idx) & 0x1F]
-                rgb = nes_palette[color & 0x3F]
-
+                    continue
+                
+                # Calculate screen X position
                 sx = x + col
+
+                # Skip offscreen pixels
                 if sx < 0 or sx >= 256:
-                    continue  # skip pixels offscreen
+                    continue
+                
+                # Skip clipped left 8 pixels
+                if clip_left and sx < 8:
+                    continue
+                
+                # Get sprite palette (0-3 from bits 0-1 of attributes)
+                sprite_palette = attributes & 0x03
+                palette_base = 0x10 + (sprite_palette << 2)
+                palette_addr = (palette_base + color_idx) & 0x1F
+                color = self.PaletteRAM[palette_addr]
+                rgb = self.NESPaletteToRGB(color & 0x3F)
 
-                self.CheckSpriteZeroHit(scanline, sx, i // 4, color_idx)
+                # Check for sprite 0 hit (only for sprite 0)
+                if i == 0 and (self.PPUMASK & 0x18) == 0x18:  # Both BG and sprites enabled
+                    # Sprite 0 hit requires:
+                    # - Opaque background pixel
+                    # - Opaque sprite pixel
+                    # - Not at x=255
+                    # - Not in clipped region (if clipping enabled)
+                    bg_opaque = self._bg_opaque_line[sx] if hasattr(self, '_bg_opaque_line') else False
 
-                if 0 <= scanline < 240:
-                    priority = (attributes >> 5) & 1
-                    bg_pixel_opaque = hasattr(self, "_bg_opaque_line") and self._bg_opaque_line[sx]
-
-                    # Sprite 0 hit detection - only check if both background and sprites are enabled
-                    if i == 0 and color_idx != 0 and (self.PPUMASK & 0x18) == 0x18:
-                        if bg_pixel_opaque and 1 <= sx <= 254:  # Sprite 0 hit can't occur at x=0 or x=255
+                    if bg_opaque and color_idx != 0 and sx != 255:
+                        # Check clipping
+                        if not ((clip_left or (self.PPUMASK & 0x02) == 0) and sx < 8):
                             self.PPUSTATUS |= 0x40  # Set sprite 0 hit flag
 
-                    # Sprite priority: 0=front, 1=behind background
-                    if priority == 0 or not bg_pixel_opaque:
+                # Sprite priority (bit 5 of attributes)
+                # 0 = in front of background
+                # 1 = behind background
+                priority = (attributes >> 5) & 1
+                bg_pixel_opaque = self._bg_opaque_line[sx] if hasattr(self, '_bg_opaque_line') else False
+
+                # Draw sprite pixel based on priority
+                if priority == 0 or not bg_pixel_opaque:
+                    if 0 <= scanline < 240:
                         self.FrameBuffer[scanline, sx] = rgb
 
     def EvaluateSpritesForScanline(self):
-        """Select up to 8 sprites for the current scanline and set overflow flag."""
+        """
+        Evaluate which sprites are visible on the current scanline.
+        Sets sprite overflow flag if more than 8 sprites found.
+
+        This is a simplified version of secondary OAM evaluation.
+        The real NES hardware does this over cycles 65-256 of each scanline.
+        """
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
-        sprites = []  # Holds up to 8 visible sprites
-        n_found = 0  # Total sprites found on scanline (for overflow)
+        sprites = []
+        n_found = 0
 
         # Evaluate all 64 sprites
         for i in range(64):
@@ -2352,30 +2445,31 @@ class Emulator(object):
             y = int(self.OAM[oam_addr])
 
             # Check if sprite is in range for this scanline
-            # Note: y=255 means sprite is offscreen, y=0-239 are visible
-            if y <= self.Scanline < y + sprite_height and y < 240:
+            # Y position is offset by 1 (sprite at y=0 appears on scanline 1)
+            sprite_scanline_start = y + 1
+            sprite_scanline_end = sprite_scanline_start + sprite_height
+
+            # Check if current scanline intersects with sprite
+            if sprite_scanline_start <= self.Scanline < sprite_scanline_end and y < 240:
                 n_found += 1
 
                 # Only store first 8 sprites
                 if len(sprites) < 8:
-                    sprites.append(
-                        {
-                            "index": i,
-                            "y": y,
-                            "tile": int(self.OAM[oam_addr + 1]),
-                            "attr": int(self.OAM[oam_addr + 2]),
-                            "x": int(self.OAM[oam_addr + 3]),
-                        }
-                    )
+                    sprites.append({
+                        'index': i,
+                        'y': y,
+                        'tile': int(self.OAM[oam_addr + 1]),
+                        'attr': int(self.OAM[oam_addr + 2]),
+                        'x': int(self.OAM[oam_addr + 3])
+                    })
 
-        # Set sprite overflow flag (bit 5) if more than 8 sprites found
-        # According to NES spec: flag is set when more than 8 sprites are detected
-        # during secondary OAM evaluation (not just found in primary OAM)
+        # Set sprite overflow flag if more than 8 sprites on this line
         if n_found > 8:
             self.PPUSTATUS |= 0x20
         else:
             self.PPUSTATUS &= ~0x20
 
+        # Store evaluated sprites for this scanline
         self._sprites_line = sprites
 
     @memoize(maxsize=((len(nes_palette) + 1) * 3))

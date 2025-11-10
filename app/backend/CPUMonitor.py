@@ -3,7 +3,8 @@ import time
 from typing import Optional, Dict, Deque
 from collections import deque
 import psutil
-
+from logger import log
+from helper.thread_exception import make_thread_exception as _raise_exception_in_thread
 
 class ThreadCPUMonitor:
     """
@@ -156,7 +157,7 @@ class ThreadCPUMonitor:
             )
             self.monitor_thread.start()
     
-    def stop(self, timeout: float = 2.0):
+    def stop(self, timeout: float = 2.0) -> bool:
         """
         Stop monitoring and wait for thread to finish.
         
@@ -167,7 +168,17 @@ class ThreadCPUMonitor:
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_thread.join(timeout=timeout)
             if self.monitor_thread.is_alive():
-                print("Warning: Monitor thread did not stop cleanly")
+                log.warning("Monitor thread did not stop cleanly")
+                return False
+        return True
+    
+    def force_stop(self):
+        """
+        Forcefully stop monitoring without waiting for thread to finish.
+        """
+        self.running = False
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            _raise_exception_in_thread(self.monitor_thread, SystemExit)
     
     def is_running(self) -> bool:
         """

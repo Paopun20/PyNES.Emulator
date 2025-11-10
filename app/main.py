@@ -27,6 +27,7 @@ from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
 from pypresence.types import ActivityType, StatusDisplayType
 from logger import log, debug_mode
+from helper.thread_exception import make_thread_exception
 
 from shaders.retro import shader as test_shader
 
@@ -58,12 +59,13 @@ def threadProfile(frame, event, arg):
 
     return threadProfile
 
+
 process = psutil.Process(os.getpid())
 process.nice(psutil.REALTIME_PRIORITY_CLASS)
 try:
-    process.ionice(psutil.IOPRIO_NORMAL)
+    process.ionice(psutil.IOPRIO_HIGH)
 except psutil.AccessDenied as e:
-    log.warning(f"Failed to set I/O priority: {e}")
+    log.error(f"Failed to set I/O priority because of access denied error: {e}")
 
 if "--realdebug" in sys.argv and debug_mode:
     threading.setprofile_all_threads(threadProfile)
@@ -78,6 +80,8 @@ presence.connect()
 NES_WIDTH = 256
 NES_HEIGHT = 240
 SCALE = 3
+
+_thread_list: threading.Thread = []
 
 log.info(f"Starting pygame community edition {pygame.__version__}")
 pygame.init()
@@ -427,15 +431,26 @@ def subpro():
         if not next_run:
             try:
                 next_run = True
-                nes_emu.step_Cycle()
+                nes_emu.step_Frame()
                 next_run = False
             except EmulatorError as e:
                 print(f"{e.type.__name__}: {e.message}")
                 running = False
 
 
-subpro_thread = threading.Thread(name="emulator_thread", target=subpro)
-subpro_thread.start()
+_thread_list.append(threading.Thread(name="emulator_thread", daemon=True, target=subpro))
+_thread_list[-1].start()
+
+
+def tracelogger():
+    @nes_emu.on("tracelogger")
+    def _(nes_line):
+        if debug_mode and "--eum_debug" in sys.argv:
+            log.debug(nes_line)
+
+
+_thread_list.append(threading.Thread(target=tracelogger, daemon=True, name="tracelogger"))
+_thread_list[-1].start()
 
 
 @nes_emu.on("frame_complete")
@@ -507,15 +522,64 @@ while running:
 # Cleanup
 try:
     debug_overlay.destroy()
+    log.info("Debug overlay: Shutting down")
 except Exception:
     pass
 
 try:
     sprite.destroy()
+    log.info("Sprite: Shutting down")
 except Exception:
     pass
 
-cpu_monitor.stop()
-subpro_thread.join()
+r = cpu_monitor.stop()
+if r:
+    log.info("CPU monitor stopped")
+else:
+    log.warning("CPU monitor failed to stop")
+    log.warning("Enter force state")
+    try:
+        cpu_monitor.force_stop()
+        log.info("CPU monitor force stopped: success")
+    except SystemError:
+        log.error("CPU monitor failed to force stop")
+    except Exception:
+        pass
+
+_clone_list = _thread_list.copy()
+retry = 0
+
+while _thread_list and retry < 4:
+    for thread in _thread_list:
+        log.info(f"Joining thread: {thread.name}")
+        thread.join(timeout=2.0)
+        if thread.is_alive():
+            log.warning(f"Thread {thread.name} did not stop cleanly")
+        else:
+            _clone_list.remove(thread)
+    _thread_list = _clone_list.copy()
+    retry += 1
+else:
+    if not _thread_list:
+        log.info("All threads joined")
+    else:
+        log.warning("Some threads did not join")
+        log.warning("Enter force state")
+        _clone_list = _thread_list.copy()
+        while _thread_list:
+            for thread in _thread_list:
+                try:
+                    make_thread_exception(thread, SystemExit)
+                    log.info(f"Force stopping thread \"{thread.name}\": success")
+                    _clone_list.remove(thread)
+                except SystemError:
+                    log.error(f"Thread {thread.name} failed to force stop")
+                except Exception:
+                    pass
+            _thread_list = _clone_list.copy()
+
 presence.close()
+log.info("Discord presence: Shutting down")
 pygame.quit()
+log.info("Pygame: Shutting down")
+exit(0)

@@ -2,8 +2,9 @@
 
 [![Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)
 [![Python Version](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
-[![GitHub Stars](https://img.shields.io/github/stars/Paopun20/PyNES.Emulator.svg?style=social&label=Star)](https://github.com/Paopun20/PyNES.Emulator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](./SECURITY.md)
+[![Code Style: Black](https://img.shields.io/badge/Code%20Style-Black-black.svg)](https://github.com/psf/black)
 
 ## About
 
@@ -12,7 +13,7 @@ A NES (Nintendo Entertainment System) emulator written in Python, Cython and Rus
 ## Accuracy (may be outdated)
 
 <div style="display: flex; gap: 10px;">
-    <img src="./assets/screenshot/testshot 2025-10-31 200135.png" width="400" alt="PyNES Test"/>
+    <img src="./assets/screenshot/testshot 2025-10-31 200135.png" width="480" alt="PyNES Emulator Screenshot it take ⁓9 minutes to run all test results. It's not 100% accurate yet, but it's getting there!"/>
 </div>
 
 Not suitable for speedrunning at this time—please wait for future updates before using PyNES for these purposes.
@@ -97,53 +98,51 @@ If you want to use a ready-made executable:
 1. Ensure you have Python 3.13 or higher installed.
 2. Clone this repository.
 
-```bash
-git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
-```
+    ```bash
+    git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
+    ```
 
 3. Create and activate a virtual environment (optional but recommended):
 
-Create a virtual environment:
+    Create a virtual environment:
 
-```bash
-python -m venv env
-```
+    ```bash
+    python -m venv env
+    ```
 
-Activate the virtual environment:
+    Activate the virtual environment:
 
-```bash
-# windows:
-.\env\Scripts\activate
+    ```bash
+    # windows:
+    .\env\Scripts\activate
 
-# macOS / Linux:
-source env/bin/activate
-```
+    # macOS / Linux:
+    source env/bin/activate
+    ```
 
-4. Build the extensions:
+4. Build the extensions (Cython and Rust components):
 
-```bash
-python setup.py build_ext --inplace
-```
+    ```bash
+    python setup.py build_ext --inplace
+    ```
 
-5. Install the required dependencies using:
+5. Install the required dependencies using (requirements file is included in the repository you don't need to install it manually, it will install automatically):
 
-```bash
-pip install -r requirements.txt
-```
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 6. Start the emulator with:
 
-```bash
-python app/main.py
-```
+    ```bash
+    python app/main.py
+    ```
 
 7. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
 > Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.
 
-> Advance Tip: Nope, there is no advance tip.
-
-> Additional Tip: If you encounter issues with missing dependencies, ensure all required packages are installed as per the `requirements.txt` file.
+> Advance Tip For Developer: You can pass the `--eum_debug` after `--debug` FLAG to enable eumulator tracelogger in debug mode.
 
 ## Controls
 
@@ -181,3 +180,8 @@ For information on how to report security vulnerabilities, please refer to our [
 This project is open-source and licensed under the MIT - see the [LICENSE](LICENSE.md) file for details.
 
 > it have changed from Apache 2.0 to MIT License, i don't know what different is, but Apache 2.0 and MIT is same but I realized that different is, so I changed it to MIT. (LOL)
+
+<!-- Easter Egg: Hidden Message -->
+<span style="font-size: 8px;">
+You can find easter eggs in the emulator or the source code! Good luck searching! :3
+</span>

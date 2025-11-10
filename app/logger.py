@@ -20,7 +20,6 @@ class PynesFileHandler(logging.StreamHandler):
 
 
 debug_mode = "--debug" in sys.argv or "--realdebug" in sys.argv
-profile_mode = "--profile" in sys.argv
 
 level = logging.DEBUG if debug_mode else logging.INFO
 
@@ -31,7 +30,10 @@ logging.basicConfig(
     handlers=[
         RichHandler(
             rich_tracebacks=True,
-            show_path=False,
+            show_path=True,
+            enable_link_path=True,
+            tracebacks_show_locals=debug_mode,
+            show_level=False,
         ),
         PynesFileHandler(log_root / f"pynes_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"),
     ],
