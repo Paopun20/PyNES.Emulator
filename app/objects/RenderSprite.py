@@ -1,7 +1,10 @@
+from __future__ import annotations
 import moderngl
 import numpy as np
+from typing import Final
+from shaders.shader_class import Shader
 
-DEFAULT_FRAGMENT_SHADER = """
+DEFAULT_FRAGMENT_SHADER: Final[str] = """
 #version 330
 in vec2 v_uv;
 out vec4 fragColor;
@@ -11,7 +14,7 @@ fragColor = texture(u_tex, v_uv);
 }
 """
 
-VERTEX_SHADER = """
+VERTEX_SHADER: Final[str] = """
 #version 330
 in vec2 a_pos;
 in vec2 a_uv;
@@ -34,6 +37,7 @@ class RenderSprite:
         self.scale = scale
         self.W = width * scale
         self.H = height * scale
+        
         # initial shader program
         self.fragment_shader = DEFAULT_FRAGMENT_SHADER
         self.program = ctx.program(vertex_shader=VERTEX_SHADER, fragment_shader=self.fragment_shader)
@@ -76,12 +80,42 @@ class RenderSprite:
             raise ValueError(f"Frame must be ({self.height},{self.width},3)")
         self.texture.write(frame.tobytes())
 
-    def set_fragment_shader(self, shader_src: str):
-        """Swap fragment shader at runtime."""
-        self.program.release()
-        self.fragment_shader = shader_src
-        self.program = self.ctx.program(vertex_shader=VERTEX_SHADER, fragment_shader=self.fragment_shader)
-        self.vao = self.ctx.vertex_array(self.program, [(self.vbo, "2f 2f", "a_pos", "a_uv")], index_buffer=self.ibo)
+    def set_fragment_shader(self, shader_class: Shader):
+        """Set a new fragment shader. Falls back to current shader if compilation fails."""
+        old_program = self.program
+        old_vao = self.vao
+        old_shader = self.fragment_shader
+        
+        try:
+            # Clean conversion to string
+            new_shader = str(shader_class)
+            
+            # Compile new program first (before releasing old one)
+            new_program = self.ctx.program(
+                vertex_shader=VERTEX_SHADER,
+                fragment_shader=new_shader
+            )
+            
+            # Create new VAO with new program
+            new_vao = self.ctx.vertex_array(
+                new_program, [(self.vbo, "2f 2f", "a_pos", "a_uv")], index_buffer=self.ibo
+            )
+            
+            # Success! Now we can safely release old resources
+            old_vao.release()
+            old_program.release()
+            
+            # Update to new resources
+            self.program = new_program
+            self.vao = new_vao
+            self.fragment_shader = new_shader
+            
+        except moderngl.Error as e:
+            print(f"Failed to compile fragment shader:\n{str(shader_class)}")
+            print(f"Error: {e}")
+            print("Keeping previous shader")
+            # Don't update anything - old shader remains active
+            raise e
 
     def set_uniform(self, name: str, value):
         """Set a uniform in the current shader."""
@@ -91,11 +125,18 @@ class RenderSprite:
         self.program[name].value = value
 
     def draw(self):
+        """Render the sprite."""
         self.program["u_scale"].value = (self.W, self.H)
+        
+        # Explicitly bind texture to location 0
         self.texture.use(location=0)
+        if "u_tex" in self.program:
+            self.program["u_tex"].value = 0
+        
         self.vao.render()
 
     def destroy(self):
+        """Release all GPU resources."""
         self.vao.release()
         self.vbo.release()
         self.ibo.release()

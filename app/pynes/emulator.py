@@ -152,6 +152,12 @@ class DoTask:
     BRK: bool = False
 
 @dataclass
+class PendingsTask:
+    NMI: bool = False
+    IRQ: bool = False
+    BRK: bool = False
+
+@dataclass
 class CPURegisters:
     A: int = 0
     X: int = 0
@@ -221,7 +227,6 @@ class Emulator(object):
         self.AddressLatch = False
         self.PPUDataBuffer: int = 0
         self.FrameBuffer: np.ndarray = np.zeros((240, 256, 3), dtype=np.uint8)
-        self.IRQ_Pending: bool = False  # Add IRQ pending flag
         self._ppu_pending_writes: List[PPUPendingWrites] = []
         # debugger
         self.fps: float = 0
@@ -237,6 +242,7 @@ class Emulator(object):
         self.NMI: NMI = NMI()
         self.IRQ: IRQ = IRQ()
         self.DoTask: DoTask = DoTask()
+        self.PendingsTask: PendingsTask = PendingsTask()
 
     def Tracelogger(self, opcode: int):
         line = TEMPLATE.substitute(
@@ -940,6 +946,13 @@ class Emulator(object):
         self.stackPointer = 0xFD
         self.flag = Flags(InterruptDisable=True)
         self.DoTask = DoTask()
+        self.IRQ = IRQ()
+        self.NMI = NMI()
+        self.PendingsTask = PendingsTask()
+        self.CPU_Halted = False
+        self.cycles = 0
+        self.ProgramCounter = 0
+        self.opcode = 0
 
         # Read reset vector
         PCL = self.Read(0xFFFC)
@@ -1056,8 +1069,8 @@ class Emulator(object):
             return
 
         # Check for IRQ
-        if self.IRQ_Pending and not self.flag.InterruptDisable:
-            self.IRQ_Pending = False
+        if self.PendingsTask.IRQ and not self.flag.InterruptDisable:
+            self.PendingsTask.IRQ = False
             self.IRQ_RUN()
             return
 
@@ -1142,7 +1155,7 @@ class Emulator(object):
         match self.opcode:
             # CONTROL FLOW
             case 0x00:  # BRK
-                self.IRQ_Pending = True
+                self.PendingsTask.IRQ = True
                 self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 self.Push(self.ProgramCounter >> 8)

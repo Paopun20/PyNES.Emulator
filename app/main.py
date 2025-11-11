@@ -29,8 +29,7 @@ from pypresence.types import ActivityType, StatusDisplayType
 from logger import log, debug_mode
 from helper.thread_exception import make_thread_exception
 
-from shaders.retro import shader as test_shader
-
+from shaders.retro import retro as test_shader
 from helper.pyWindowColorMode import pyWindowColorMode
 
 log.info("Starting PyNES Emulator")
@@ -258,7 +257,7 @@ sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 # Create debug overlay
 debug_overlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
-# sprite.set_fragment_shader(test_shader)  # lol
+# sprite.set_fragment_shader(test_shader) # lol
 
 clock = pygame.time.Clock()
 
