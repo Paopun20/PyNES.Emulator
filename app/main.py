@@ -83,6 +83,9 @@ SCALE = 3
 
 _thread_list: threading.Thread = []
 
+run_event = threading.Event()  # controls running emulator thread
+run_event.set()  # start in running state
+
 log.info(f"Starting pygame community edition {pygame.__version__}")
 pygame.init()
 pygame.font.init()
@@ -350,7 +353,7 @@ def draw_debug_overlay():
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
                 f"PC: ${nes_emu.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
-                f"A: ${nes_emu.A:02X} X: ${nes_emu.X:02X} Y: ${nes_emu.Y:02X}",
+                f"A: ${nes_emu.CPURegisters.A:02X} X: ${nes_emu.CPURegisters.X:02X} Y: ${nes_emu.CPURegisters.Y:02X}",
                 f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
                 f"{'V' if nes_emu.flag.Overflow else '-'}"
                 f"{'B' if nes_emu.flag.Break else '-'}"
@@ -359,6 +362,7 @@ def draw_debug_overlay():
                 f"{'Z' if nes_emu.flag.Zero else '-'}"
                 f"{'C' if nes_emu.flag.Carry else '-'}"
                 f"{'U' if nes_emu.flag.Unused else '-'}",
+                f"Log: {nes_emu.tracelog[-1]}"
             ]
         case 1:
             # Get CPU percentages without blocking (instant)
@@ -416,26 +420,21 @@ def render_frame(frame):
         draw_debug_overlay()
         pygame.display.flip()
     except Exception as e:
-        print(f"Frame render error: {e}")
-
-
-next_run = False
+        log.error(f"Frame render error: {e}")
 
 
 # subthread to run emulator cycles
 def subpro():
-    global running, paused, next_run
+    global running, paused
     while running:
         if paused:
-            continue
-        if not next_run:
-            try:
-                next_run = True
-                nes_emu.step_Frame()
-                next_run = False
-            except EmulatorError as e:
-                print(f"{e.type.__name__}: {e.message}")
-                running = False
+            run_event.wait()  # block if paused flag cleared
+
+        try:
+            nes_emu.step_Cycle()
+        except EmulatorError as e:
+            log.error(f"{e.type.__name__}: {e.message}")
+            running = False
 
 
 _thread_list.append(threading.Thread(name="emulator_thread", daemon=True, target=subpro))
@@ -478,17 +477,30 @@ while running:
 
     for event in events:
         if event.type == pygame.QUIT:
+            if not paused:
+                run_event.clear()
+                paused = True
             running = False
+            break
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 running = False
             elif event.key == pygame.K_p:
                 paused = not paused
+                if paused:
+                    run_event.clear()  # pause the main thread
+                else:
+                    run_event.set()     # resume normal execution
                 log.info(f"{'Paused' if paused else 'Resumed'}")
+            elif event.key == pygame.K_F10:
+                if paused:
+                    run_event.set()
+                    run_event.clear()
+                    log.info("Single step executed")
             elif event.key == pygame.K_F5:
                 show_debug = not show_debug
-                log.info(f"Debug {'ON' if show_debug else 'OFF'}")
                 debug_overlay.prev_lines = None  # Force refresh
+                log.info(f"Debug {'ON' if show_debug else 'OFF'}")
             elif event.key == pygame.K_F6 and show_debug:
                 debug_mode_index += 1
             elif event.key == pygame.K_r:
@@ -513,7 +525,10 @@ while running:
     # title update
     title = "PyNES Emulator"
     if paused:
-        title += " [PAUSED]"
+        if running:
+            title += " [PAUSED]"
+        else:
+            title += " [SHUTTING DOWN]"
     pygame.display.set_caption(title)
 
     frame_ui += 1
@@ -546,16 +561,26 @@ else:
     except Exception:
         pass
 
+presence.close()
+log.info("Discord presence: Shutting down")
+
 _clone_list = _thread_list.copy()
 retry = 0
 
 while _thread_list and retry < 4:
     for thread in _thread_list:
         log.info(f"Joining thread: {thread.name}")
-        thread.join(timeout=2.0)
         if thread.is_alive():
-            log.warning(f"Thread {thread.name} did not stop cleanly")
+            thread.join(timeout=2.0)
         else:
+            log.info(f"Thread {thread.name} is not start")
+            _clone_list.remove(thread)
+            continue # skip
+
+        if thread.is_alive():
+            log.error(f"Thread {thread.name} did not stop cleanly")
+        else:
+            log.info(f"Thread {thread.name} stopped cleanly")
             _clone_list.remove(thread)
     _thread_list = _clone_list.copy()
     retry += 1
@@ -570,7 +595,7 @@ else:
             for thread in _thread_list:
                 try:
                     make_thread_exception(thread, SystemExit)
-                    log.info(f"Force stopping thread \"{thread.name}\": success")
+                    log.info(f'Force stopping thread "{thread.name}": success')
                     _clone_list.remove(thread)
                 except SystemError:
                     log.error(f"Thread {thread.name} failed to force stop")
@@ -578,8 +603,6 @@ else:
                     pass
             _thread_list = _clone_list.copy()
 
-presence.close()
-log.info("Discord presence: Shutting down")
 pygame.quit()
 log.info("Pygame: Shutting down")
 exit(0)
