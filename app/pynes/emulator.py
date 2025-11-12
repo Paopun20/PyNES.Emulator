@@ -26,7 +26,7 @@ TEMPLATE: Final[Template] = Template(
     "Flags: N=${N} V=${V} D=${D} I=${I} Z=${Z} C=${C}"
 )
 
-OpCodeClass = OpCodes()  # can more one
+OpCodeClass: Final[OpCodes] = OpCodes()  # can more one
 
 nes_palette: Final[np.ndarray] = np.array(
     [
@@ -105,14 +105,6 @@ class EmulatorError(Exception):
         self.message = str(exception)
         super().__init__(self.message)
 
-"""
-class EmulatorErrorV2:
-    def __init__(self, exc_type):
-        self.exc_type = exc_type
-
-    def __call__(self, message):
-        return self.exc_type(message)
-"""
 
 @dataclass
 class Flags:
@@ -151,17 +143,29 @@ class DoTask:
     IRQ: bool = False
     BRK: bool = False
 
+
 @dataclass
 class PendingsTask:
     NMI: bool = False
     IRQ: bool = False
     BRK: bool = False
 
+
 @dataclass
-class CPURegisters:
+class Architrcture:
     A: int = 0
     X: int = 0
     Y: int = 0
+
+
+@dataclass
+class Sprite:
+    index: int = 0
+    x: int = 0
+    y: int = 0
+    tile: int = 0
+    attr: int = 0
+
 
 class PPUPendingWrites(TypedDict):
     reg: int
@@ -196,8 +200,7 @@ class Emulator(object):
         self.operationCycle: int = 0
         self.instruction_state: Dict[str, any] = {}
         self.operationComplete: bool = False
-        self.Temp: any = None
-        self.CPURegisters = CPURegisters()
+        self.Architrcture = Architrcture()
         self.flag: Flags = Flags()
         self.debug: Debug = Debug()
         self.CPU_Halted: bool = False
@@ -248,9 +251,9 @@ class Emulator(object):
         line = TEMPLATE.substitute(
             PC=f"{self.ProgramCounter:04X}",
             OP=f"{opcode:02X}",
-            A=f"{self.CPURegisters.A:02X}",
-            X=f"{self.CPURegisters.X:02X}",
-            Y=f"{self.CPURegisters.Y:02X}",
+            A=f"{self.Architrcture.A:02X}",
+            X=f"{self.Architrcture.X:02X}",
+            Y=f"{self.Architrcture.Y:02X}",
             SP=f"{self.stackPointer:02X}",
             N="1" if self.flag.Negative else "0",
             V="1" if self.flag.Overflow else "0",
@@ -619,7 +622,7 @@ class Emulator(object):
         high = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         base_addr = (high << 8) | low
-        final_addr = (base_addr + self.CPURegisters.Y) & 0xFFFF
+        final_addr = (base_addr + self.Architrcture.Y) & 0xFFFF
 
         # Store base address for instruction handlers
         self._base_addr = base_addr
@@ -644,7 +647,7 @@ class Emulator(object):
         self.current_instruction_mode = "zeropage_indexed"
         addr = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-        self.addressBus = (addr + self.CPURegisters.X) & 0xFF
+        self.addressBus = (addr + self.Architrcture.X) & 0xFF
 
     # @lru_cache(maxsize=None)
     def ReadOperands_ZeroPage_YIndexed(self):
@@ -652,7 +655,7 @@ class Emulator(object):
         self.current_instruction_mode = "zeropage_indexed"
         addr = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-        self.addressBus = (addr + self.CPURegisters.Y) & 0xFF
+        self.addressBus = (addr + self.Architrcture.Y) & 0xFF
 
     # @lru_cache(maxsize=None)
     def ReadOperands_IndirectAddressed_YIndexed(self):
@@ -663,7 +666,7 @@ class Emulator(object):
         low = self.Read(zp_addr)
         high = self.Read((zp_addr + 1) & 0xFF)
         base_addr = (high << 8) | low
-        final_addr = (base_addr + self.CPURegisters.Y) & 0xFFFF
+        final_addr = (base_addr + self.Architrcture.Y) & 0xFFFF
 
         # Preserve base address for instruction handlers
         self._base_addr = base_addr
@@ -679,7 +682,7 @@ class Emulator(object):
     def ReadOperands_IndirectAddressed_XIndexed(self):
         """Indexed indirect addressing (zero page,X)."""
         self.current_instruction_mode = "indexed_indirect"
-        zp_addr = (self.Read(self.ProgramCounter) + self.CPURegisters.X) & 0xFF
+        zp_addr = (self.Read(self.ProgramCounter) + self.Architrcture.X) & 0xFF
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         low = self.Read(zp_addr)
         high = self.Read((zp_addr + 1) & 0xFF)
@@ -693,7 +696,7 @@ class Emulator(object):
         high = self.Read(self.ProgramCounter)
         self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
         base_addr = (high << 8) | low
-        final_addr = (base_addr + self.CPURegisters.X) & 0xFFFF
+        final_addr = (base_addr + self.Architrcture.X) & 0xFFFF
 
         # Store addresses for instruction handler to use
         self.addressBus = final_addr
@@ -762,17 +765,17 @@ class Emulator(object):
 
     def Op_ASL_A(self):
         """Arithmetic Shift Left A."""
-        self.flag.Carry = self.CPURegisters.A >= 0x80
-        self.CPURegisters.A = self.CPURegisters.A << 1
-        self.UpdateZeroNegativeFlags(self.CPURegisters.A)
-        return self.CPURegisters.A
+        self.flag.Carry = self.Architrcture.A >= 0x80
+        self.Architrcture.A = self.Architrcture.A << 1
+        self.UpdateZeroNegativeFlags(self.Architrcture.A)
+        return self.Architrcture.A
 
     def Op_SLO(self, Address: int, Input: int):
         """Shift Left and OR."""
         self.flag.Carry = Input >= 0x80
-        self.CPURegisters.A <<= 1
-        self.UpdateZeroNegativeFlags(self.CPURegisters.A)
-        return self.CPURegisters.A
+        self.Architrcture.A <<= 1
+        self.UpdateZeroNegativeFlags(self.Architrcture.A)
+        return self.Architrcture.A
 
     def Op_LSR(self, Address: int, Input: int):
         """Logical Shift Right."""
@@ -846,28 +849,28 @@ class Emulator(object):
 
     def Op_ORA(self, Input: int):
         """Logical OR with accumulator."""
-        self.CPURegisters.A = (self.CPURegisters.A | Input) & 0xFF
-        self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+        self.Architrcture.A = (self.Architrcture.A | Input) & 0xFF
+        self.UpdateZeroNegativeFlags(self.Architrcture.A)
 
     def Op_AND(self, Input: int):
         """Logical AND with accumulator."""
-        self.CPURegisters.A = (self.CPURegisters.A & Input) & 0xFF
-        self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+        self.Architrcture.A = (self.Architrcture.A & Input) & 0xFF
+        self.UpdateZeroNegativeFlags(self.Architrcture.A)
 
     def Op_EOR(self, Input: int):
         """Logical XOR with accumulator."""
-        self.CPURegisters.A = (self.CPURegisters.A ^ Input) & 0xFF
-        self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+        self.Architrcture.A = (self.Architrcture.A ^ Input) & 0xFF
+        self.UpdateZeroNegativeFlags(self.Architrcture.A)
 
     def Op_ADC(self, Input: int):
         """Add with carry. On NES, decimal mode is ignored."""
         carry = 1 if self.flag.Carry else 0
-        result = self.CPURegisters.A + Input + carry
+        result = self.Architrcture.A + Input + carry
         # Overflow if sign of result differs from both operands
-        self.flag.Overflow = (~(self.CPURegisters.A ^ Input) & (self.CPURegisters.A ^ result) & 0x80) != 0
+        self.flag.Overflow = (~(self.Architrcture.A ^ Input) & (self.Architrcture.A ^ result) & 0x80) != 0
         self.flag.Carry = result > 0xFF
-        self.CPURegisters.A = result & 0xFF
-        self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+        self.Architrcture.A = result & 0xFF
+        self.UpdateZeroNegativeFlags(self.Architrcture.A)
 
     def Op_SBC(self, Input: int):
         """Subtract with carry. On NES, decimal mode is ignored."""
@@ -876,25 +879,25 @@ class Emulator(object):
 
     def Op_CMP(self, Input: int):
         """Compare accumulator."""
-        result = (self.CPURegisters.A - Input) & 0xFF
-        self.flag.Carry = self.CPURegisters.A >= Input
+        result = (self.Architrcture.A - Input) & 0xFF
+        self.flag.Carry = self.Architrcture.A >= Input
         self.UpdateZeroNegativeFlags(result)
 
     def Op_CPX(self, Input: int):
         """Compare X register."""
-        result = (self.CPURegisters.X - Input) & 0xFF
-        self.flag.Carry = self.CPURegisters.X >= Input
+        result = (self.Architrcture.X - Input) & 0xFF
+        self.flag.Carry = self.Architrcture.X >= Input
         self.UpdateZeroNegativeFlags(result)
 
     def Op_CPY(self, Input: int):
         """Compare Y register."""
-        result = (self.CPURegisters.Y - Input) & 0xFF
-        self.flag.Carry = self.CPURegisters.Y >= Input
+        result = (self.Architrcture.Y - Input) & 0xFF
+        self.flag.Carry = self.Architrcture.Y >= Input
         self.UpdateZeroNegativeFlags(result)
 
     def Op_BIT(self, Input: int):
         """Bit test."""
-        self.flag.Zero = (self.CPURegisters.A & Input) == 0
+        self.flag.Zero = (self.Architrcture.A & Input) == 0
         self.flag.Negative = (Input & 0x80) != 0
         self.flag.Overflow = (Input & 0x40) != 0
 
@@ -942,7 +945,7 @@ class Emulator(object):
         self.CHRROM = self.cartridge.CHRROM
 
         # Reset CPU
-        self.CPURegisters = CPURegisters()
+        self.Architrcture = Architrcture()
         self.stackPointer = 0xFD
         self.flag = Flags(InterruptDisable=True)
         self.DoTask = DoTask()
@@ -1123,7 +1126,7 @@ class Emulator(object):
     def ExecuteOpcode(self):
         """
         Execute the current opcode
-        
+
         This is a large match statement for all 256 possible opcodes.
         Each case handles a specific opcode, its addressing mode, and its operation.
         The `endExecute()` method is called at the end of each opcode's execution
@@ -1231,147 +1234,147 @@ class Emulator(object):
             # LOAD INSTRUCTIONS - LDA
             case 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1:
                 if self.opcode == 0xA9:  # LDA Immediate
-                    self.CPURegisters.A = self.Read(self.ProgramCounter)
+                    self.Architrcture.A = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 elif self.opcode == 0xA5:  # LDA Zero Page
                     self.ReadOperands_ZeroPage()
-                    self.CPURegisters.A = self.Read(self.addressBus)
+                    self.Architrcture.A = self.Read(self.addressBus)
                 elif self.opcode == 0xB5:  # LDA Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.CPURegisters.A = self.Read(self.addressBus)
+                    self.Architrcture.A = self.Read(self.addressBus)
                 elif self.opcode == 0xAD:  # LDA Absolute
                     self.ReadOperands_AbsoluteAddressed()
-                    self.CPURegisters.A = self.Read(self.addressBus)
+                    self.Architrcture.A = self.Read(self.addressBus)
                 elif self.opcode == 0xBD:  # LDA Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
-                    self.CPURegisters.A = self.Read(self.addressBus)
+                    self.Architrcture.A = self.Read(self.addressBus)
                 elif self.opcode == 0xB9:  # LDA Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.CPURegisters.A = self.Read(self.addressBus)
+                    self.Architrcture.A = self.Read(self.addressBus)
                 elif self.opcode == 0xA1:  # LDA (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.CPURegisters.A = self.Read(self.addressBus)
+                    self.Architrcture.A = self.Read(self.addressBus)
                 elif self.opcode == 0xB1:  # LDA (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
-                    self.CPURegisters.A = self.Read(self.addressBus)
-                self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                    self.Architrcture.A = self.Read(self.addressBus)
+                self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 return self.endExecute()
 
             # LOAD INSTRUCTIONS - LDX
             case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE:
                 if self.opcode == 0xA2:  # LDX Immediate
-                    self.CPURegisters.X = self.Read(self.ProgramCounter)
+                    self.Architrcture.X = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 elif self.opcode == 0xA6:  # LDX Zero Page
                     self.ReadOperands_ZeroPage()
-                    self.CPURegisters.X = self.Read(self.addressBus)
+                    self.Architrcture.X = self.Read(self.addressBus)
                 elif self.opcode == 0xB6:  # LDX Zero Page,Y
                     self.ReadOperands_ZeroPage_YIndexed()
-                    self.CPURegisters.X = self.Read(self.addressBus)
+                    self.Architrcture.X = self.Read(self.addressBus)
                 elif self.opcode == 0xAE:  # LDX Absolute
                     self.ReadOperands_AbsoluteAddressed()
-                    self.CPURegisters.X = self.Read(self.addressBus)
+                    self.Architrcture.X = self.Read(self.addressBus)
                 elif self.opcode == 0xBE:  # LDX Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.CPURegisters.X = self.Read(self.addressBus)
-                self.UpdateZeroNegativeFlags(self.CPURegisters.X)
+                    self.Architrcture.X = self.Read(self.addressBus)
+                self.UpdateZeroNegativeFlags(self.Architrcture.X)
                 return self.endExecute()
 
             # LOAD INSTRUCTIONS - LDY
             case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC:
                 if self.opcode == 0xA0:  # LDY Immediate
-                    self.CPURegisters.Y = self.Read(self.ProgramCounter)
+                    self.Architrcture.Y = self.Read(self.ProgramCounter)
                     self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
                 elif self.opcode == 0xA4:  # LDY Zero Page
                     self.ReadOperands_ZeroPage()
-                    self.CPURegisters.Y = self.Read(self.addressBus)
+                    self.Architrcture.Y = self.Read(self.addressBus)
                 elif self.opcode == 0xB4:  # LDY Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.CPURegisters.Y = self.Read(self.addressBus)
+                    self.Architrcture.Y = self.Read(self.addressBus)
                 elif self.opcode == 0xAC:  # LDY Absolute
                     self.ReadOperands_AbsoluteAddressed()
-                    self.CPURegisters.Y = self.Read(self.addressBus)
+                    self.Architrcture.Y = self.Read(self.addressBus)
                 elif self.opcode == 0xBC:  # LDY Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
-                    self.CPURegisters.Y = self.Read(self.addressBus)
-                self.UpdateZeroNegativeFlags(self.CPURegisters.Y)
+                    self.Architrcture.Y = self.Read(self.addressBus)
+                self.UpdateZeroNegativeFlags(self.Architrcture.Y)
                 return self.endExecute()
 
             # STORE INSTRUCTIONS - STA
             case 0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91:
                 if self.opcode == 0x85:  # STA Zero Page
                     self.ReadOperands_ZeroPage()
-                    self.Write(self.addressBus, self.CPURegisters.A)
+                    self.Write(self.addressBus, self.Architrcture.A)
                 elif self.opcode == 0x95:  # STA Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.Write(self.addressBus, self.CPURegisters.A)
+                    self.Write(self.addressBus, self.Architrcture.A)
                 elif self.opcode == 0x8D:  # STA Absolute
                     self.ReadOperands_AbsoluteAddressed()
-                    self.Write(self.addressBus, self.CPURegisters.A)
+                    self.Write(self.addressBus, self.Architrcture.A)
                 elif self.opcode == 0x9D:  # STA Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
-                    self.Write(self.addressBus, self.CPURegisters.A)
+                    self.Write(self.addressBus, self.Architrcture.A)
                 elif self.opcode == 0x99:  # STA Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
-                    self.Write(self.addressBus, self.CPURegisters.A)
+                    self.Write(self.addressBus, self.Architrcture.A)
                 elif self.opcode == 0x81:  # STA (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
-                    self.Write(self.addressBus, self.CPURegisters.A)
+                    self.Write(self.addressBus, self.Architrcture.A)
                 elif self.opcode == 0x91:  # STA (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
-                    self.Write(self.addressBus, self.CPURegisters.A)
+                    self.Write(self.addressBus, self.Architrcture.A)
                 return self.endExecute()
 
             # STORE INSTRUCTIONS - STX/STY
             case 0x86 | 0x96 | 0x8E | 0x84 | 0x94 | 0x8C:
                 if self.opcode == 0x86:  # STX Zero Page
                     self.ReadOperands_ZeroPage()
-                    self.Write(self.addressBus, self.CPURegisters.X)
+                    self.Write(self.addressBus, self.Architrcture.X)
                 elif self.opcode == 0x96:  # STX Zero Page,Y
                     self.ReadOperands_ZeroPage_YIndexed()
-                    self.Write(self.addressBus, self.CPURegisters.X)
+                    self.Write(self.addressBus, self.Architrcture.X)
                 elif self.opcode == 0x8E:  # STX Absolute
                     self.ReadOperands_AbsoluteAddressed()
-                    self.Write(self.addressBus, self.CPURegisters.X)
+                    self.Write(self.addressBus, self.Architrcture.X)
                 elif self.opcode == 0x84:  # STY Zero Page
                     self.ReadOperands_ZeroPage()
-                    self.Write(self.addressBus, self.CPURegisters.Y)
+                    self.Write(self.addressBus, self.Architrcture.Y)
                 elif self.opcode == 0x94:  # STY Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
-                    self.Write(self.addressBus, self.CPURegisters.Y)
+                    self.Write(self.addressBus, self.Architrcture.Y)
                 elif self.opcode == 0x8C:  # STY Absolute
                     self.ReadOperands_AbsoluteAddressed()
-                    self.Write(self.addressBus, self.CPURegisters.Y)
+                    self.Write(self.addressBus, self.Architrcture.Y)
                 return self.endExecute()
 
             # TRANSFER INSTRUCTIONS
             case 0xAA | 0xA8 | 0x8A | 0x98 | 0xBA | 0x9A:
                 if self.opcode == 0xAA:  # TAX
-                    self.CPURegisters.X = self.CPURegisters.A
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.X)
+                    self.Architrcture.X = self.Architrcture.A
+                    self.UpdateZeroNegativeFlags(self.Architrcture.X)
                 elif self.opcode == 0xA8:  # TAY
-                    self.CPURegisters.Y = self.CPURegisters.A
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.Y)
+                    self.Architrcture.Y = self.Architrcture.A
+                    self.UpdateZeroNegativeFlags(self.Architrcture.Y)
                 elif self.opcode == 0x8A:  # TXA
-                    self.CPURegisters.A = self.CPURegisters.X
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                    self.Architrcture.A = self.Architrcture.X
+                    self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 elif self.opcode == 0x98:  # TYA
-                    self.CPURegisters.A = self.CPURegisters.Y
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                    self.Architrcture.A = self.Architrcture.Y
+                    self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 elif self.opcode == 0xBA:  # TSX
-                    self.CPURegisters.X = self.stackPointer
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.X)
+                    self.Architrcture.X = self.stackPointer
+                    self.UpdateZeroNegativeFlags(self.Architrcture.X)
                 elif self.opcode == 0x9A:  # TXS
-                    self.stackPointer = self.CPURegisters.X
+                    self.stackPointer = self.Architrcture.X
                 return self.endExecute()
 
             # STACK INSTRUCTIONS
             case 0x48 | 0x68 | 0x08 | 0x28:
                 if self.opcode == 0x48:  # PHA
-                    self.Push(self.CPURegisters.A)
+                    self.Push(self.Architrcture.A)
                 elif self.opcode == 0x68:  # PLA
-                    self.CPURegisters.A = self.Pop()
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                    self.Architrcture.A = self.Pop()
+                    self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 elif self.opcode == 0x08:  # PHP
                     self.Push(self.GetProcessorStatus() | 0x10)
                 elif self.opcode == 0x28:  # PLP
@@ -1602,11 +1605,11 @@ class Emulator(object):
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_INC(self.addressBus, self.Read(self.addressBus))
                 elif self.opcode == 0xE8:  # INX
-                    self.CPURegisters.X = (self.CPURegisters.X + 1) & 0xFF
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.X)
+                    self.Architrcture.X = (self.Architrcture.X + 1) & 0xFF
+                    self.UpdateZeroNegativeFlags(self.Architrcture.X)
                 elif self.opcode == 0xC8:  # INY
-                    self.CPURegisters.Y = (self.CPURegisters.Y + 1) & 0xFF
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.Y)
+                    self.Architrcture.Y = (self.Architrcture.Y + 1) & 0xFF
+                    self.UpdateZeroNegativeFlags(self.Architrcture.Y)
                 return self.endExecute()
 
             # DECREMENT INSTRUCTIONS
@@ -1624,20 +1627,20 @@ class Emulator(object):
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Op_DEC(self.addressBus, self.Read(self.addressBus))
                 elif self.opcode == 0xCA:  # DEX
-                    self.CPURegisters.X = (self.CPURegisters.X - 1) & 0xFF
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.X)
+                    self.Architrcture.X = (self.Architrcture.X - 1) & 0xFF
+                    self.UpdateZeroNegativeFlags(self.Architrcture.X)
                 elif self.opcode == 0x88:  # DEY
-                    self.CPURegisters.Y = (self.CPURegisters.Y - 1) & 0xFF
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.Y)
+                    self.Architrcture.Y = (self.Architrcture.Y - 1) & 0xFF
+                    self.UpdateZeroNegativeFlags(self.Architrcture.Y)
                 return self.endExecute()
 
             # SHIFT INSTRUCTIONS - ASL
             case 0x0A | 0x06 | 0x16 | 0x0E | 0x1E:
                 if self.opcode == 0x0A:  # ASL A
                     self.Read(self.ProgramCounter)
-                    self.flag.Carry = (self.CPURegisters.A & 0x80) != 0
-                    self.CPURegisters.A = (self.CPURegisters.A << 1) & 0xFF
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                    self.flag.Carry = (self.Architrcture.A & 0x80) != 0
+                    self.Architrcture.A = (self.Architrcture.A << 1) & 0xFF
+                    self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 elif self.opcode == 0x06:  # ASL Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_ASL(self.addressBus, self.Read(self.addressBus))
@@ -1655,9 +1658,9 @@ class Emulator(object):
             # SHIFT INSTRUCTIONS - LSR
             case 0x4A | 0x46 | 0x56 | 0x4E | 0x5E:
                 if self.opcode == 0x4A:  # LSR A
-                    self.flag.Carry = (self.CPURegisters.A & 0x01) != 0
-                    self.CPURegisters.A = (self.CPURegisters.A >> 1) & 0xFF
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                    self.flag.Carry = (self.Architrcture.A & 0x01) != 0
+                    self.Architrcture.A = (self.Architrcture.A >> 1) & 0xFF
+                    self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 elif self.opcode == 0x46:  # LSR Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_LSR(self.addressBus, self.Read(self.addressBus))
@@ -1676,9 +1679,9 @@ class Emulator(object):
             case 0x2A | 0x26 | 0x36 | 0x2E | 0x3E:
                 if self.opcode == 0x2A:  # ROL A
                     carry_in = 1 if self.flag.Carry else 0
-                    self.flag.Carry = (self.CPURegisters.A & 0x80) != 0
-                    self.CPURegisters.A = ((self.CPURegisters.A << 1) | carry_in) & 0xFF
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                    self.flag.Carry = (self.Architrcture.A & 0x80) != 0
+                    self.Architrcture.A = ((self.Architrcture.A << 1) | carry_in) & 0xFF
+                    self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 elif self.opcode == 0x26:  # ROL Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_ROL(self.addressBus, self.Read(self.addressBus))
@@ -1697,9 +1700,9 @@ class Emulator(object):
             case 0x6A | 0x66 | 0x76 | 0x6E | 0x7E:
                 if self.opcode == 0x6A:  # ROR A
                     carry_in = 0x80 if self.flag.Carry else 0
-                    self.flag.Carry = (self.CPURegisters.A & 0x01) != 0
-                    self.CPURegisters.A = ((self.CPURegisters.A >> 1) | carry_in) & 0xFF
-                    self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                    self.flag.Carry = (self.Architrcture.A & 0x01) != 0
+                    self.Architrcture.A = ((self.Architrcture.A >> 1) | carry_in) & 0xFF
+                    self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 elif self.opcode == 0x66:  # ROR Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Op_ROR(self.addressBus, self.Read(self.addressBus))
@@ -1781,50 +1784,50 @@ class Emulator(object):
                 """ALR/ASR - AND byte with accumulator, then shift right"""
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                self.CPURegisters.A = self.CPURegisters.A & val
-                self.flag.Carry = (self.CPURegisters.A & 0x01) != 0
-                self.CPURegisters.A = (self.CPURegisters.A >> 1) & 0xFF
-                self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                self.Architrcture.A = self.Architrcture.A & val
+                self.flag.Carry = (self.Architrcture.A & 0x01) != 0
+                self.Architrcture.A = (self.Architrcture.A >> 1) & 0xFF
+                self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 return self.endExecute()
 
             case 0x6B:  # ARR - AND then ROR
                 """ARR - AND byte with accumulator, then rotate right"""
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                self.CPURegisters.A = self.CPURegisters.A & val
+                self.Architrcture.A = self.Architrcture.A & val
                 old_carry = self.flag.Carry
-                self.CPURegisters.A = ((self.CPURegisters.A >> 1) | (0x80 if old_carry else 0)) & 0xFF
-                bit6 = (self.CPURegisters.A & 0x40) != 0
-                bit5 = (self.CPURegisters.A & 0x20) != 0
+                self.Architrcture.A = ((self.Architrcture.A >> 1) | (0x80 if old_carry else 0)) & 0xFF
+                bit6 = (self.Architrcture.A & 0x40) != 0
+                bit5 = (self.Architrcture.A & 0x20) != 0
                 self.flag.Carry = bit6
                 self.flag.Overflow = bit6 ^ bit5
-                self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 return self.endExecute()
 
             case 0x8B:  # XAA/ANE - Highly unstable
                 """XAA/ANE - Transfer X to A, then AND with immediate (unstable)"""
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                self.CPURegisters.A = self.CPURegisters.X & val
-                self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                self.Architrcture.A = self.Architrcture.X & val
+                self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 return self.endExecute()
 
             case 0xAB:  # LAX Immediate (unofficial)
                 """LAX - Load accumulator and X with immediate value"""
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                self.CPURegisters.A = self.CPURegisters.X = val & 0xFF
-                self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                self.Architrcture.A = self.Architrcture.X = val & 0xFF
+                self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 return self.endExecute()
 
             case 0xCB:  # AXS/SBX - (A & X) - immediate
                 """AXS/SBX - AND X register with accumulator, subtract immediate"""
                 val = self.Read(self.ProgramCounter)
                 self.ProgramCounter = (self.ProgramCounter + 1) & 0xFFFF
-                tmp = (self.CPURegisters.A & self.CPURegisters.X) - val
+                tmp = (self.Architrcture.A & self.Architrcture.X) - val
                 self.flag.Carry = tmp >= 0
-                self.CPURegisters.X = tmp & 0xFF
-                self.UpdateZeroNegativeFlags(self.CPURegisters.X)
+                self.Architrcture.X = tmp & 0xFF
+                self.UpdateZeroNegativeFlags(self.Architrcture.X)
                 return self.endExecute()
 
             # UNOFFICIAL/ILLEGAL OPCODES - SLO (ASL + ORA)
@@ -1940,7 +1943,7 @@ class Emulator(object):
                     self.ReadOperands_IndirectAddressed_XIndexed()
                 elif self.opcode == 0x97:  # SAX Zero Page,Y
                     self.ReadOperands_ZeroPage_YIndexed()
-                self.Write(self.addressBus, self.CPURegisters.A & self.CPURegisters.X)
+                self.Write(self.addressBus, self.Architrcture.A & self.Architrcture.X)
                 return self.endExecute()
 
             # UNOFFICIAL/ILLEGAL OPCODES - LAX (Load A and X)
@@ -1959,8 +1962,8 @@ class Emulator(object):
                 elif self.opcode == 0xBF:  # LAX Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                 value = self.Read(self.addressBus)
-                self.CPURegisters.A = self.CPURegisters.X = value
-                self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                self.Architrcture.A = self.Architrcture.X = value
+                self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 return self.endExecute()
 
             # UNOFFICIAL/ILLEGAL OPCODES - DCP (DEC + CMP)
@@ -2055,27 +2058,27 @@ class Emulator(object):
                 elif self.opcode == 0x9F:  # AHX Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
-                self.Write(self.addressBus, (self.CPURegisters.A & self.CPURegisters.X & hb1) & 0xFF)
+                self.Write(self.addressBus, (self.Architrcture.A & self.Architrcture.X & hb1) & 0xFF)
                 return self.endExecute()
 
             case 0x9C:  # SHY - Store Y & (H+1)
                 """SHY - Store Y AND (high byte of address + 1)"""
                 self.ReadOperands_AbsoluteAddressed_XIndexed()
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
-                self.Write(self.addressBus, (self.CPURegisters.Y & hb1) & 0xFF)
+                self.Write(self.addressBus, (self.Architrcture.Y & hb1) & 0xFF)
                 return self.endExecute()
 
             case 0x9E:  # SHX - Store X & (H+1)
                 """SHX - Store X AND (high byte of address + 1)"""
                 self.ReadOperands_AbsoluteAddressed_YIndexed()
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
-                self.Write(self.addressBus, (self.CPURegisters.X & hb1) & 0xFF)
+                self.Write(self.addressBus, (self.Architrcture.X & hb1) & 0xFF)
                 return self.endExecute()
 
             case 0x9B:  # TAS/SHS - Transfer A & X to SP, store in memory
                 """TAS/SHS - Transfer A AND X to SP, then store SP AND (H+1)"""
                 self.ReadOperands_AbsoluteAddressed_YIndexed()
-                self.stackPointer = self.CPURegisters.A & self.CPURegisters.X
+                self.stackPointer = self.Architrcture.A & self.Architrcture.X
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                 self.Write(self.addressBus, (self.stackPointer & hb1) & 0xFF)
                 return self.endExecute()
@@ -2084,8 +2087,8 @@ class Emulator(object):
                 """LAS - AND memory with stack pointer, transfer to A, X, and SP"""
                 self.ReadOperands_AbsoluteAddressed_YIndexed()
                 value = self.Read(self.addressBus) & self.stackPointer
-                self.CPURegisters.A = self.CPURegisters.X = self.stackPointer = value & 0xFF
-                self.UpdateZeroNegativeFlags(self.CPURegisters.A)
+                self.Architrcture.A = self.Architrcture.X = self.stackPointer = value & 0xFF
+                self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 return self.endExecute()
 
             case _:  # Unknown/Unimplemented opcode
@@ -2134,11 +2137,11 @@ class Emulator(object):
     def Emulate_PPU(self):
         """
         Emulate one PPU cycle with precise VBlank, NMI, sprite 0 hit, and rendering timing.
-        
+
         PPU runs at 3x CPU speed (5.369 MHz NTSC).
         Each scanline = 341 PPU cycles.
         Each frame = 262 scanlines (261.5 for odd frames with rendering enabled).
-        
+
         Scanline breakdown:
         - 0-239: Visible scanlines (rendering)
         - 240: Post-render (idle)
@@ -2251,7 +2254,7 @@ class Emulator(object):
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
                 self._bg_opaque_line[x] = False
                 continue
-            
+
             # Calculate absolute scroll position
             abs_x = x + scroll_x
             abs_y = self.Scanline + scroll_y
@@ -2292,7 +2295,7 @@ class Emulator(object):
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
                 self._bg_opaque_line[x] = False
                 continue
-            
+
             # Get palette from attribute table
             attr_x = tile_x // 4
             attr_y = tile_y // 4
@@ -2349,13 +2352,13 @@ class Emulator(object):
             # Check if sprite is visible on this scanline
             if not (y <= scanline < y + sprite_height):
                 continue
-            
+
             # Sprite overflow (more than 8 sprites on same line)
             sprites_drawn += 1
             if sprites_drawn > 8:
                 self.PPUSTATUS |= 0x20  # Set sprite overflow flag
                 break
-            
+
             # Determine pattern table base
             if sprite_height == 16:
                 # 8x16 mode: pattern table from bit 0 of tile index
@@ -2399,18 +2402,18 @@ class Emulator(object):
                 # Skip transparent pixels
                 if color_idx == 0:
                     continue
-                
+
                 # Calculate screen X position
                 sx = x + col
 
                 # Skip offscreen pixels
                 if sx < 0 or sx >= 256:
                     continue
-                
+
                 # Skip clipped left 8 pixels
                 if clip_left and sx < 8:
                     continue
-                
+
                 # Get sprite palette (0-3 from bits 0-1 of attributes)
                 sprite_palette = attributes & 0x03
                 palette_base = 0x10 + (sprite_palette << 2)
@@ -2425,7 +2428,7 @@ class Emulator(object):
                     # - Opaque sprite pixel
                     # - Not at x=255
                     # - Not in clipped region (if clipping enabled)
-                    bg_opaque = self._bg_opaque_line[sx] if hasattr(self, '_bg_opaque_line') else False
+                    bg_opaque = self._bg_opaque_line[sx] if hasattr(self, "_bg_opaque_line") else False
 
                     if bg_opaque and color_idx != 0 and sx != 255:
                         # Check clipping
@@ -2436,7 +2439,7 @@ class Emulator(object):
                 # 0 = in front of background
                 # 1 = behind background
                 priority = (attributes >> 5) & 1
-                bg_pixel_opaque = self._bg_opaque_line[sx] if hasattr(self, '_bg_opaque_line') else False
+                bg_pixel_opaque = self._bg_opaque_line[sx] if hasattr(self, "_bg_opaque_line") else False
 
                 # Draw sprite pixel based on priority
                 if priority == 0 or not bg_pixel_opaque:
@@ -2452,7 +2455,7 @@ class Emulator(object):
         The real NES hardware does this over cycles 65-256 of each scanline.
         """
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
-        sprites = []
+        sprites: list[Sprite] = []
         n_found = 0
 
         # Evaluate all 64 sprites
@@ -2471,13 +2474,15 @@ class Emulator(object):
 
                 # Only store first 8 sprites
                 if len(sprites) < 8:
-                    sprites.append({
-                        'index': i,
-                        'y': y,
-                        'tile': int(self.OAM[oam_addr + 1]),
-                        'attr': int(self.OAM[oam_addr + 2]),
-                        'x': int(self.OAM[oam_addr + 3])
-                    })
+                    sprites.append(
+                        Sprite(
+                            index=i,
+                            x=self.OAM[oam_addr + 3],
+                            y=y,
+                            tile=self.OAM[oam_addr + 1],
+                            attr=self.OAM[oam_addr + 2],
+                        )
+                    )
 
         # Set sprite overflow flag if more than 8 sprites on this line
         if n_found > 8:
@@ -2486,7 +2491,7 @@ class Emulator(object):
             self.PPUSTATUS &= ~0x20
 
         # Store evaluated sprites for this scanline
-        self._sprites_line = sprites
+        # self._sprites_line = sprites
 
     @memoize(maxsize=((len(nes_palette) + 1) * 3))
     def NESPaletteToRGB(self, color_idx: int) -> int:

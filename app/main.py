@@ -29,7 +29,7 @@ from pypresence.types import ActivityType, StatusDisplayType
 from logger import log, debug_mode
 from helper.thread_exception import make_thread_exception
 
-from shaders.retro import retro as test_shader
+from shaders.VHS import VHS as test_shader
 from helper.pyWindowColorMode import pyWindowColorMode
 
 log.info("Starting PyNES Emulator")
@@ -352,7 +352,7 @@ def draw_debug_overlay():
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
                 f"PC: ${nes_emu.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
-                f"A: ${nes_emu.CPURegisters.A:02X} X: ${nes_emu.CPURegisters.X:02X} Y: ${nes_emu.CPURegisters.Y:02X}",
+                f"A: ${nes_emu.Architrcture.A:02X} X: ${nes_emu.Architrcture.X:02X} Y: ${nes_emu.Architrcture.Y:02X}",
                 f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
                 f"{'V' if nes_emu.flag.Overflow else '-'}"
                 f"{'B' if nes_emu.flag.Break else '-'}"
@@ -515,7 +515,7 @@ while running:
             frame_ready = False
 
     try:
-        sprite.set_fragment_config("u_time", frame_ui / 15.0)
+        sprite.set_fragment_config("u_time", os.times().system.real)
     except Exception:
         pass
 

@@ -1,4 +1,4 @@
-from shaders.shader_class import Shader
+from objects.shader_class import Shader
 
 @Shader
 class retro:

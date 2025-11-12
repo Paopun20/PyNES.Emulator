@@ -2,7 +2,7 @@ from __future__ import annotations
 import moderngl
 import numpy as np
 from typing import Final
-from shaders.shader_class import Shader
+from objects.shader_class import Shader
 
 DEFAULT_FRAGMENT_SHADER: Final[str] = """
 #version 330
