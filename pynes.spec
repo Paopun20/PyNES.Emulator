@@ -5,17 +5,17 @@ from PyInstaller.building.api import PYZ, EXE
 
 block_cipher = None
 
-# --- Collect NumPy ---
 datas_np, binaries_np, hiddenimports_np = collect_all('numpy')
+
 datas_tk = collect_data_files('tkinter')
 
 a = Analysis(
     ['app/main.py'],
-    pathex=[],
+    pathex=['app'],  # Make sure PyInstaller can find your modules
     binaries=binaries_np,
     datas=datas_np + datas_tk + [
-        ("app/pynes", "app/pynes"),  # pynes core module
-        ("app/icon.ico", "."),   # icon file (placed in root of bundle)
+        ("app/pynes", "pynes"),       # Include 'pynes' folder
+        ("app/icon.ico", "."),         # Icon in root of bundle
     ],
     hiddenimports=hiddenimports_np + [
         "tkinter",
@@ -31,16 +31,11 @@ a = Analysis(
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
-    optimize=1, # do try 2 if it can't run it errors by numpy.
+    optimize=1,
 )
 
-pyz = PYZ(
-    a.pure,
-    a.zipped_data,
-    cipher=block_cipher
-)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-# Single-file executable configuration
 exe = EXE(
     pyz,
     a.scripts,
@@ -50,16 +45,10 @@ exe = EXE(
     [],
     name='pynes',
     debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=True,  # Set to False to hide console window
+    strip=True,
+    upx=True,                  # Set to False if UPX causes issues
+    console=False,             # Set True for console apps
     disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon='app/icon.ico'  # Icon for the executable
+    argv_emulation=True,
+    icon='app/icon.ico',
 )

@@ -181,7 +181,6 @@ This project is open-source and licensed under the MIT - see the [LICENSE](LICEN
 
 > it have changed from Apache 2.0 to MIT License, i don't know what different is, but Apache 2.0 and MIT is same but I realized that different is, so I changed it to MIT. (LOL)
 
-<!-- Easter Egg: Hidden Message -->
-<span style="font-size: 8px;">
+<h9>
 You can find easter eggs in the emulator or the source code! Good luck searching! :3
-</span>
+</h9>

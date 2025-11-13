@@ -1,6 +1,6 @@
 from objects.shader_class import Shader
 
-@Shader
+@Shader("Make a grayscale image out of a color image, yat /j uesless")
 class grayscale:
     """
     #version 330 core

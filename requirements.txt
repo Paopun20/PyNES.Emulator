@@ -15,7 +15,7 @@ rich # rich terminal output
 # rendering
 PyOpenGL # gpu rendering
 PyOpenGL-accelerate # gpu rendering
-moderngl # modern OpenGL wrapper
+moderngl>=5.12.0 # modern OpenGL wrapper
 
 # data processing
 numpy # numerical computing

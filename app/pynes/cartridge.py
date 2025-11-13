@@ -3,7 +3,7 @@ import numpy as np
 from typing import Final, Tuple, Union
 from logger import log
 
-UInt8Array = np.ndarray  # or use NDArray[np.uint8] if using numpy.typing
+type UInt8Array = np.ndarray
 
 class Cartridge:
     HEADER_SIZE: Final[int] = 0x10

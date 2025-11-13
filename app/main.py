@@ -9,7 +9,6 @@ import sys
 import psutil
 from rich.traceback import install
 import threading
-import multiprocessing
 import time
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
@@ -38,9 +37,6 @@ sys.set_int_max_str_digits(2**31 - 1)
 sys.setrecursionlimit(2**31 - 1)
 sys.setswitchinterval(1e-322)
 
-multiprocessing.freeze_support()
-
-
 def threadProfile(frame, event, arg):
     co_name = frame.f_code.co_name
 
@@ -62,7 +58,7 @@ def threadProfile(frame, event, arg):
 process = psutil.Process(os.getpid())
 process.nice(psutil.REALTIME_PRIORITY_CLASS)
 try:
-    process.ionice(psutil.IOPRIO_HIGH)
+    process.ionice(psutil.IOPRIO_NORMAL)
 except psutil.AccessDenied as e:
     log.error(f"Failed to set I/O priority because of access denied error: {e}")
 
@@ -117,7 +113,7 @@ ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 ctx.disable(moderngl.DEPTH_TEST)
 
 # Set clear color
-ctx.clear_color = (0.0, 0.0, 0.0, 1.0)
+ctx.clear(0.0, 0.0, 0.0, 1.0)
 
 
 # Debug overlay helper class
@@ -257,7 +253,7 @@ sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 # Create debug overlay
 debug_overlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
-# sprite.set_fragment_shader(test_shader) # lol
+sprite.set_fragment_shader(test_shader)  # lol
 
 clock = pygame.time.Clock()
 
@@ -284,6 +280,10 @@ except Exception:
 
 # ROM Load
 while True:
+    if pygame.event.get(pygame.QUIT):
+        pygame.quit()
+        exit(0)
+
     nes_path = filedialog.askopenfilename(title="Select a NES file", filetypes=[("NES file", "*.nes")])
     if nes_path:
         if not nes_path.endswith(".nes"):
@@ -294,7 +294,8 @@ while True:
         if pygame.event.get(pygame.QUIT):
             pygame.quit()
             exit(0)
-        messagebox.showerror("Error", "No NES file selected, please select a NES file")
+        else:
+            messagebox.showerror("Error", "No NES file selected, please select a NES file")
         continue
 
 valid, load_cartridge = Cartridge.from_file(nes_path)
@@ -348,10 +349,10 @@ def draw_debug_overlay():
                 "",
                 f"EMU runtime: {(time.time() - start_time):.2f}s",
                 f"IRL estimate: {((time.time() - start_time) * (1 / all_clock)):.2f}s",
-                f"CPU Halted: {nes_emu.CPU_Halted}",
+                f"CPU Halted: {nes_emu.Architrcture.Halted}",
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
-                f"PC: ${nes_emu.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
+                f"PC: ${nes_emu.Architrcture.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
                 f"A: ${nes_emu.Architrcture.A:02X} X: ${nes_emu.Architrcture.X:02X} Y: ${nes_emu.Architrcture.Y:02X}",
                 f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
                 f"{'V' if nes_emu.flag.Overflow else '-'}"
@@ -361,7 +362,7 @@ def draw_debug_overlay():
                 f"{'Z' if nes_emu.flag.Zero else '-'}"
                 f"{'C' if nes_emu.flag.Carry else '-'}"
                 f"{'U' if nes_emu.flag.Unused else '-'}",
-                f"Log: {nes_emu.tracelog[-1]}"
+                f"Log: {nes_emu.tracelog[-1]}",
             ]
         case 1:
             # Get CPU percentages without blocking (instant)
@@ -470,6 +471,10 @@ ctx.clear()
 last_render = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
 frame_ui = 0
 
+with open("Test.gl", "+w") as f:
+    for index in sprite.program:
+        f.write(f"{index}\n")
+
 while running:
     events = pygame.event.get()
     controller.update(events)
@@ -489,7 +494,7 @@ while running:
                 if paused:
                     run_event.clear()  # pause the main thread
                 else:
-                    run_event.set()     # resume normal execution
+                    run_event.set()  # resume normal execution
                 log.info(f"{'Paused' if paused else 'Resumed'}")
             elif event.key == pygame.K_F10:
                 if paused:
@@ -574,7 +579,7 @@ while _thread_list and retry < 4:
         else:
             log.info(f"Thread {thread.name} is not start")
             _clone_list.remove(thread)
-            continue # skip
+            continue  # skip
 
         if thread.is_alive():
             log.error(f"Thread {thread.name} did not stop cleanly")
