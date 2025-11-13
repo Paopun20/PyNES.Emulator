@@ -471,10 +471,6 @@ ctx.clear()
 last_render = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
 frame_ui = 0
 
-with open("Test.gl", "+w") as f:
-    for index in sprite.program:
-        f.write(f"{index}\n")
-
 while running:
     events = pygame.event.get()
     controller.update(events)
