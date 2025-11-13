@@ -253,7 +253,7 @@ sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 # Create debug overlay
 debug_overlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
-sprite.set_fragment_shader(test_shader)  # lol
+# sprite.set_fragment_shader(test_shader)  # lol
 
 clock = pygame.time.Clock()
 
@@ -362,7 +362,7 @@ def draw_debug_overlay():
                 f"{'Z' if nes_emu.flag.Zero else '-'}"
                 f"{'C' if nes_emu.flag.Carry else '-'}"
                 f"{'U' if nes_emu.flag.Unused else '-'}",
-                f"Log: {nes_emu.tracelog[-1]}",
+                f"Latest Log: {nes_emu.tracelog[-1]}",
             ]
         case 1:
             # Get CPU percentages without blocking (instant)
@@ -438,7 +438,6 @@ def subpro():
 
 
 _thread_list.append(threading.Thread(name="emulator_thread", daemon=True, target=subpro))
-_thread_list[-1].start()
 
 
 def tracelogger():
@@ -449,7 +448,6 @@ def tracelogger():
 
 
 _thread_list.append(threading.Thread(target=tracelogger, daemon=True, name="tracelogger"))
-_thread_list[-1].start()
 
 
 @nes_emu.on("frame_complete")
@@ -470,6 +468,14 @@ ctx.clear()
 
 last_render = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
 frame_ui = 0
+
+for thread in _thread_list:
+    log.info(f"Starting thread: {thread.name}")
+    try:
+        thread.start()
+        log.info(f"Thread {thread.name} started successfully")
+    except threading.ThreadError as e:
+        log.error(f"Thread {thread.name} failed to start: {e}")
 
 while running:
     events = pygame.event.get()
