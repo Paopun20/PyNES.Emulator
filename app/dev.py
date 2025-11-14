@@ -1,4 +1,4 @@
-from PySide6.QtGui import QImage, 
+from PySide6.QtGui import QImage
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QOpenGLTexture import QOpenGLTexture
 import numpy as np

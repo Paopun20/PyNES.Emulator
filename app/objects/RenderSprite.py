@@ -42,18 +42,8 @@ mat4: TypeAlias = NDArray[np.float32]  # shape (4,4)
 sampler2D: TypeAlias = int
 sampler3D: TypeAlias = int
 
-uniformType: TypeAlias = (
-    float
-    | int
-    | vec2
-    | vec3
-    | vec4
-    | mat2
-    | mat3
-    | mat4
-    | sampler2D
-    | sampler3D
-)
+uniformType: TypeAlias = float | int | vec2 | vec3 | vec4 | mat2 | mat3 | mat4 | sampler2D | sampler3D
+
 
 # --- Renderer class ---
 class RenderSprite:
@@ -71,10 +61,22 @@ class RenderSprite:
         # Create quad geometry
         vertices = np.array(
             [
-                0, 0, 0, 0,
-                self.W, 0, 1, 0,
-                self.W, self.H, 1, 1,
-                0, self.H, 0, 1,
+                0,
+                0,
+                0,
+                0,
+                self.W,
+                0,
+                1,
+                0,
+                self.W,
+                self.H,
+                1,
+                1,
+                0,
+                self.H,
+                0,
+                1,
             ],
             dtype="f4",
         )
@@ -102,9 +104,7 @@ class RenderSprite:
         try:
             new_shader = str(shader_class.code)
             new_program = self.ctx.program(vertex_shader=VERTEX_SHADER, fragment_shader=new_shader)
-            new_vao = self.ctx.vertex_array(
-                new_program, [(self.vbo, "2f 2f", "a_pos", "a_uv")], index_buffer=self.ibo
-            )
+            new_vao = self.ctx.vertex_array(new_program, [(self.vbo, "2f 2f", "a_pos", "a_uv")], index_buffer=self.ibo)
 
             old_vao.release()
             old_program.release()
@@ -126,10 +126,23 @@ class RenderSprite:
         if name not in self.program:
             log.warning(f"Uniform {name} not found in shader, ignoring.")
             return
-        self.program[name].value = value
+        if isinstance(value, uniformType):
+            self.program[name] = value
+        else:
+            log.error(f"Invalid uniform type: {type(value)}")
 
     def draw(self) -> None:
         """Render the sprite."""
+        if self.texture is None:
+            log.error("Texture is None")
+            return
+        if self.program is None:
+            log.error("Program is None")
+            return
+        if self.vao is None:
+            log.error("VAO is None")
+            return
+
         self.program["u_scale"].value = (self.W, self.H)
         self.texture.use(location=0)
         if "u_tex" in self.program:

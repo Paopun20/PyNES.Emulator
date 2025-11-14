@@ -9,7 +9,7 @@
     "build": true,
     "dist": true,
     "__PatreonRoms": true,
-    "AccuracyCoin-Link": true,
+    "AccuracyCoin-Link": false,
     "art": true,
     "docs": true,
     "tests": true,

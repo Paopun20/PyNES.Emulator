@@ -4,7 +4,7 @@ from typing import Optional, Dict, Deque
 from collections import deque
 import psutil
 from logger import log
-from helper.thread_exception import make_thread_exception as _raise_exception_in_thread
+from helper.thread_exception import thread_exception as _raise_exception_in_thread
 
 class ThreadCPUMonitor:
     """
@@ -25,7 +25,7 @@ class ThreadCPUMonitor:
         monitor.stop()
     """
     
-    def __init__(self, process: psutil.Process, update_interval: float = 1.0):
+    def __init__(self, process: psutil.Process, update_interval: float = 1.0) -> None:
         """
         Initialize the CPU monitor.
         
@@ -66,7 +66,7 @@ class ThreadCPUMonitor:
             print(f"Error getting thread CPU times: {e}")
             return {}
     
-    def _monitor_loop(self):
+    def _monitor_loop(self) -> None:
         """Background monitoring loop that calculates CPU percentages."""
         while self.running:
             try:
@@ -131,7 +131,7 @@ class ThreadCPUMonitor:
             # Sleep for the update interval
             time.sleep(self.update_interval)
     
-    def start(self):
+    def start(self) -> None:
         """
         Start monitoring in background thread.
         
@@ -172,7 +172,7 @@ class ThreadCPUMonitor:
                 return False
         return True
     
-    def force_stop(self):
+    def force_stop(self) -> None:
         """
         Forcefully stop monitoring without waiting for thread to finish.
         """
@@ -243,7 +243,7 @@ class ThreadCPUMonitor:
         with self.lock:
             return len(self.cpu_percents)
     
-    def clear_graph(self):
+    def clear_graph(self) -> None:
         """Clear historical graph data."""
         with self.lock:
             self._graph.clear()

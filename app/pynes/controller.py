@@ -4,12 +4,12 @@ from typing import Dict, Literal
 class Controller:
     """Represents an NES controller state and shift register."""
 
-    def __init__(self, buttons: Dict[str, Literal[True, False]]):
+    def __init__(self, buttons: Dict[str, Literal[True, False]]) -> None:
         self.buttons: Dict[str, bool] = buttons  # Current button states
         self.shift_register: int = 0  # 8-bit shift register for reading
         self.strobe: bool = False  # Strobe state for latching buttons
 
-    def latch(self):
+    def latch(self) -> None:
         """Latch current button states into shift register."""
         self.shift_register = 0
         self.shift_register |= (1 << 0) if self.buttons.get("A", False) else 0

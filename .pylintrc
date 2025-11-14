@@ -1,0 +1,19 @@
+[MESSAGES CONTROL]
+disable=
+    C0103,  # naming-style
+    C0114, C0115, C0116,  # missing docstring
+    C0301,  # line-too-long
+    C0302,  # too-many-lines
+    R0902,  # too-many-instance-attributes
+    R0912,  # too many branches
+    R0915,  # too many statements
+    R0911,  # too many returns
+    R1705,  # no-else-return
+    E0401,  # import-error
+    W0611,  # unused-import
+    C0411,  # missing-docstring-argument
+    R0904,  # too-many-public-methods
+    R0914,  # too-many-locals
+    W0105,  # pointless-string-statement
+    W0707,  # raise-missing-from
+    C0413,  # import-outside-toplevel

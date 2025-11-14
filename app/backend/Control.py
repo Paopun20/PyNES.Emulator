@@ -5,7 +5,7 @@ from typing import Final
 console = Console()
 
 
-class Controller:
+class Control(object):
     NES_KEYS: Final[list[str]] = [
         "A",
         "B",
@@ -37,7 +37,7 @@ class Controller:
 
     AXIS_DEADZONE: Final[float] = 0.5
 
-    def __init__(self):
+    def __init__(self) -> None:
         pygame.init()
         pygame.joystick.init()
 
@@ -46,7 +46,7 @@ class Controller:
         self.joysticks = {}
         self.init_all_joysticks()
 
-    def init_all_joysticks(self):
+    def init_all_joysticks(self) -> None:
         """Initialize all connected joysticks"""
         self.joysticks.clear()
         for i in range(pygame.joystick.get_count()):
@@ -63,7 +63,7 @@ class Controller:
                     f"[yellow]Joystick init failed for index {i}: {e}[/yellow]"
                 )
 
-    def update(self, events):
+    def update(self, events: list[pygame.event.Event]) -> None:
         """Update controller state based on pygame events"""
         self._prev_state = self.state.copy()
 
@@ -116,7 +116,7 @@ class Controller:
         if self.state["Left"] and self.state["Right"]:
             self.state["Left"] = self.state["Right"] = False
 
-    def reset(self):
+    def reset(self) -> None:
         """Clear all button states"""
         for k in self.state:
             self.state[k] = False
