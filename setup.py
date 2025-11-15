@@ -1,7 +1,12 @@
 from setuptools import (setup, Extension as CythonExtension)
 from Cython.Build import cythonize
 from setuptools_rust import RustExtension
+from pathlib import Path
 import numpy as np
+
+# Obtain the absolute path of the directory containing setup.py
+ROOT_DIR = Path(__file__).parent.resolve()
+
 
 cython_ext = cythonize([
     CythonExtension(
@@ -15,7 +20,7 @@ cython_ext = cythonize([
 rust_ext = [
     RustExtension(
         target="disklist",
-        path="app/pynes/rust/disklist/Cargo.toml",
+        path="app/rust/disklist/Cargo.toml",
         debug=False,
         py_limited_api=False,
     ),

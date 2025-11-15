@@ -3,28 +3,30 @@ import moderngl
 import numpy as np
 from numpy.typing import NDArray
 from typing import Any, Final, TypeAlias
-from objects.shader_class import Shader
+from objects.shadercass import Shader
 from logger import log
 
 # --- Shader defaults ---
-DEFAULT_FRAGMENT_SHADER: Final[str] = """
-#version 330
-in vec2 v_uv;
-out vec4 fragColor;
-uniform sampler2D u_tex;
-void main() {
-    fragColor = texture(u_tex, v_uv);
-}
-"""
+@Shader("Default fragment shader")
+class DEFAULT_FRAGMENT_SHADER:
+    """
+    #version 330
+    in vec2 v_uv;
+    out vec4 fragColor;
+    uniform sampler2D u_tex;
+    void main() {
+        fragColor = texture(u_tex, v_uv);
+    }
+    """
 
 VERTEX_SHADER: Final[str] = """
 #version 330
 in vec2 a_pos;
 in vec2 a_uv;
 out vec2 v_uv;
-uniform vec2 u_scale;
+uniform vec2 u_resolution;
 void main() {
-    vec2 ndc = (a_pos / u_scale) * 2.0 - 1.0;
+    vec2 ndc = (a_pos / u_resolution) * 2.0 - 1.0;
     ndc.y = -ndc.y;
     gl_Position = vec4(ndc, 0.0, 1.0);
     v_uv = a_uv;
@@ -52,7 +54,7 @@ class RenderSprite:
         self.W: int = width * scale
         self.H: int = height * scale
 
-        self.fragment_shader: str = DEFAULT_FRAGMENT_SHADER
+        self.fragment_shader: str = DEFAULT_FRAGMENT_SHADER.code
         self.program: moderngl.Program = ctx.program(vertex_shader=VERTEX_SHADER, fragment_shader=self.fragment_shader)
 
         # Create quad geometry
@@ -97,13 +99,13 @@ class RenderSprite:
             raise ValueError(f"Frame must be ({self.height},{self.width},3)")
         self.texture.write(frame.tobytes())
 
-    def set_fragment_shader(self, shader_class: Shader) -> None:
+    def set_fragment_shader(self, shadercass: Shader) -> None:
         old_program = self.program
         old_vao = self.vao
         old_shader = self.fragment_shader
 
         try:
-            new_shader = str(shader_class.code)
+            new_shader = str(shadercass.code)
             new_program = self.ctx.program(vertex_shader=VERTEX_SHADER, fragment_shader=new_shader)
             new_vao = self.ctx.vertex_array(new_program, [(self.vbo, "2f 2f", "a_pos", "a_uv")], index_buffer=self.ibo)
 
@@ -115,7 +117,7 @@ class RenderSprite:
             self.fragment_shader = new_shader
 
         except moderngl.Error as e:
-            log.error(f"Failed to compile fragment shader:\n{str(shader_class.code)}")
+            log.error(f"Failed to compile fragment shader:\n{str(shadercass.code)}")
             log.error(f"Error:\n{e}")
             log.error("Reverting to previous shader.\nPrevious shader.")
             self.program = old_program
@@ -127,7 +129,7 @@ class RenderSprite:
     ) -> None:
         """Set a uniform in the current shader."""
         if name not in self.program:
-            log.warning(f"Uniform {name} not found in shader, ignoring.")
+            # log.warning(f"Uniform {name} not found in shader, ignoring.")
             return
 
         # Fixed: Check for actual types instead of type aliases
@@ -150,9 +152,6 @@ class RenderSprite:
 
         if "u_resolution" in self.program:
             self.program["u_resolution"].value = (self.W, self.H)
-
-        if "u_scale" in self.program:
-            self.program["u_scale"].value = (self.width, self.height)
 
         if "u_tex" in self.program:
             self.program["u_tex"].value = 0

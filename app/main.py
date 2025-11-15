@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotations, generator_stop
 
 import os
 
@@ -25,7 +25,7 @@ from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
 from objects.RenderSprite import RenderSprite
 from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE
-from pynes.api.discord import Presence  # type: ignore
+from api.discord import Presence  # type: ignore
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
 from pypresence.types import ActivityType, StatusDisplayType
@@ -103,6 +103,7 @@ run_event = threading.Event()  # controls running emulator thread
 run_event.set()  # start in running state
 
 log.info(f"Starting pygame community edition {pygame.__version__}")
+
 pygame.init()
 pygame.font.init()
 
@@ -111,9 +112,9 @@ icon_path = Path(__file__).resolve().parent / "icon.ico"
 
 try:
     icon_surface = pygame.image.load(icon_path)
-except Exception:
+except Exception as e:
     icon_surface = None
-    log.error(f"Failed to load icon: {icon_path}")
+    log.error(f"Failed to load icon: {icon_path} ({e})")
 
 screen = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE)
 pygame.display.set_caption("PyNES Emulator")
@@ -274,7 +275,7 @@ sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 # Create debug overlay
 debug_overlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
-sprite.set_fragment_shader(test_shader)  # lol
+# sprite.set_fragment_shader(test_shader)  # lol
 
 clock = pygame.time.Clock()
 

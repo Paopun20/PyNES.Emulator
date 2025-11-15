@@ -1,4 +1,3 @@
-from __future__ import annotations, print_function, division
 import array
 
 # debugger
@@ -334,7 +333,7 @@ class Emulator:
             return val
 
         # APU and I/O registers ($4000-$4017)
-        if addr <= 0x4017:
+        elif addr <= 0x4017:
             if addr == 0x4016:  # Controller 1
                 bit0 = self.controllers[1].read() & 1
                 val = (bit0) | (self.dataBus & 0xE0)  # preserve open-bus bits
@@ -368,6 +367,14 @@ class Emulator:
         if time.time() - self.ppu_bus_latch_time > 0.9:
             self.ppu_bus_latch = 0
 
+        # Unmapped region ($4018-$7FFF)
+        elif addr < 0x8000:
+            self._emit("onDummyRead", addr)
+            # If the instruction is absolute, the high byte of the address is placed on the data bus
+            if self.Architrcture.current_instruction_mode == CIM.Absolute:
+                self.dataBus = (addr >> 8) & 0xFF
+            return self.dataBus
+
         return 0  # R1710
 
     def Write(self, Address: int, Value: int) -> None:
@@ -381,11 +388,11 @@ class Emulator:
             self.RAM[addr & 0x07FF] = val
 
         # PPU registers ($2000-$3FFF)
-        if addr < 0x4000:
+        elif addr < 0x4000:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
 
         # APU / Controller ($4000-$4017)
-        if 0x4000 <= addr <= 0x4017:
+        elif 0x4000 <= addr <= 0x4017:
             if addr == 0x4016:  # Controller 1 strobe
                 strobe = bool(val & 0x01)
                 self.controllers[1].strobe = strobe
@@ -401,11 +408,11 @@ class Emulator:
                 self.apu.write_register(reg, val)
 
         # OAM DMA ($4014)
-        if addr == 0x4014:
+        elif addr == 0x4014:
             self._oam_dma_pending_page = val
 
         # ROM area ($8000+)
-        if addr >= 0x8000:
+        elif addr >= 0x8000:
             self.dataBus = val
 
     def _ppu_open_bus_value(self) -> int:

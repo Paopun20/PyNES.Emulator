@@ -17,3 +17,4 @@ disable=
     W0105,  # pointless-string-statement
     W0707,  # raise-missing-from
     C0413,  # import-outside-toplevel
+    E0611,  # no-name-in-module # have some cython modules and rust modules that pylint can't find

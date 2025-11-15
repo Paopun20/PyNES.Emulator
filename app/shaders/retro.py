@@ -1,4 +1,4 @@
-from objects.shader_class import Shader
+from objects.shadercass import Shader
 
 @Shader("A retro CRT-like shader with scanlines, curvature, and chromatic aberration.")
 class retro:

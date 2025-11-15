@@ -24,8 +24,8 @@ reference/*
 *.pyd
 
 # rust build
-app/pynes/rust/*/target
-app/pynes/rust/*/Cargo.lock
+app/rust/*/target
+app/rust/*/Cargo.lock
 
 # log file
 *.log

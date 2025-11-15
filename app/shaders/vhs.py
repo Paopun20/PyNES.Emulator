@@ -1,4 +1,4 @@
-from objects.shader_class import Shader
+from objects.shadercass import Shader
 
 @Shader("A VHS-like shader with various distortions and effects.")
 class VHS:
