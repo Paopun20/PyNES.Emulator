@@ -17,7 +17,9 @@ import psutil
 import moderngl
 import platform
 from rich.traceback import install
-from typing import Callable
+from typing import Callable, Optional, Any, Tuple, List, Dict, Union
+from types import FrameType
+from numpy.typing import NDArray
 
 from __version__ import __version__
 from backend.Control import Control
@@ -46,7 +48,7 @@ sys.set_int_max_str_digits(10_000_000)  # 2**31 - 1
 sys.setrecursionlimit(10_000)  # 2**31 - 1
 sys.setswitchinterval(1e-5)  # 1e-322
 
-process = psutil.Process(os.getpid())
+process: psutil.Process = psutil.Process(os.getpid())
 
 try:
     if platform.system() == "Windows":
@@ -69,15 +71,17 @@ except psutil.AccessDenied as e:
 
 if "--realdebug" in sys.argv and debug_mode:
 
-    def threadProfile(frame, event, arg) -> Callable:
-        co_name = frame.f_code.co_name
+    def threadProfile(
+        frame: FrameType, event: str, arg: Optional[Any]
+    ) -> Optional[Callable[[FrameType, str, Any], Any]]:
+        co_name: str = frame.f_code.co_name
 
         if event in {"call", "c_call"}:
             log.debug(f"Calling {co_name}")
         elif event in {"return", "c_return"}:
             log.debug(f"Returning from {co_name}")
         elif event in {"exception", "c_exception"}:
-            exc_type, exc_value, _tb = arg
+            exc_type, exc_value, _tb = arg  # type: ignore
             log.debug(f"Exception {exc_type.__name__} in {co_name}: {exc_value}")
         elif event in {"line", "c_line"}:
             log.debug(f"Line {frame.f_lineno} in {co_name}")
@@ -90,16 +94,16 @@ if "--realdebug" in sys.argv and debug_mode:
     threading.settrace_all_threads(threadProfile)
 
 log.info("Starting Discord presence")
-presence = Presence(1429842237432266752)
+presence: Presence = Presence(1429842237432266752)
 presence.connect()
 
-NES_WIDTH = 256
-NES_HEIGHT = 240
-SCALE = 3
+NES_WIDTH: int = 256
+NES_HEIGHT: int = 240
+SCALE: int = 3
 
-_thread_list: list[threading.Thread] = []
+_thread_list: List[threading.Thread] = []
 
-run_event = threading.Event()  # controls running emulator thread
+run_event: threading.Event = threading.Event()  # controls running emulator thread
 run_event.set()  # start in running state
 
 log.info(f"Starting pygame community edition {pygame.__version__}")
@@ -107,27 +111,29 @@ log.info(f"Starting pygame community edition {pygame.__version__}")
 pygame.init()
 pygame.font.init()
 
-font = pygame.font.Font(None, 20)
-icon_path = Path(__file__).resolve().parent / "icon.ico"
+font: pygame.font.Font = pygame.font.Font(None, 20)
+icon_path: Path = Path(__file__).resolve().parent / "icon.ico"
 
 try:
-    icon_surface = pygame.image.load(icon_path)
+    icon_surface: Optional[pygame.Surface] = pygame.image.load(icon_path)
 except Exception as e:
     icon_surface = None
     log.error(f"Failed to load icon: {icon_path} ({e})")
 
-screen = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE)
+screen: pygame.Surface = pygame.display.set_mode(
+    (NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE
+)
 pygame.display.set_caption("PyNES Emulator")
 if icon_surface:
     pygame.display.set_icon(icon_surface)
 
-hwnd = pygame.display.get_wm_info()["window"]
-pyWindow = pyWindowColorMode(hwnd)
+hwnd: int = pygame.display.get_wm_info()["window"]
+pyWindow: pyWindowColorMode = pyWindowColorMode(hwnd)
 pyWindow.dark_mode = True
 
 log.info("Starting ModernGL")
 # Create ModernGL context
-ctx = moderngl.create_context()
+ctx: moderngl.Context = moderngl.create_context()
 ctx.enable(moderngl.BLEND)
 ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 
@@ -142,15 +148,15 @@ ctx.clear(0.0, 0.0, 0.0, 1.0)
 class DebugOverlay:
     """Manages a ModernGL texture for rendering debug text overlay."""
 
-    def __init__(self, ctx: moderngl.Context, screen_w: int, screen_h: int):
-        self.ctx = ctx
-        self.screen_w = screen_w
-        self.screen_h = screen_h
-        self.texture = None
-        self.prev_lines = None
+    def __init__(self, ctx: moderngl.Context, screen_w: int, screen_h: int) -> None:
+        self.ctx: moderngl.Context = ctx
+        self.screen_w: int = screen_w
+        self.screen_h: int = screen_h
+        self.texture: Optional[moderngl.Texture] = None
+        self.prev_lines: Optional[Tuple[str, ...]] = None
 
         # Create shader program for overlay rendering
-        vertex_shader = """
+        vertex_shader: str = """
         #version 330 core
         in vec2 in_pos;
         in vec2 in_uv;
@@ -168,7 +174,7 @@ class DebugOverlay:
         }
         """
 
-        fragment_shader = """
+        fragment_shader: str = """
         #version 330 core
         in vec2 v_uv;
         out vec4 fragColor;
@@ -179,10 +185,12 @@ class DebugOverlay:
         }
         """
 
-        self.program = ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
+        self.program: moderngl.Program = ctx.program(
+            vertex_shader=vertex_shader, fragment_shader=fragment_shader
+        )
 
         # Create quad for rendering
-        vertices = np.array(
+        vertices: NDArray[np.float32] = np.array(
             [
                 # x,   y,   u,   v
                 0.0,
@@ -205,34 +213,36 @@ class DebugOverlay:
             dtype=np.float32,
         )
 
-        indices = np.array([0, 1, 2, 2, 3, 0], dtype=np.int32)
+        indices: NDArray[np.int32] = np.array([0, 1, 2, 2, 3, 0], dtype=np.int32)
 
-        self.vbo = ctx.buffer(vertices.tobytes())
-        self.ibo = ctx.buffer(indices.tobytes())
-        self.vao = ctx.vertex_array(self.program, [(self.vbo, "2f 2f", "in_pos", "in_uv")], self.ibo)
+        self.vbo: moderngl.Buffer = ctx.buffer(vertices.tobytes())
+        self.ibo: moderngl.Buffer = ctx.buffer(indices.tobytes())
+        self.vao: moderngl.VertexArray = ctx.vertex_array(
+            self.program, [(self.vbo, "2f 2f", "in_pos", "in_uv")], self.ibo
+        )
 
-    def render_text_to_surface(self, text_lines: list[str], width: int, height: int) -> pygame.Surface:
+    def render_text_to_surface(self, text_lines: List[str], width: int, height: int) -> pygame.Surface:
         """Return a pygame Surface (RGBA) with the rendered text."""
-        surf = pygame.Surface((width, height), pygame.SRCALPHA)
+        surf: pygame.Surface = pygame.Surface((width, height), pygame.SRCALPHA)
         surf.fill((0, 0, 0, 180))
-        y_pos = 5
+        y_pos: int = 5
         for line in text_lines:
             surf.blit(font.render(line, True, (255, 255, 255)), (5, y_pos))
             y_pos += 20
         return surf
 
-    def update(self, text_lines: list[str]) -> None:
+    def update(self, text_lines: List[str]) -> None:
         """Update the debug overlay texture with new text."""
         # If same text, skip update
         if self.prev_lines == tuple(text_lines):
             return
         self.prev_lines = tuple(text_lines)
 
-        tex_h = len(text_lines) * 20 + 10
-        tex_w = self.screen_w
+        tex_h: int = len(text_lines) * 20 + 10
+        tex_w: int = self.screen_w
 
-        surf = self.render_text_to_surface(text_lines, tex_w, tex_h)
-        text_data = pygame.image.tobytes(surf, "RGBA", True)
+        surf: pygame.Surface = self.render_text_to_surface(text_lines, tex_w, tex_h)
+        text_data: bytes = pygame.image.tobytes(surf, "RGBA", True)
 
         # Create or update texture
         if self.texture is None or self.texture.size != (tex_w, tex_h):
@@ -243,11 +253,13 @@ class DebugOverlay:
 
         self.texture.write(text_data)
 
-    def draw(self, offset: tuple[int, int] = (0, 0)) -> None:
+    def draw(self, offset: Tuple[int, int] = (0, 0)) -> None:
         """Draw the overlay at the specified offset."""
         if self.texture is None:
             return
 
+        tex_w: int
+        tex_h: int
         tex_w, tex_h = self.texture.size
 
         self.program["u_resolution"].value = (self.screen_w, self.screen_h)
@@ -270,30 +282,30 @@ class DebugOverlay:
 
 # create a sprite renderer
 log.info("Starting sprite renderer")
-sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
+sprite: RenderSprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 
 # Create debug overlay
-debug_overlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
+debug_overlay: DebugOverlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
-# sprite.set_fragment_shader(test_shader)  # lol
+sprite.set_fragment_shader(test_shader)  # lol
 
-clock = pygame.time.Clock()
+clock: pygame.time.Clock = pygame.time.Clock()
 
 # init emulator and controller
 log.info("Starting emulator")
-nes_emu = Emulator()
+nes_emu: Emulator = Emulator()
 log.info("Starting controller")
-controller = Control()
+controller: Control = Control()
 log.info("Starting CPU monitor")
-cpu_monitor = ThreadCPUMonitor(process, update_interval=1.0)
+cpu_monitor: ThreadCPUMonitor = ThreadCPUMonitor(process, update_interval=1.0)
 cpu_monitor.start()
-gpu_monitor = GPUMonitor()
+gpu_monitor: GPUMonitor = GPUMonitor()
 if gpu_monitor.is_available():
     log.info("GPU monitor initialized")
 else:
     log.warning("GPU monitor not available")
 
-root = Tk()
+root: Tk = Tk()
 root.withdraw()
 try:
     root.iconbitmap(str(icon_path))
@@ -306,7 +318,9 @@ while True:
         pygame.quit()
         exit(0)
 
-    nes_path = filedialog.askopenfilename(title="Select a NES file", filetypes=[("NES file", "*.nes")])
+    nes_path: str = filedialog.askopenfilename(
+        title="Select a NES file", filetypes=[("NES file", "*.nes")]
+    )
     if nes_path:
         if not nes_path.endswith(".nes"):
             messagebox.showerror("Error", "Invalid file type, please select a NES file")
@@ -320,6 +334,8 @@ while True:
             messagebox.showerror("Error", "No NES file selected, please select a NES file")
         continue
 
+valid: bool
+load_cartridge: Union[Cartridge, str]
 valid, load_cartridge = Cartridge.from_file(nes_path)
 if not valid:
     messagebox.showerror("Error", load_cartridge)
@@ -342,18 +358,20 @@ log.info(f"Loaded: {Path(nes_path).name}")
 
 # EMU LOOP
 nes_emu.Reset()
-running, paused, show_debug = True, False, False
-frame_count = 0
-start_time = time.time()
-frame_lock = threading.Lock()
-latest_frame = None
-frame_ready = False
+running: bool = True
+paused: bool = False
+show_debug: bool = False
+frame_count: int = 0
+start_time: float = time.time()
+frame_lock: threading.Lock = threading.Lock()
+latest_frame: Optional[NDArray[np.uint8]] = None
+frame_ready: bool = False
 
 cpu_clock: int = 1_790_000
 ppu_clock: int = 5_369_317
 all_clock: int = cpu_clock + ppu_clock
 
-debug_mode_index = 0
+debug_mode_index: int = 0
 
 
 def draw_debug_overlay() -> None:
@@ -361,7 +379,7 @@ def draw_debug_overlay() -> None:
     if not show_debug:
         return
 
-    debug_info = [f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})"]
+    debug_info: List[str] = [f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})"]
 
     match debug_mode_index:
         case 0:
@@ -388,7 +406,7 @@ def draw_debug_overlay() -> None:
             ]
         case 1:
             # Get CPU percentages without blocking (instant)
-            thread_cpu_percent = cpu_monitor.get_cpu_percents()
+            thread_cpu_percent: Dict[int, float] = cpu_monitor.get_cpu_percents()
 
             debug_info += [
                 f"Process CPU: {cpu_monitor.get_all_cpu_percent():.2f}%",
@@ -396,8 +414,8 @@ def draw_debug_overlay() -> None:
             ]
 
             if gpu_monitor.is_available():
-                gpu_util = gpu_monitor.get_gpu_utilization()
-                mem_util = gpu_monitor.get_memory_utilization()
+                gpu_util: float = gpu_monitor.get_gpu_utilization()
+                mem_util: float = gpu_monitor.get_memory_utilization()
                 debug_info.append(f"GPU Util: {gpu_util}%, Mem Util: {mem_util}%")
             else:
                 debug_info.append("GPU monitor not available")
@@ -411,9 +429,9 @@ def draw_debug_overlay() -> None:
                     )
 
             # Prepare graph data
-            cpu_data: list = []
+            cpu_data: List[float] = []
             max_data: int = 20
-            cpum = cpu_monitor.get_graph()
+            cpum: List[Dict[int, float]] = cpu_monitor.get_graph()
 
             for index_cpu in cpum:
                 for k, v in index_cpu.items():
@@ -432,9 +450,9 @@ def draw_debug_overlay() -> None:
 
 
 # updated render_frame uses sprite
-def render_frame(frame) -> None:
+def render_frame(frame: NDArray[np.uint8]) -> None:
     try:
-        frame_rgb = np.ascontiguousarray(frame, dtype=np.uint8)
+        frame_rgb: NDArray[np.uint8] = np.ascontiguousarray(frame, dtype=np.uint8)
         # Clear and draw
         ctx.clear()
         sprite.update_frame(frame_rgb)
@@ -446,7 +464,7 @@ def render_frame(frame) -> None:
 
 
 # subthread to run emulator cycles
-def subpro():
+def subpro() -> None:
     global running, paused
     while running:
         if paused:
@@ -462,9 +480,9 @@ def subpro():
 _thread_list.append(threading.Thread(name="emulator_thread", daemon=True, target=subpro))
 
 
-def tracelogger():
+def tracelogger() -> None:
     @nes_emu.on("tracelogger")
-    def _(nes_line):
+    def _(nes_line: str) -> None:
         if debug_mode and "--eum_debug" in sys.argv:
             log.debug(nes_line)
 
@@ -473,7 +491,7 @@ _thread_list.append(threading.Thread(target=tracelogger, daemon=True, name="trac
 
 
 @nes_emu.on("frame_complete")
-def vm_frame(frame):
+def vm_frame(frame: NDArray[np.uint8]) -> None:
     global latest_frame, frame_ready
     with frame_lock:
         latest_frame = frame.copy() if hasattr(frame, "copy") else np.array(frame)
@@ -481,15 +499,15 @@ def vm_frame(frame):
 
 
 @nes_emu.on("before_cycle")
-def cycle(_):
+def cycle(_: Any) -> None:
     # feed controller state into emulator
     nes_emu.Input(1, controller.state)
 
 
 ctx.clear()
 
-last_render = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
-frame_ui = 0
+last_render: NDArray[np.uint8] = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.uint8)
+frame_ui: int = 0
 
 for thread in _thread_list:
     log.info(f"Starting thread: {thread.name}")
@@ -500,7 +518,7 @@ for thread in _thread_list:
         log.error(f"Thread {thread.name} failed to start: {e}")
 
 while running:
-    events = pygame.event.get()
+    events: List[pygame.event.Event] = pygame.event.get()
     controller.update(events)
 
     for event in events:
@@ -551,7 +569,7 @@ while running:
     render_frame(last_render)
 
     # title update
-    title = "PyNES Emulator"
+    title: str = "PyNES Emulator"
     if paused:
         if running:
             title += " [PAUSED]"
@@ -575,7 +593,7 @@ try:
 except Exception:
     pass
 
-r = cpu_monitor.stop()
+r: bool = cpu_monitor.stop()
 if r:
     log.info("CPU monitor stopped")
 else:
@@ -592,8 +610,8 @@ else:
 presence.close()
 log.info("Discord presence: Shutting down")
 
-_clone_list = _thread_list.copy()
-retry = 0
+_clone_list: List[threading.Thread] = _thread_list.copy()
+retry: int = 0
 
 while _thread_list and retry < 4:
     for thread in _thread_list:
@@ -612,24 +630,24 @@ while _thread_list and retry < 4:
             _clone_list.remove(thread)
     _thread_list = _clone_list.copy()
     retry += 1
+
+if not _thread_list:
+    log.info("All threads joined")
 else:
-    if not _thread_list:
-        log.info("All threads joined")
-    else:
-        log.warning("Some threads did not join")
-        log.warning("Enter force state")
-        _clone_list = _thread_list.copy()
-        while _thread_list:
-            for thread in _thread_list:
-                try:
-                    thread_exception(thread, SystemExit)
-                    log.info(f'Force stopping thread "{thread.name}": success')
-                    _clone_list.remove(thread)
-                except SystemError:
-                    log.error(f"Thread {thread.name} failed to force stop")
-                except Exception:
-                    pass
-            _thread_list = _clone_list.copy()
+    log.warning("Some threads did not join")
+    log.warning("Enter force state")
+    _clone_list = _thread_list.copy()
+    while _thread_list:
+        for thread in _thread_list:
+            try:
+                thread_exception(thread, SystemExit)
+                log.info(f'Force stopping thread "{thread.name}": success')
+                _clone_list.remove(thread)
+            except SystemError:
+                log.error(f"Thread {thread.name} failed to force stop")
+            except Exception:
+                pass
+        _thread_list = _clone_list.copy()
 
 pygame.quit()
 log.info("Pygame: Shutting down")

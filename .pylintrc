@@ -18,3 +18,6 @@ disable=
     W0707,  # raise-missing-from
     C0413,  # import-outside-toplevel
     E0611,  # no-name-in-module # have some cython modules and rust modules that pylint can't find
+    W1203,  # logging-fstring-interpolation
+    W0718,  # broad-except
+    E1101,  # no-member
