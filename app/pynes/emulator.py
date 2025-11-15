@@ -349,6 +349,8 @@ class Emulator:
                 val = self.apu.read_register(reg)
                 self.dataBus = val
                 return val
+            else:
+                return self.dataBus
 
         # Unmapped region ($4018-$7FFF)
         elif addr < 0x8000:
@@ -362,20 +364,6 @@ class Emulator:
             val = int(self.PRGROM[addr - 0x8000])
             self.dataBus = val
             return val
-
-        # If the PPU bus latch has been held for too long, decay it to 0
-        if time.time() - self.ppu_bus_latch_time > 0.9:
-            self.ppu_bus_latch = 0
-
-        # Unmapped region ($4018-$7FFF)
-        elif addr < 0x8000:
-            self._emit("onDummyRead", addr)
-            # If the instruction is absolute, the high byte of the address is placed on the data bus
-            if self.Architrcture.current_instruction_mode == CIM.Absolute:
-                self.dataBus = (addr >> 8) & 0xFF
-            return self.dataBus
-
-        return 0  # R1710
 
     def Write(self, Address: int, Value: int) -> None:
         """Write to CPU or PPU memory with proper mirroring."""
@@ -392,7 +380,7 @@ class Emulator:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
 
         # APU / Controller ($4000-$4017)
-        elif 0x4000 <= addr <= 0x4017:
+        if 0x4000 <= addr <= 0x4017:
             if addr == 0x4016:  # Controller 1 strobe
                 strobe = bool(val & 0x01)
                 self.controllers[1].strobe = strobe
@@ -408,11 +396,12 @@ class Emulator:
                 self.apu.write_register(reg, val)
 
         # OAM DMA ($4014)
-        elif addr == 0x4014:
+        if addr == 0x4014:
+            self.oam_dma_page = val
             self._oam_dma_pending_page = val
 
         # ROM area ($8000+)
-        elif addr >= 0x8000:
+        if addr >= 0x8000:
             self.dataBus = val
 
     def _ppu_open_bus_value(self) -> int:
@@ -1042,7 +1031,8 @@ class Emulator:
 
             for _ in range(3):
                 self.Emulate_PPU()
-                self.apu.step()  # async lol
+            # Advance APU once per CPU cycle (was previously called per PPU step)
+            self.apu.step()
             self._emit("after_cycle", self.cycles)
 
         except MemoryError as e:

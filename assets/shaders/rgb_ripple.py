@@ -1,6 +1,6 @@
 from objects.shadercass import Shader
 
-@Shader("RGB Rainbow Time")
+@Shader("RGB Rainbow Time", "Paopaodev")
 class rgb_ripple:
     """
     #version 330 core

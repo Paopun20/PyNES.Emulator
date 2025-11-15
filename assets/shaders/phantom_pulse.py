@@ -1,6 +1,6 @@
 from objects.shadercass import Shader
 
-@Shader("Phantom Pulse Effect")
+@Shader("Phantom Pulse Effect", "Paopaodev")
 class phantom_pulse:
     """
     #version 330 core

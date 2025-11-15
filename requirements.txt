@@ -34,3 +34,6 @@ mypy # types-requests # for mypy to check requests library
 
 # ui tkinter
 customtkinter
+
+# image handling
+Pillow # image processing

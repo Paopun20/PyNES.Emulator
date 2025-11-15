@@ -1,6 +1,7 @@
 from __future__ import annotations, generator_stop
 
 import os
+from pdb import run
 from turtle import up
 
 if os.environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
@@ -13,7 +14,9 @@ import time
 from pathlib import Path
 from objects.shadercass import Shader
 
+from PIL import Image, ImageTk
 from tkinter import Tk, messagebox
+import tkinter as tk
 import customtkinter as ctk
 from customtkinter import filedialog, CTk
 
@@ -317,15 +320,6 @@ try:
 except Exception:
     pass
 
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("dark-blue")
-ctk_root: CTk = CTk()
-ctk_root.withdraw()
-try:
-    ctk_root.iconbitmap(str(icon_path))
-except Exception:
-    pass
-
 # ROM Load
 while True:
     if pygame.event.get(pygame.QUIT):
@@ -532,13 +526,25 @@ for thread in _thread_list:
         log.error(f"Thread {thread.name} failed to start: {e}")
 
 
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
 
 def mod_picker() -> None:
-    """Open a window for picking and applying shader mods."""
+    ctk_root: CTk = CTk()
+    ctk_root.withdraw()
+    try:
+        ctk_root.iconbitmap(str(icon_path))
+    except Exception:
+        pass
+
     mod_window = ctk.CTkToplevel(ctk_root)
     mod_window.title("Shader Picker")
-    mod_window.geometry("400x300")
-    mod_window.grab_set()  # Make it a modal window
+    mod_window.geometry("500x400")
+    mod_window.grab_set()
+    mod_window.resizable(False, False)
+    mod_window.protocol("WM_DELETE_WINDOW", mod_window.destroy)
+    mod_window.protocol("WM_TRANSIENT_FOR", ctk_root)
+    mod_window.transient(ctk_root)
 
     # Get all shader files
     shader_path = Path("assets") / "shaders"
@@ -609,10 +615,11 @@ def mod_picker() -> None:
     scroll_frame.pack(pady=10, padx=10, fill="both", expand=True)
 
     # Add shader buttons
-    for shader_name, shader_obj in shader_list:
+    for _, shader_obj in shader_list:
         btn = ctk.CTkButton(
             scroll_frame, 
-            text=shader_name, 
+            text=f"{shader_obj.name.replace('_', ' ').title()} by {shader_obj.artist}\n{shader_obj._description}",
+            compound="left",
             command=lambda s=shader_obj: apply_shader(s)
         )
         btn.pack(pady=5, fill="x", padx=5)
@@ -670,7 +677,9 @@ while running:
                 start_time = time.time()
             elif event.key == pygame.K_m:
                 log.info("Opening shader picker")
+                run_event.clear()  # pause the main thread
                 mod_picker()
+                run_event.set()  # resume normal execution
 
     if frame_ready:
         with frame_lock:
@@ -768,4 +777,5 @@ else:
 
 pygame.quit()
 log.info("Pygame: Shutting down")
+
 exit(0)

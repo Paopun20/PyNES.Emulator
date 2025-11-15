@@ -1,6 +1,6 @@
 from objects.shadercass import Shader
 
-@Shader("Funny wobbly shader using screen resolution to scale effects.")
+@Shader("Funny wobbly shader using screen resolution to scale effects.", "Paopaodev")
 class funny_wobble:
     """
     #version 330 core

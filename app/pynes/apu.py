@@ -18,6 +18,8 @@ class APU:
         # Create a sound channel for continuous playback
         self.channel = mixer.Channel(0)
         self.audio_buffer = np.zeros(buffer_size, dtype=np.int16)
+        # Preallocate stereo buffer to avoid repeated allocations
+        self.stereo_buffer = np.empty((buffer_size, 2), dtype=np.int16)
         self.buffer_position = 0
 
         # === Timing ===
@@ -573,15 +575,14 @@ class APU:
 
     def play_buffer(self):
         """Send audio buffer to Pygame mixer"""
-        stereo_buffer = np.column_stack(
-            (self.audio_buffer, self.audio_buffer)
-        )  # duplicate mono to L/R
-        sound = pygame.sndarray.make_sound(stereo_buffer)
+        # copy mono channel into preallocated stereo buffer (L/R)
+        self.stereo_buffer[:, 0] = self.audio_buffer
+        self.stereo_buffer[:, 1] = self.audio_buffer
 
-        if not self.channel.get_busy():
-            self.channel.play(sound)
-        else:
-            self.channel.play(sound)
+        # Make a temporary copy for pygame (pygame may keep its own reference)
+        # This reduces allocations compared to column_stack for each buffer.
+        sound = pygame.sndarray.make_sound(self.stereo_buffer.copy())
+        self.channel.play(sound)
 
     def reset(self):
         """Reset APU state"""

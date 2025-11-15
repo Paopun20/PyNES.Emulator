@@ -213,11 +213,13 @@ class Shader:
     def __init__(
         self,
         description: Optional[str] = "",
+        artist: Optional[str] = "Unknown",
         shader_type: Optional[ShaderType] = None,
         validate: bool = True,
         strip_comments: bool = True
     ):
         self._description: Final[str] = description or ""
+        self._artist: Final[str] = artist or "Unknown"
         self._shader_type: Optional[ShaderType] = shader_type
         self._validate_code: Final[bool] = validate
         self._strip_comments: Final[bool] = strip_comments
@@ -412,6 +414,13 @@ class Shader:
     @property
     def code(self) -> str:
         return self._code
+
+    @property
+    def artist(self) -> str:
+        return self._artist
+    
+    def description(self) -> str:
+        return self._description
 
     @property
     def original_code(self) -> str:

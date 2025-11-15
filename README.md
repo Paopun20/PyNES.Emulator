@@ -41,10 +41,11 @@ including the integration of Cython for critical components.
 - **PPU Emulation**: Basic PPU functionality for rendering graphics ( BUG ).
 - **APU Emulation**: Basic sound emulation ( WIP ).
 - **Input Emulation**: Keyboard support.
-- **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), I can support all of them but I recommended to use Xbox controller)
+- **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), I can support all of them but I recommended to use Xbox controller).
 - **ROM Loading**: Supports `.nes` ROM files.
 - **Debugging**: Basic FPS and CPU register display.
 - **Discord Rich Presence**: Support for displaying current game activity on Discord.
+- **Mod Support**: Basic support for applying graphical shaders.
 
 ## Planned Features
 

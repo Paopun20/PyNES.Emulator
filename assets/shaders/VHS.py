@@ -1,6 +1,6 @@
 from objects.shadercass import Shader
 
-@Shader("A VHS-like shader with various distortions and effects.")
+@Shader("A VHS-like shader with various distortions and effects.", "Paopaodev")
 class VHS:
     """
     #version 430

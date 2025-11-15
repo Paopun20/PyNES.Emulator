@@ -1,6 +1,6 @@
 from objects.shadercass import Shader
 
-@Shader("Jello Madness shader: everything wobbles, stretches, and spins in rainbow chaos.")
+@Shader("Jello Madness shader: everything wobbles, stretches, and spins in rainbow chaos.", "Paopaodev")
 class jello_madness:
     """
     #version 330 core

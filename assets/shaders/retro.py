@@ -1,6 +1,6 @@
 from objects.shadercass import Shader
 
-@Shader("A retro CRT-like shader with scanlines, curvature, and chromatic aberration.")
+@Shader("A retro CRT-like shader with scanlines, curvature, and chromatic aberration.", "Paopaodev")
 class retro:
     """
     #version 330 core
