@@ -13,7 +13,7 @@ A NES (Nintendo Entertainment System) emulator written in Python, Cython and Rus
 ## Accuracy (may be outdated)
 
 <div style="display: flex; gap: 10px;">
-    <img src="./assets/screenshot/testshot 2025-10-31 200135.png" width="480" alt="PyNES Emulator Screenshot it take ⁓9 minutes to run all test results. It's not 100% accurate yet, but it's getting there!"/>
+    <img src="./docs/screenshot/testshot 2025-10-31 200135.png" width="480" alt="PyNES Emulator Screenshot it take ⁓9 minutes to run all test results. It's not 100% accurate yet, but it's getting there!"/>
 </div>
 
 Not suitable for speedrunning at this time—please wait for future updates before using PyNES for these purposes.

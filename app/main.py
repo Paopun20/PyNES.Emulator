@@ -1,15 +1,21 @@
 from __future__ import annotations, generator_stop
 
 import os
+from turtle import up
 
 if os.environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
     os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
 import sys
+import importlib.util
 import threading
 import time
 from pathlib import Path
-from tkinter import Tk, filedialog, messagebox
+from objects.shadercass import Shader
+
+from tkinter import Tk, messagebox
+import customtkinter as ctk
+from customtkinter import filedialog, CTk
 
 import numpy as np
 import pygame
@@ -27,14 +33,13 @@ from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
 from objects.RenderSprite import RenderSprite
 from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE
-from api.discord import Presence  # type: ignore
+from api.discord import Presence
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
 from pypresence.types import ActivityType, StatusDisplayType
 from logger import log, debug_mode, console
 from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
-from shaders.jello_madness import jello_madness as test_shader
 
 install(console=console)  # make coooooooooooooooooool error output
 
@@ -94,7 +99,7 @@ if "--realdebug" in sys.argv and debug_mode:
     threading.settrace_all_threads(threadProfile)
 
 log.info("Starting Discord presence")
-presence: Presence = Presence(1429842237432266752)
+presence: Presence = Presence(1429842237432266752, update_interval=1)
 presence.connect()
 
 NES_WIDTH: int = 256
@@ -287,7 +292,7 @@ sprite: RenderSprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, sca
 # Create debug overlay
 debug_overlay: DebugOverlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
-sprite.set_fragment_shader(test_shader)  # lol
+# sprite.set_fragment_shader(test_shader)  # lol
 
 clock: pygame.time.Clock = pygame.time.Clock()
 
@@ -312,6 +317,15 @@ try:
 except Exception:
     pass
 
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
+ctk_root: CTk = CTk()
+ctk_root.withdraw()
+try:
+    ctk_root.iconbitmap(str(icon_path))
+except Exception:
+    pass
+
 # ROM Load
 while True:
     if pygame.event.get(pygame.QUIT):
@@ -319,7 +333,7 @@ while True:
         exit(0)
 
     nes_path: str = filedialog.askopenfilename(
-        title="Select a NES file", filetypes=[("NES file", "*.nes")]
+        title="Select a NES file", filetypes=[("NES file", "*.nes"), ("All files", "*.*")]
     )
     if nes_path:
         if not nes_path.endswith(".nes"):
@@ -387,12 +401,12 @@ def draw_debug_overlay() -> None:
                 f"NES File: {Path(nes_path).name}",
                 f"ROM Header: {nes_emu.cartridge.HeaderedROM[:0x10]}",
                 "",
-                f"EMU runtime: {(time.time() - start_time):.2f}s",
+                f"EMU runtime: {(time.time() - start_time):.2f}s ({hex(int(time.time() - start_time))})",
                 f"IRL estimate: {((time.time() - start_time) * (1 / all_clock)):.2f}s",
                 f"CPU Halted: {nes_emu.Architrcture.Halted}",
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
-                f"PC: ${nes_emu.Architrcture.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
+                f"PC: ${nes_emu.Architrcture.ProgramCounter:04X} ({nes_emu.Architrcture.ProgramCounter}) | Cycles: {nes_emu.cycles}",
                 f"A: ${nes_emu.Architrcture.A:02X} X: ${nes_emu.Architrcture.X:02X} Y: ${nes_emu.Architrcture.Y:02X}",
                 f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
                 f"{'V' if nes_emu.flag.Overflow else '-'}"
@@ -517,6 +531,104 @@ for thread in _thread_list:
     except threading.ThreadError as e:
         log.error(f"Thread {thread.name} failed to start: {e}")
 
+
+
+def mod_picker() -> None:
+    """Open a window for picking and applying shader mods."""
+    mod_window = ctk.CTkToplevel(ctk_root)
+    mod_window.title("Shader Picker")
+    mod_window.geometry("400x300")
+    mod_window.grab_set()  # Make it a modal window
+
+    # Get all shader files
+    shader_path = Path("assets") / "shaders"
+    if not shader_path.exists():
+        log.error("Shaders directory not found")
+        mod_window.destroy()
+        return
+    
+    shader_files = [f for f in shader_path.glob("*.py") if f.name != "__init__.py"]
+    shader_list: List[Tuple[str, Shader]] = []
+    
+    for shader_file in shader_files:
+        module_name = shader_file.stem
+        try:
+            # Load the module from file path directly
+            spec = importlib.util.spec_from_file_location(module_name, shader_file)
+            if spec is None or spec.loader is None:
+                log.error(f"Failed to load spec for {module_name}")
+                continue
+                
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            
+            # Look for Shader class instances in the module
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                # Check if it's a Shader instance (not the class itself)
+                if isinstance(attr, Shader) and attr_name != "DEFAULT_FRAGMENT_SHADER":
+                    shader_list.append((attr.name, attr))
+                    log.debug(f"Loaded shader: {attr.name} from {module_name}")
+                    break
+        except Exception as e:
+            log.error(f"Failed to load shader module '{module_name}': {e}")
+            continue
+
+    if not shader_list:
+        log.warning("No shaders found")
+        label = ctk.CTkLabel(mod_window, text="No shaders available")
+        label.pack(pady=20)
+        close_btn = ctk.CTkButton(mod_window, text="Close", command=mod_window.destroy)
+        close_btn.pack(pady=10)
+        mod_window.wait_window()
+        return
+
+    def apply_shader(selected_shader: Shader) -> None:
+        """Apply the selected shader and close the window."""
+        try:
+            sprite.set_fragment_shader(selected_shader)
+            log.info(f"Applied shader: {selected_shader.name}")
+        except Exception as e:
+            log.error(f"Failed to apply shader: {e}")
+        finally:
+            mod_window.destroy()
+
+    def reset_shader() -> None:
+        """Reset to default shader."""
+        try:
+            sprite.reset_fragment_shader()
+            log.info("Reset to default shader")
+        except Exception as e:
+            log.error(f"Failed to reset shader: {e}")
+        finally:
+            mod_window.destroy()
+
+    # Create a scrollable frame for shader buttons
+    scroll_frame = ctk.CTkScrollableFrame(mod_window, width=380, height=200)
+    scroll_frame.pack(pady=10, padx=10, fill="both", expand=True)
+
+    # Add shader buttons
+    for shader_name, shader_obj in shader_list:
+        btn = ctk.CTkButton(
+            scroll_frame, 
+            text=shader_name, 
+            command=lambda s=shader_obj: apply_shader(s)
+        )
+        btn.pack(pady=5, fill="x", padx=5)
+
+    # Add reset button at the bottom
+    reset_btn = ctk.CTkButton(
+        mod_window, 
+        text="Reset to Default", 
+        command=reset_shader,
+        fg_color="gray30",
+        hover_color="gray40"
+    )
+    reset_btn.pack(pady=10, padx=10, fill="x")
+
+    mod_window.wait_window()  # Wait until the mod_window is closed
+
 while running:
     events: List[pygame.event.Event] = pygame.event.get()
     controller.update(events)
@@ -530,6 +642,8 @@ while running:
             break
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                run_event.clear()
+                paused = True
                 running = False
             elif event.key == pygame.K_p:
                 paused = not paused
@@ -554,6 +668,9 @@ while running:
                 nes_emu.Reset()
                 frame_count = 0
                 start_time = time.time()
+            elif event.key == pygame.K_m:
+                log.info("Opening shader picker")
+                mod_picker()
 
     if frame_ready:
         with frame_lock:

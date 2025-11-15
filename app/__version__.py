@@ -1,1 +1,1 @@
-__version__ = "(DEV BUILD)"
+__version__: str = "0.0.0.dev0"

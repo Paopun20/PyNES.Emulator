@@ -2,8 +2,8 @@ from __future__ import annotations
 import moderngl
 import numpy as np
 from numpy.typing import NDArray
-from typing import Any, Final, TypeAlias
-from objects.shadercass import Shader
+from typing import Any, Final, TypeAlias, List, Tuple
+from objects.shadercass import Shader, ShaderVariable
 from logger import log
 
 # --- Shader defaults ---
@@ -53,6 +53,7 @@ class RenderSprite:
         self.scale: int = scale
         self.W: int = width * scale
         self.H: int = height * scale
+        self._shclass: Shader = DEFAULT_FRAGMENT_SHADER
 
         self.fragment_shader: str = DEFAULT_FRAGMENT_SHADER.code
         self.program: moderngl.Program = ctx.program(vertex_shader=VERTEX_SHADER, fragment_shader=self.fragment_shader)
@@ -91,7 +92,7 @@ class RenderSprite:
         self.texture: moderngl.Texture = ctx.texture(
             (width, height), 3, data=np.zeros((height, width, 3), dtype=np.uint8).tobytes()
         )
-        self.texture.filter: tuple[Any, Any] = (moderngl.NEAREST, moderngl.NEAREST)
+        self.texture.filter: Tuple[Any, Any] = (moderngl.NEAREST, moderngl.NEAREST)
 
     def update_frame(self, frame: NDArray[np.uint8]) -> None:
         """Upload frame (h,w,3 uint8) to GPU."""
@@ -115,6 +116,7 @@ class RenderSprite:
             self.program = new_program
             self.vao = new_vao
             self.fragment_shader = new_shader
+            self._shclass = shadercass
 
         except moderngl.Error as e:
             log.error(f"Failed to compile fragment shader:\n{str(shadercass.code)}")
@@ -123,6 +125,18 @@ class RenderSprite:
             self.program = old_program
             self.vao = old_vao
             self.fragment_shader = old_shader
+
+    def get_current_shader_name(self) -> str:
+        """Get the name of the current shader."""
+        return self._shclass.name
+    
+    def get_current_shader_config(self) -> List[ShaderVariable]:
+        """Get the configuration of the current shader."""
+        return self._shclass.uniforms
+
+    def reset_fragment_shader(self) -> None:
+        """Reset to the default fragment shader."""
+        self.set_fragment_shader(DEFAULT_FRAGMENT_SHADER)
 
     def set_uniform(
         self, name: str, value: float | int | vec2 | vec3 | vec4 | mat2 | mat3 | mat4 | sampler2D | sampler3D

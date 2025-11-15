@@ -31,3 +31,6 @@ pywin32;platform_system=="Windows" # Windows API
 
 # type checking
 mypy # types-requests # for mypy to check requests library
+
+# ui tkinter
+customtkinter

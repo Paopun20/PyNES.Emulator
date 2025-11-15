@@ -143,4 +143,5 @@ jobs:
           path: |
             dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
             app/icon.ico
+            assets/*
           retention-days: 90
