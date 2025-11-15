@@ -32,7 +32,7 @@ from pypresence.types import ActivityType, StatusDisplayType
 from logger import log, debug_mode, console
 from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
-from shaders.VHS import VHS as test_shader
+from shaders.jello_madness import jello_madness as test_shader
 
 install(console=console)  # make coooooooooooooooooool error output
 
@@ -274,7 +274,7 @@ sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 # Create debug overlay
 debug_overlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
-# sprite.set_fragment_shader(test_shader)  # lol
+sprite.set_fragment_shader(test_shader)  # lol
 
 clock = pygame.time.Clock()
 
@@ -543,7 +543,7 @@ while running:
             frame_ready = False
 
     try:
-        sprite.set_fragment_config("u_time", os.times().system.real)
+        sprite.set_uniform("u_time", frame_ui / 60.0)
     except Exception:
         pass
 

@@ -2,10 +2,9 @@ from __future__ import annotations
 import moderngl
 import numpy as np
 from numpy.typing import NDArray
-from typing import Final, TypeAlias
+from typing import Any, Final, TypeAlias
 from objects.shader_class import Shader
 from logger import log
-from enum import Enum
 
 # --- Shader defaults ---
 DEFAULT_FRAGMENT_SHADER: Final[str] = """
@@ -42,8 +41,6 @@ mat4: TypeAlias = NDArray[np.float32]  # shape (4,4)
 sampler2D: TypeAlias = int
 sampler3D: TypeAlias = int
 
-uniformType: TypeAlias = float | int | vec2 | vec3 | vec4 | mat2 | mat3 | mat4 | sampler2D | sampler3D
-
 
 # --- Renderer class ---
 class RenderSprite:
@@ -59,7 +56,7 @@ class RenderSprite:
         self.program: moderngl.Program = ctx.program(vertex_shader=VERTEX_SHADER, fragment_shader=self.fragment_shader)
 
         # Create quad geometry
-        vertices = np.array(
+        vertices: NDArray[np.float32] = np.array(
             [
                 0,
                 0,
@@ -80,15 +77,19 @@ class RenderSprite:
             ],
             dtype="f4",
         )
-        indices = np.array([0, 1, 2, 2, 3, 0], dtype="i4")
+        indices: NDArray[np.int32] = np.array([0, 1, 2, 2, 3, 0], dtype="i4")
 
-        self.vbo = ctx.buffer(vertices.tobytes())
-        self.ibo = ctx.buffer(indices.tobytes())
-        self.vao = ctx.vertex_array(self.program, [(self.vbo, "2f 2f", "a_pos", "a_uv")], index_buffer=self.ibo)
+        self.vbo: moderngl.Buffer = ctx.buffer(vertices.tobytes())
+        self.ibo: moderngl.Buffer = ctx.buffer(indices.tobytes())
+        self.vao: moderngl.VertexArray = ctx.vertex_array(
+            self.program, [(self.vbo, "2f 2f", "a_pos", "a_uv")], index_buffer=self.ibo
+        )
 
         # Create blank texture
-        self.texture = ctx.texture((width, height), 3, data=np.zeros((height, width, 3), dtype=np.uint8).tobytes())
-        self.texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+        self.texture: moderngl.Texture = ctx.texture(
+            (width, height), 3, data=np.zeros((height, width, 3), dtype=np.uint8).tobytes()
+        )
+        self.texture.filter: tuple[Any, Any] = (moderngl.NEAREST, moderngl.NEAREST)
 
     def update_frame(self, frame: NDArray[np.uint8]) -> None:
         """Upload frame (h,w,3 uint8) to GPU."""
@@ -116,17 +117,21 @@ class RenderSprite:
         except moderngl.Error as e:
             log.error(f"Failed to compile fragment shader:\n{str(shader_class.code)}")
             log.error(f"Error:\n{e}")
-            log.error(f"Reverting to previous shader.\nPrevious shader code:\n{old_shader}")
+            log.error("Reverting to previous shader.\nPrevious shader.")
             self.program = old_program
             self.vao = old_vao
             self.fragment_shader = old_shader
 
-    def set_uniform(self, name: str, value: uniformType) -> None:
+    def set_uniform(
+        self, name: str, value: float | int | vec2 | vec3 | vec4 | mat2 | mat3 | mat4 | sampler2D | sampler3D
+    ) -> None:
         """Set a uniform in the current shader."""
         if name not in self.program:
             log.warning(f"Uniform {name} not found in shader, ignoring.")
             return
-        if isinstance(value, uniformType):
+
+        # Fixed: Check for actual types instead of type aliases
+        if isinstance(value, (float, int, np.ndarray)):
             self.program[name] = value
         else:
             log.error(f"Invalid uniform type: {type(value)}")
@@ -143,16 +148,40 @@ class RenderSprite:
             log.error("VAO is None")
             return
 
-        self.program["u_scale"].value = (self.W, self.H)
-        self.texture.use(location=0)
+        if "u_resolution" in self.program:
+            self.program["u_resolution"].value = (self.W, self.H)
+
+        if "u_scale" in self.program:
+            self.program["u_scale"].value = (self.width, self.height)
+
         if "u_tex" in self.program:
             self.program["u_tex"].value = 0
+
+        self.texture.use(location=0)
         self.vao.render()
+    
+    def export(self) -> NDArray[np.uint8]:
+        """Export the current frame buffer as a NumPy array."""
+        # The rendered output is in ctx.screen, not in the texture attachment
+        data = self.ctx.screen.read(components=3, dtype="f1")
+
+        # Convert bytes to NumPy array and reshape
+        frame = np.frombuffer(data, dtype=np.uint8).reshape(self.H, self.W, 3)
+        
+        # Flip vertically because OpenGL coordinates are bottom-up
+        frame = np.flipud(frame)
+        
+        return frame
 
     def destroy(self) -> None:
         """Release all GPU resources."""
-        self.vao.release()
-        self.vbo.release()
-        self.ibo.release()
-        self.texture.release()
-        self.program.release()
+        if hasattr(self, 'vao') and self.vao:
+            self.vao.release()
+        if hasattr(self, 'vbo') and self.vbo:
+            self.vbo.release()
+        if hasattr(self, 'ibo') and self.ibo:
+            self.ibo.release()
+        if hasattr(self, 'texture') and self.texture:
+            self.texture.release()
+        if hasattr(self, 'program') and self.program:
+            self.program.release()

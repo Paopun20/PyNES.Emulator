@@ -1,3 +1,4 @@
+from __future__ import annotations, print_function, division
 import array
 
 # debugger
@@ -5,7 +6,7 @@ import time  # for fps
 from collections import deque
 from dataclasses import dataclass
 from string import Template
-from typing import Dict, List, Final, TypedDict, Union, Callable, Any
+from typing import Dict, List, Final, Callable, Any, Optional
 from numpy.typing import NDArray
 from pynes.apu import APU
 from pynes.cartridge import Cartridge
@@ -188,7 +189,8 @@ class Sprite:
     attr: int = 0
 
 
-class PPUPendingWrites(TypedDict):
+@dataclass
+class PPUPendingWrites:
     reg: int
     value: int
     remaining_ppu_cycles: int
@@ -201,7 +203,7 @@ class Emulator:
 
     def __init__(self) -> None:
         # CPU initialization
-        self.cartridge: Cartridge | None = None
+        self.cartridge: Optional[Cartridge] = None
         self._events: Dict[str, List[Callable[..., None]]] = {}
         self.apu: APU = APU(sample_rate=44100, buffer_size=1024)
         self.RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
@@ -366,14 +368,6 @@ class Emulator:
         if time.time() - self.ppu_bus_latch_time > 0.9:
             self.ppu_bus_latch = 0
 
-        # Unmapped region ($4018-$7FFF)
-        elif addr < 0x8000:
-            self._emit("onDummyRead", addr)
-            # If the instruction is absolute, the high byte of the address is placed on the data bus
-            if self.Architrcture.current_instruction_mode == CIM.Absolute:
-                self.dataBus = (addr >> 8) & 0xFF
-            return self.dataBus
-
         return 0  # R1710
 
     def Write(self, Address: int, Value: int) -> None:
@@ -387,7 +381,7 @@ class Emulator:
             self.RAM[addr & 0x07FF] = val
 
         # PPU registers ($2000-$3FFF)
-        elif addr < 0x4000:
+        if addr < 0x4000:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
 
         # APU / Controller ($4000-$4017)
@@ -521,17 +515,17 @@ class Emulator:
 
         # decrement remaining cycles for all pending entries
         for entry in self._ppu_pending_writes:
-            entry["remaining_ppu_cycles"] -= 1
+            entry.remaining_ppu_cycles -= 1
 
         # collect entries ready to apply (remaining <= 0)
-        ready = [e for e in self._ppu_pending_writes if e["remaining_ppu_cycles"] <= 0]
+        ready = [e for e in self._ppu_pending_writes if e.remaining_ppu_cycles <= 0]
         # keep rest
-        self._ppu_pending_writes = [e for e in self._ppu_pending_writes if e["remaining_ppu_cycles"] > 0]
+        self._ppu_pending_writes = [e for e in self._ppu_pending_writes if e.remaining_ppu_cycles > 0]
 
         # apply ready writes in order they were queued (FIFO)
         for entry in ready:
-            reg = entry["reg"]
-            val = entry["value"] & 0xFF
+            reg = entry.reg
+            val = entry.value & 0xFF
             # apply the same logic that was in WritePPURegister for immediate case
             # but *without* enqueueing again.
             if reg == 0x00:
@@ -2000,6 +1994,8 @@ class Emulator:
             # UNOFFICIAL/ILLEGAL OPCODES - DCP (DEC + CMP)
             case 0xC3 | 0xC7 | 0xCF | 0xD3 | 0xD7 | 0xDB | 0xDF:
                 """DCP - Decrement memory, then compare with accumulator"""
+                value = 0
+
                 if self.Architrcture.OpCode == 0xC3:  # DCP (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     orig = self.Read(self.addressBus)
