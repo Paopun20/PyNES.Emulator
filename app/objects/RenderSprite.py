@@ -3,11 +3,11 @@ import moderngl
 import numpy as np
 from numpy.typing import NDArray
 from typing import Any, Final, TypeAlias, List, Tuple
-from objects.shadercass import Shader, ShaderVariable
+from objects.shadercass import Shader, ShaderVariable, ShaderType
 from logger import log
 
 # --- Shader defaults ---
-@Shader("Default fragment shader")
+@Shader("Default fragment shader for rendering", "Build-in Shader", ShaderType.FRAGMENT)
 class DEFAULT_FRAGMENT_SHADER:
     """
     #version 330
@@ -27,7 +27,7 @@ out vec2 v_uv;
 uniform vec2 u_resolution;
 void main() {
     vec2 ndc = (a_pos / u_resolution) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
+    ndc.y = -ndc.y; // Flip Y axis for ModernGL
     gl_Position = vec4(ndc, 0.0, 1.0);
     v_uv = a_uv;
 }
@@ -92,7 +92,7 @@ class RenderSprite:
         self.texture: moderngl.Texture = ctx.texture(
             (width, height), 3, data=np.zeros((height, width, 3), dtype=np.uint8).tobytes()
         )
-        self.texture.filter: Tuple[Any, Any] = (moderngl.NEAREST, moderngl.NEAREST)
+        self.texture.filter: Tuple[int, int] = (moderngl.NEAREST, moderngl.NEAREST)
 
     def update_frame(self, frame: NDArray[np.uint8]) -> None:
         """Upload frame (h,w,3 uint8) to GPU."""
@@ -104,6 +104,10 @@ class RenderSprite:
         old_program = self.program
         old_vao = self.vao
         old_shader = self.fragment_shader
+
+        if shadercass.shader_type != ShaderType.FRAGMENT:
+            log.error("Provided shader is not a fragment shader. Aborting shader change.")
+            return
 
         try:
             new_shader = str(shadercass.code)
@@ -129,7 +133,7 @@ class RenderSprite:
     def get_current_shader_name(self) -> str:
         """Get the name of the current shader."""
         return self._shclass.name
-    
+
     def get_current_shader_config(self) -> List[ShaderVariable]:
         """Get the configuration of the current shader."""
         return self._shclass.uniforms
@@ -172,7 +176,7 @@ class RenderSprite:
 
         self.texture.use(location=0)
         self.vao.render()
-    
+
     def export(self) -> NDArray[np.uint8]:
         """Export the current frame buffer as a NumPy array."""
         # The rendered output is in ctx.screen, not in the texture attachment
@@ -180,10 +184,10 @@ class RenderSprite:
 
         # Convert bytes to NumPy array and reshape
         frame = np.frombuffer(data, dtype=np.uint8).reshape(self.H, self.W, 3)
-        
+
         # Flip vertically because OpenGL coordinates are bottom-up
         frame = np.flipud(frame)
-        
+
         return frame
 
     def destroy(self) -> None:

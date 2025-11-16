@@ -45,7 +45,11 @@ including the integration of Cython for critical components.
 - **ROM Loading**: Supports `.nes` ROM files.
 - **Debugging**: Basic FPS and CPU register display.
 - **Discord Rich Presence**: Support for displaying current game activity on Discord.
-- **Mod Support**: Basic support for applying graphical shaders.
+- **Fun Settings**: Various fun settings like color filters and screen effects.
+
+## Fun Settings
+
+- **Shader Mod Support**: Apply custom shaders to the display for various visual effects. (not effects, just shaders, not accurate like real NES hardware (but you can make your own shader))
 
 ## Planned Features
 
@@ -59,7 +63,6 @@ including the integration of Cython for critical components.
 - **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
 - **Cross-Platform Support**: Ensure compatibility across Windows, macOS, and Linux.
 - **Multiplayer Support**: Implement support for multiple controllers for two-player games.
-- **Fun Settings**: Add features like cheat codes, graphical filters, and custom key mappings.
 - **Documentation**: Improve documentation for users and developers.
 - **Add more Rust components**: Move more performance-critical parts to Rust for better speed. (You can help me with this if you know Rust language).
 

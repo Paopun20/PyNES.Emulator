@@ -1,126 +1,66 @@
-import cython
+from typing import Dict, List, Optional, Any
 import numpy as np
+import numpy.typing as npt
 import pygame
 from pygame import mixer
 
 
-@cython.cclass
 class APU:
-    def __init__(self, sample_rate=44100, buffer_size=1024):
+    def __init__(self, sample_rate: int = 44100, buffer_size: int = 1024) -> None:
         # === Pygame mixer setup ===
-        self.sample_rate = sample_rate
-        self.buffer_size = buffer_size
+        self.sample_rate: int = sample_rate
+        self.buffer_size: int = buffer_size
 
         # Initialize pygame mixer if not already initialized
         if not mixer.get_init():
             mixer.init(frequency=sample_rate, size=-16, channels=1, buffer=buffer_size)
 
         # Create a sound channel for continuous playback
-        self.channel = mixer.Channel(0)
-        self.audio_buffer = np.zeros(buffer_size, dtype=np.int16)
+        self.channel: pygame.mixer.Channel = mixer.Channel(0)
+        self.audio_buffer: npt.NDArray[np.int16] = np.zeros(buffer_size, dtype=np.int16)
         # Preallocate stereo buffer to avoid repeated allocations
-        self.stereo_buffer = np.empty((buffer_size, 2), dtype=np.int16)
-        self.buffer_position = 0
+        self.stereo_buffer: npt.NDArray[np.int16] = np.empty((buffer_size, 2), dtype=np.int16)
+        self.buffer_position: int = 0
 
         # === Timing ===
-        self.cpu_clock = 1789773
-        self.cycle_counter = 0
-        self.cycles_per_sample = self.cpu_clock / self.sample_rate
+        self.cpu_clock: int = 1789773
+        self.cycle_counter: float = 0.0
+        self.cycles_per_sample: float = self.cpu_clock / self.sample_rate
 
         # === Channels ===
-        self.pulse1 = self._init_pulse()
-        self.pulse2 = self._init_pulse()
-        self.triangle = self._init_triangle()
-        self.noise = self._init_noise()
-        self.dmc = self._init_dmc()
+        self.pulse1: Dict[str, Any] = self._init_pulse()
+        self.pulse2: Dict[str, Any] = self._init_pulse()
+        self.triangle: Dict[str, Any] = self._init_triangle()
+        self.noise: Dict[str, Any] = self._init_noise()
+        self.dmc: Dict[str, Any] = self._init_dmc()
 
         # === Lookup tables ===
-        self.duty_patterns = [
+        self.duty_patterns: List[List[int]] = [
             [0, 1, 0, 0, 0, 0, 0, 0],  # 12.5%
             [0, 1, 1, 0, 0, 0, 0, 0],  # 25%
             [0, 1, 1, 1, 1, 0, 0, 0],  # 50%
             [1, 0, 0, 1, 1, 1, 1, 1],  # 25% negated
         ]
-        self.triangle_sequence = list(range(15, -1, -1)) + list(range(0, 16))
-        self.noise_periods = [
-            4,
-            8,
-            16,
-            32,
-            64,
-            96,
-            128,
-            160,
-            202,
-            254,
-            380,
-            508,
-            762,
-            1016,
-            2034,
-            4068,
+        self.triangle_sequence: List[int] = list(range(15, -1, -1)) + list(range(0, 16))
+        self.noise_periods: List[int] = [
+            4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
         ]
-        self.dmc_periods = [
-            428,
-            380,
-            340,
-            320,
-            286,
-            254,
-            226,
-            214,
-            190,
-            160,
-            142,
-            128,
-            106,
-            84,
-            72,
-            54,
+        self.dmc_periods: List[int] = [
+            428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
         ]
-        self.length_table = [
-            10,
-            254,
-            20,
-            2,
-            40,
-            4,
-            80,
-            6,
-            160,
-            8,
-            60,
-            10,
-            14,
-            12,
-            26,
-            14,
-            12,
-            16,
-            24,
-            18,
-            48,
-            20,
-            96,
-            22,
-            192,
-            24,
-            72,
-            26,
-            16,
-            28,
-            32,
-            30,
+        self.length_table: List[int] = [
+            10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
+            12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
         ]
 
         # === Frame counter & IRQ ===
-        self.frame_counter = 0
-        self.frame_mode = 0  # 0=4-step, 1=5-step
-        self.frame_irq_inhibit = False
-        self.frame_irq = False
-        self.dmc_irq = False
+        self.frame_counter: int = 0
+        self.frame_mode: int = 0  # 0=4-step, 1=5-step
+        self.frame_irq_inhibit: bool = False
+        self.frame_irq: bool = False
+        self.dmc_irq: bool = False
 
-    def _init_pulse(self):
+    def _init_pulse(self) -> Dict[str, Any]:
         return {
             "enabled": False,
             "duty": 0,
@@ -140,7 +80,7 @@ class APU:
             "length_halt": False,
         }
 
-    def _init_triangle(self):
+    def _init_triangle(self) -> Dict[str, Any]:
         return {
             "enabled": False,
             "length_counter": 0,
@@ -152,7 +92,7 @@ class APU:
             "length_halt": False,
         }
 
-    def _init_noise(self):
+    def _init_noise(self) -> Dict[str, Any]:
         return {
             "enabled": False,
             "length_counter": 0,
@@ -167,7 +107,7 @@ class APU:
             "length_halt": False,
         }
 
-    def _init_dmc(self):
+    def _init_dmc(self) -> Dict[str, Any]:
         return {
             "enabled": False,
             "value": 0,
@@ -185,7 +125,7 @@ class APU:
             "buffer": None,
         }
 
-    def write_register(self, addr, val):
+    def write_register(self, addr: int, val: int) -> None:
         val &= 0xFF
 
         # Pulse 1
@@ -308,7 +248,7 @@ class APU:
                 self.frame_irq = False
             self.frame_counter = 0
 
-    def read_register(self, addr):
+    def read_register(self, addr: int) -> int:
         if addr == 0x4015:
             status = 0
             if self.pulse1["length_counter"] > 0:
@@ -329,7 +269,7 @@ class APU:
             return status
         return 0x00
 
-    def clock_frame_counter(self):
+    def clock_frame_counter(self) -> None:
         """Clock the frame counter and handle envelope/linear/length updates"""
         self.frame_counter += 1
 
@@ -352,7 +292,7 @@ class APU:
             if self.frame_counter >= 18640:
                 self.frame_counter = 0
 
-    def clock_envelopes(self):
+    def clock_envelopes(self) -> None:
         """Clock envelope generators for pulse and noise channels"""
         for ch in [self.pulse1, self.pulse2, self.noise]:
             if ch["envelope_divider"] == 0:
@@ -362,13 +302,13 @@ class APU:
             else:
                 ch["envelope_divider"] -= 1
 
-    def clock_length_counters(self):
+    def clock_length_counters(self) -> None:
         """Clock length counters for all channels"""
         for ch in [self.pulse1, self.pulse2, self.triangle, self.noise]:
             if ch["length_counter"] > 0 and not ch["length_halt"]:
                 ch["length_counter"] -= 1
 
-    def clock_sweeps(self):
+    def clock_sweeps(self) -> None:
         """Clock sweep units for pulse channels"""
         for ch in [self.pulse1, self.pulse2]:
             if (
@@ -389,7 +329,7 @@ class APU:
             else:
                 ch["sweep_divider"] -= 1
 
-    def calculate_sweep(self, ch):
+    def calculate_sweep(self, ch: Dict[str, Any]) -> int:
         """Calculate new period for sweep unit"""
         change = ch["timer_period"] >> ch["sweep_shift"]
         if ch["sweep_negate"]:
@@ -398,7 +338,7 @@ class APU:
                 change -= 1
         return (ch["timer_period"] + change) & 0x7FF
 
-    def clock_pulse(self, ch):
+    def clock_pulse(self, ch: Dict[str, Any]) -> None:
         """Clock pulse channel timer and sequencer"""
         if ch["timer"] == 0:
             ch["timer"] = ch["timer_period"]
@@ -406,7 +346,7 @@ class APU:
         else:
             ch["timer"] -= 1
 
-    def clock_triangle(self):
+    def clock_triangle(self) -> None:
         """Clock triangle channel"""
         if self.triangle["linear_reload"]:
             self.triangle["linear_counter"] = self.triangle["linear_counter"]
@@ -424,7 +364,7 @@ class APU:
         else:
             self.triangle["timer"] -= 1
 
-    def clock_noise(self):
+    def clock_noise(self) -> None:
         """Clock noise channel"""
         if self.noise["timer"] == 0:
             self.noise["timer"] = self.noise["timer_period"]
@@ -437,7 +377,7 @@ class APU:
         else:
             self.noise["timer"] -= 1
 
-    def clock_dmc(self):
+    def clock_dmc(self) -> None:
         """Clock DMC channel"""
         if self.dmc["timer"] == 0:
             self.dmc["timer"] = self.dmc["timer_period"]
@@ -479,13 +419,13 @@ class APU:
         else:
             self.dmc["timer"] -= 1
 
-    def start_dmc_sample(self):
+    def start_dmc_sample(self) -> None:
         """Start DMC sample playback"""
         self.dmc["current_address"] = self.dmc["sample_address"]
         self.dmc["current_length"] = self.dmc["sample_length"]
         self.dmc_irq = False
 
-    def get_pulse_output(self, ch):
+    def get_pulse_output(self, ch: Dict[str, Any]) -> int:
         """Get pulse channel output"""
         if (
             not ch["enabled"]
@@ -498,7 +438,7 @@ class APU:
             return 0
         return ch["volume"] if ch["constant_volume"] else ch["envelope_counter"]
 
-    def get_triangle_output(self):
+    def get_triangle_output(self) -> int:
         """Get triangle channel output"""
         if (
             not self.triangle["enabled"]
@@ -508,7 +448,7 @@ class APU:
             return 0
         return self.triangle_sequence[self.triangle["sequence_pos"]]
 
-    def get_noise_output(self):
+    def get_noise_output(self) -> int:
         """Get noise channel output"""
         if not self.noise["enabled"] or self.noise["length_counter"] == 0:
             return 0
@@ -520,11 +460,11 @@ class APU:
             else self.noise["envelope_counter"]
         )
 
-    def get_dmc_output(self):
+    def get_dmc_output(self) -> int:
         """Get DMC channel output"""
         return self.dmc["value"] if self.dmc["enabled"] else 0
 
-    def mix_audio(self):
+    def mix_audio(self) -> float:
         """Mix all channels using proper NES attenuation formulas"""
         pulse1 = self.get_pulse_output(self.pulse1)
         pulse2 = self.get_pulse_output(self.pulse2)
@@ -544,7 +484,7 @@ class APU:
 
         return (pulse_out + tnd_out) * 0.7  # Slight attenuation to prevent clipping
 
-    def step(self):
+    def step(self) -> None:
         """Step APU by one CPU cycle"""
         self.cycle_counter += 1
 
@@ -573,7 +513,7 @@ class APU:
                 self.play_buffer()
                 self.buffer_position = 0
 
-    def play_buffer(self):
+    def play_buffer(self) -> None:
         """Send audio buffer to Pygame mixer"""
         # copy mono channel into preallocated stereo buffer (L/R)
         self.stereo_buffer[:, 0] = self.audio_buffer
@@ -584,7 +524,7 @@ class APU:
         sound = pygame.sndarray.make_sound(self.stereo_buffer.copy())
         self.channel.play(sound)
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset APU state"""
         for ch in [self.pulse1, self.pulse2, self.triangle, self.noise, self.dmc]:
             if "enabled" in ch:
@@ -592,18 +532,18 @@ class APU:
             if "length_counter" in ch:
                 ch["length_counter"] = 0
         self.buffer_position = 0
-        self.cycle_counter = 0
+        self.cycle_counter = 0.0
         self.frame_counter = 0
         self.frame_irq = False
         self.dmc_irq = False
         self.audio_buffer.fill(0)
 
-    def close(self):
+    def close(self) -> None:
         """Clean up audio resources"""
         if self.channel.get_busy():
             self.channel.stop()
         mixer.quit()
 
-    def set_volume(self, volume):
+    def set_volume(self, volume: float) -> None:
         """Set audio volume (0.0 to 1.0)"""
         self.channel.set_volume(volume)

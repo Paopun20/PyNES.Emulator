@@ -543,7 +543,6 @@ def mod_picker() -> None:
     mod_window.grab_set()
     mod_window.resizable(False, False)
     mod_window.protocol("WM_DELETE_WINDOW", mod_window.destroy)
-    mod_window.protocol("WM_TRANSIENT_FOR", ctk_root)
     mod_window.transient(ctk_root)
 
     # Get all shader files

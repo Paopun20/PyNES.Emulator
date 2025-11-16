@@ -214,7 +214,7 @@ class Shader:
         self,
         description: Optional[str] = "",
         artist: Optional[str] = "Unknown",
-        shader_type: Optional[ShaderType] = None,
+        shader_type: Optional[ShaderType] = ShaderType.FRAGMENT,
         validate: bool = True,
         strip_comments: bool = True
     ):
@@ -262,7 +262,9 @@ class Shader:
         # Parse shader components
         self._uniforms = self._parse_variables(code, ShaderQualifier.UNIFORM)
         self._attributes = self._parse_variables(code, ShaderQualifier.ATTRIBUTE)
+        self._attributes.extend(self._parse_variables(code, ShaderQualifier.IN))
         self._varyings = self._parse_variables(code, ShaderQualifier.VARYING)
+        self._varyings.extend(self._parse_variables(code, ShaderQualifier.OUT))
         self._functions = self._parse_functions(code)
         
         # Validate if requested
@@ -276,12 +278,53 @@ class Shader:
         return self
 
     def _remove_comments(self, code: str) -> str:
-        """Remove C-style comments from code"""
-        # Remove multi-line comments
-        code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
-        # Remove single-line comments
-        code = re.sub(r"//.*", "", code)
-        return code
+        """Remove C-style comments from code while preserving string literals"""
+        result = []
+        i = 0
+        in_string = False
+        string_char = None
+        
+        while i < len(code):
+            # Handle string literals
+            if code[i] in ('"', "'") and (i == 0 or code[i-1] != '\\'):
+                if not in_string:
+                    in_string = True
+                    string_char = code[i]
+                elif code[i] == string_char:
+                    in_string = False
+                    string_char = None
+                result.append(code[i])
+                i += 1
+                continue
+            
+            if in_string:
+                result.append(code[i])
+                i += 1
+                continue
+            
+            # Handle multi-line comments
+            if i < len(code) - 1 and code[i:i+2] == '/*':
+                end = code.find('*/', i + 2)
+                if end != -1:
+                    i = end + 2
+                else:
+                    i = len(code)
+                continue
+            
+            # Handle single-line comments
+            if i < len(code) - 1 and code[i:i+2] == '//':
+                end = code.find('\n', i)
+                if end != -1:
+                    result.append('\n')
+                    i = end + 1
+                else:
+                    i = len(code)
+                continue
+            
+            result.append(code[i])
+            i += 1
+        
+        return ''.join(result)
 
     def _normalize_whitespace(self, code: str) -> str:
         """Normalize whitespace in code"""
@@ -302,12 +345,12 @@ class Shader:
         """Detect shader type from code content"""
         code_lower = code.lower()
         
-        # Check for shader-specific outputs/variables
-        if 'gl_position' in code_lower:
+        # Check for shader-specific outputs/variables (assignment only)
+        if re.search(r'gl_position\s*=', code_lower):
             return ShaderType.VERTEX
-        if 'gl_fragcolor' in code_lower or 'gl_fragdata' in code_lower:
+        if re.search(r'(gl_fragcolor|gl_fragdata)\s*(\[|=)', code_lower):
             return ShaderType.FRAGMENT
-        if 'gl_in' in code_lower and 'emitvertex' in code_lower:
+        if 'emitvertex' in code_lower and 'endprimitive' in code_lower:
             return ShaderType.GEOMETRY
         
         # Check for shader-specific keywords
@@ -324,26 +367,32 @@ class Shader:
         """Parse shader variables with given qualifier"""
         variables: List[ShaderVariable] = []
         
+        # Remove newlines to handle multi-line declarations
+        normalized_code = re.sub(r'\s+', ' ', code)
+        
         # Pattern matches: qualifier type name[array_size]; or qualifier type name;
         pattern = re.compile(
             rf"\b{qualifier.value}\s+(\w+)\s+(\w+)(?:\[(\d+)\])?\s*;"
         )
         
-        for i, line in enumerate(code.split('\n'), 1):
-            for match in pattern.finditer(line):
-                type_str, name, array_size = match.groups()
-                try:
-                    type_enum = ShaderUniformEnum(type_str)
-                except ValueError:
-                    continue
-                
-                variables.append(ShaderVariable(
-                    name=name,
-                    type=type_enum,
-                    qualifier=qualifier,
-                    array_size=int(array_size) if array_size else None,
-                    line_number=i
-                ))
+        for match in pattern.finditer(normalized_code):
+            type_str, name, array_size = match.groups()
+            try:
+                type_enum = ShaderUniformEnum(type_str)
+            except ValueError:
+                continue
+            
+            # Find line number in original code
+            pos = match.start()
+            line_number = code[:pos].count('\n') + 1
+            
+            variables.append(ShaderVariable(
+                name=name,
+                type=type_enum,
+                qualifier=qualifier,
+                array_size=int(array_size) if array_size else None,
+                line_number=line_number
+            ))
         
         return variables
 
@@ -351,33 +400,54 @@ class Shader:
         """Parse function signatures from shader code"""
         functions: List[ShaderFunction] = []
         
-        # Pattern matches function declarations
+        # Reserved keywords that should not be treated as functions
+        reserved = {
+            'if', 'for', 'while', 'switch', 'return', 'break', 'continue',
+            'do', 'else', 'case', 'default', 'struct', 'const', 'uniform',
+            'attribute', 'varying', 'in', 'out', 'inout'
+        }
+        
+        # Pattern matches function declarations (more strict)
+        # Must have return type followed by identifier, params, and opening brace or semicolon
         pattern = re.compile(
-            r"\b(\w+)\s+(\w+)\s*\(([^)]*)\)\s*(?:\{|;)"
+            r"\b([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*\(([^)]*)\)\s*(\{|;)",
+            re.MULTILINE
         )
         
-        for i, line in enumerate(code.split('\n'), 1):
-            for match in pattern.finditer(line):
-                return_type, name, params_str = match.groups()
-                
-                # Skip reserved keywords
-                if name in ('if', 'for', 'while', 'switch'):
-                    continue
-                
-                # Parse parameters
-                params = []
-                if params_str.strip():
-                    for param in params_str.split(','):
-                        param = param.strip()
-                        if param:
-                            params.append(param)
-                
-                functions.append(ShaderFunction(
-                    name=name,
-                    return_type=return_type,
-                    parameters=params,
-                    line_number=i
-                ))
+        for match in pattern.finditer(code):
+            return_type, name, params_str, bracket = match.groups()
+            
+            # Skip reserved keywords and built-in types
+            if name in reserved or return_type in reserved:
+                continue
+            
+            # Skip if return type looks like a keyword or qualifier
+            if return_type in ('if', 'for', 'while', 'switch'):
+                continue
+            
+            # Only include functions with opening brace (actual implementations)
+            # or forward declarations
+            if bracket not in ('{', ';'):
+                continue
+            
+            # Parse parameters
+            params = []
+            if params_str.strip():
+                for param in params_str.split(','):
+                    param = param.strip()
+                    if param and param != 'void':
+                        params.append(param)
+            
+            # Find line number
+            pos = match.start()
+            line_number = code[:pos].count('\n') + 1
+            
+            functions.append(ShaderFunction(
+                name=name,
+                return_type=return_type,
+                parameters=params,
+                line_number=line_number
+            ))
         
         return functions
 
@@ -419,6 +489,7 @@ class Shader:
     def artist(self) -> str:
         return self._artist
     
+    @property
     def description(self) -> str:
         return self._description
 
