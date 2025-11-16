@@ -14,6 +14,8 @@ class Cartridge:
     PRGROM: UInt8Array
     CHRROM: UInt8Array
     Trainer: UInt8Array
+    MapperID: int
+    MirroringMode: int
 
     def __init__(self) -> None:
         self.file = ""
@@ -21,6 +23,8 @@ class Cartridge:
         self.PRGROM = np.zeros(0, dtype=np.uint8)
         self.CHRROM = np.zeros(0, dtype=np.uint8)
         self.Trainer = np.zeros(0, dtype=np.uint8)
+        self.MapperID = 0
+        self.MirroringMode = 0
 
     @classmethod
     def from_bytes(
@@ -40,6 +44,16 @@ class Cartridge:
         prg_size: int = int(obj.HeaderedROM[4]) * 0x4000  # 16KB units
         chr_size: int = int(obj.HeaderedROM[5]) * 0x2000  # 8KB units
         flags6: int = int(obj.HeaderedROM[6])
+        flags7: int = int(obj.HeaderedROM[7])
+
+        # Extract mapper ID from flags6 (bits 4-7) and flags7 (bits 4-7)
+        mapper_low = (flags6 >> 4) & 0x0F
+        mapper_high = (flags7 >> 4) & 0x0F
+        obj.MapperID = (mapper_high << 4) | mapper_low
+
+        # Extract mirroring mode from flags6 (bit 0)
+        # 0 = horizontal, 1 = vertical
+        obj.MirroringMode = flags6 & 0x01
 
         # Trainer detection (bit 2 of flags6)
         has_trainer = (flags6 & 0b100) != 0

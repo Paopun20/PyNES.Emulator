@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from pynes.apu import APU
 from pynes.cartridge import Cartridge
 from pynes.controller import Controller
+from pynes.mapper import Mapper, Mapper000, Mapper001, Mapper002, Mapper003
 from pynes.helper.memoize import memoize
 from pynes.util.OpCodes import OpCodes
 from logger import log
@@ -203,6 +204,7 @@ class Emulator:
     def __init__(self) -> None:
         # CPU initialization
         self.cartridge: Optional[Cartridge] = None
+        self.mapper: Optional[Mapper] = None
         self._events: Dict[str, List[Callable[..., None]]] = {}
         self.apu: APU = APU(sample_rate=44100, buffer_size=1024)
         self.RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
@@ -361,7 +363,10 @@ class Emulator:
 
         # ROM ($8000-$FFFF)
         else:
-            val = int(self.PRGROM[addr - 0x8000])
+            if self.mapper is not None:
+                val = self.mapper.cpu_read(addr)
+            else:
+                val = int(self.PRGROM[addr - 0x8000])
             self.dataBus = val
             return val
 
@@ -402,6 +407,8 @@ class Emulator:
 
         # ROM area ($8000+)
         if addr >= 0x8000:
+            if self.mapper is not None:
+                self.mapper.cpu_write(addr, val)
             self.dataBus = val
 
     def _ppu_open_bus_value(self) -> int:
@@ -954,6 +961,20 @@ class Emulator:
         self.cartridge = self.cartridge
         self.PRGROM = self.cartridge.PRGROM
         self.CHRROM = self.cartridge.CHRROM
+        
+        # Initialize mapper based on cartridge mapper ID
+        mapper_id = self.cartridge.MapperID
+        if mapper_id == 0:
+            self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        elif mapper_id == 1:
+            self.mapper = Mapper001(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        elif mapper_id == 2:
+            self.mapper = Mapper002(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        elif mapper_id == 3:
+            self.mapper = Mapper003(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        else:
+            log.warning(f"Mapper {mapper_id} not supported, using Mapper000 fallback")
+            self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
 
         # Reset CPU
         self.Architrcture = Architrcture(StackPointer=0xFD)
@@ -1001,6 +1022,20 @@ class Emulator:
         self.cartridge = cartridge
         self.PRGROM = self.cartridge.PRGROM
         self.CHRROM = self.cartridge.CHRROM
+        
+        # Initialize mapper based on cartridge mapper ID
+        mapper_id = self.cartridge.MapperID
+        if mapper_id == 0:
+            self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        elif mapper_id == 1:
+            self.mapper = Mapper001(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        elif mapper_id == 2:
+            self.mapper = Mapper002(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        elif mapper_id == 3:
+            self.mapper = Mapper003(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        else:
+            log.warning(f"Mapper {mapper_id} not supported, using Mapper000 fallback")
+            self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
 
     def SwapAt(self, at_cycles: int, cartridge: Cartridge) -> None:
         raise EmulatorError(NotImplementedError("Cartridge swapping at runtime is not yet implemented."))
