@@ -2,7 +2,7 @@ import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 from typing import Optional, Type
 
-class EmulatorProcess:
+class ProcessPoolManager:
     def __init__(self) -> None:
         self.executor: Optional[ProcessPoolExecutor] = None
 

@@ -10,10 +10,10 @@ from numpy.typing import NDArray
 from pynes.apu import APU
 from pynes.cartridge import Cartridge
 from pynes.controller import Controller
-from pynes.mapper import Mapper, Mapper000, Mapper001, Mapper002, Mapper003
+from pynes.mapper import Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004
 from pynes.helper.memoize import memoize
 from pynes.util.OpCodes import OpCodes
-from logger import log
+from logger import log as _logger
 from enum import Enum
 
 import numpy as np
@@ -178,6 +178,8 @@ class Architrcture:
     OpCode: int = 0
     Bus: int = 0
     current_instruction_mode: CIM = CIM.Undefined
+    page_boundary_crossed: bool = False
+    page_boundary_crossed_just_happened: bool = False
 
 
 @dataclass
@@ -356,10 +358,22 @@ class Emulator:
 
         # Unmapped region ($4018-$7FFF)
         elif addr < 0x8000:
-            self._emit("onDummyRead", addr)
-            if self.Architrcture.current_instruction_mode == CIM.Absolute:
-                self.dataBus = (addr >> 8) & 0xFF
-            return self.dataBus
+            # Dummy reads only happen when a page boundary is crossed
+            if self.Architrcture.page_boundary_crossed:
+                self._emit("onDummyRead", addr)
+                dummy_val = (addr >> 8) & 0xFF
+                self.cpu_bus_latch_time = time.time()
+                return dummy_val
+
+            # Real read immediately after the dummy read: return open bus (don't update bus)
+            if self.Architrcture.page_boundary_crossed_just_happened:
+                self.Architrcture.page_boundary_crossed_just_happened = False
+                self.cpu_bus_latch_time = time.time()
+                return self.dataBus
+
+            # Otherwise behave like open bus (no dummy read)
+            self.cpu_bus_latch_time = time.time()
+            return self._cpu_open_bus_value()
 
         # ROM ($8000-$FFFF)
         else:
@@ -418,6 +432,15 @@ class Emulator:
             self.ppu_bus_latch = 0
             self.ppu_bus_latch_time = time.time()
         return getattr(self, "ppu_bus_latch", 0)
+
+    def _cpu_open_bus_value(self) -> int:
+        """Return current CPU open-bus value with decay before 1 second passes."""
+        # Simulate bus decay: after ~0.9 seconds, the value decays to 0
+        # Real NES capacitors discharge the bus, but we simplify this
+        if time.time() - getattr(self, "cpu_bus_latch_time", 0) > 0.9:
+            self.dataBus = 0
+            self.cpu_bus_latch_time = time.time()
+        return self.dataBus
 
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers with NMI suppression."""
@@ -657,7 +680,12 @@ class Emulator:
         # Only perform dummy read when crossing page boundary
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
             # Dummy read from the BASE address (not final address)
+            # Set flag so dummy read doesn't update data bus to new high byte
+            self.Architrcture.page_boundary_crossed = True
             _ = self.Read(base_addr)
+            self.Architrcture.page_boundary_crossed = False
+            # Mark that we just did a page boundary crossing, so next unmapped read returns open bus
+            self.Architrcture.page_boundary_crossed_just_happened = True
             self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
 
     # @lru_cache(maxsize=None)
@@ -701,7 +729,12 @@ class Emulator:
         # Only perform dummy read and add cycle if page boundary crossed
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
             # Dummy read from the BASE address (not final address)
+            # Set flag so dummy read doesn't update data bus to new high byte
+            self.Architrcture.page_boundary_crossed = True
             _ = self.Read(base_addr)
+            self.Architrcture.page_boundary_crossed = False
+            # Mark that we just did a page boundary crossing, so next read returns open bus
+            self.Architrcture.page_boundary_crossed_just_happened = True
             self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
 
     # @lru_cache(maxsize=None)
@@ -731,7 +764,12 @@ class Emulator:
         # Only add extra cycle if page boundary is crossed
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
             # Dummy read from the BASE address (not final address)
+            # Set flag so dummy read doesn't update data bus to new high byte
+            self.Architrcture.page_boundary_crossed = True
             _ = self.Read(base_addr)
+            self.Architrcture.page_boundary_crossed = False
+            # Mark that we just did a page boundary crossing, so next unmapped read returns open bus
+            self.Architrcture.page_boundary_crossed_just_happened = True
             self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
 
     def Push(self, Value: int) -> None:
@@ -957,7 +995,7 @@ class Emulator:
         if self.cartridge is None:
             raise EmulatorError(ValueError("load cartridge first and then reset the emulator"))
 
-        log.info("Resetting emulator...")
+        _logger.info("Resetting emulator...")
         self.cartridge = self.cartridge
         self.PRGROM = self.cartridge.PRGROM
         self.CHRROM = self.cartridge.CHRROM
@@ -972,8 +1010,10 @@ class Emulator:
             self.mapper = Mapper002(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 3:
             self.mapper = Mapper003(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        elif mapper_id == 4:
+            self.mapper = Mapper004(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
         else:
-            log.warning(f"Mapper {mapper_id} not supported, using Mapper000 fallback")
+            _logger.warning(f"Mapper {mapper_id} not supported, using Mapper000 fallback")
             self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
 
         # Reset CPU
@@ -1007,8 +1047,8 @@ class Emulator:
         # debug
         self.frame_complete_count = 0  # reset
 
-        log.debug(f"ROM Header: {self.cartridge.HeaderedROM[:0x10]}")
-        log.debug(f"Reset Vector: ${self.Architrcture.ProgramCounter:04X}")
+        _logger.debug(f"ROM Header: {self.cartridge.HeaderedROM[:0x10]}")
+        _logger.debug(f"Reset Vector: ${self.Architrcture.ProgramCounter:04X}")
 
     def Swap(self, cartridge: Cartridge) -> None:
         """
@@ -1033,8 +1073,10 @@ class Emulator:
             self.mapper = Mapper002(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 3:
             self.mapper = Mapper003(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        elif mapper_id == 4:
+            self.mapper = Mapper004(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
         else:
-            log.warning(f"Mapper {mapper_id} not supported, using Mapper000 fallback")
+            _logger.warning(f"Mapper {mapper_id} not supported, using Mapper000 fallback")
             self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
 
     def SwapAt(self, at_cycles: int, cartridge: Cartridge) -> None:
@@ -2153,7 +2195,7 @@ class Emulator:
                 return self.endExecute()
 
             case _:  # Unknown/Unimplemented Architrcture.OpCode
-                log.error(
+                _logger.error(
                     f"Unknown OpCode: ${self.Architrcture.OpCode:02X} ({OpCodes.GetName(self.Architrcture.OpCode)}) at PC=${self.Architrcture.ProgramCounter - 1:04X}"
                 )
                 if self.debug.halt_on_unknown_opcode:

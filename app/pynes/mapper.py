@@ -239,6 +239,7 @@ class Mapper002(Mapper):
         self.chr_rom: NDArray[np.uint8] = chr_rom
         self.mirroring: int = mirroring
         self.prg_bank: int = 0  # Currently selected PRG bank at $8000-$BFFF
+        self.chr_bank: int = 0  # Currently selected CHR bank at $0000-$1FFF
 
     def cpu_read(self, addr: int) -> int:
         if 0x8000 <= addr <= 0xBFFF:  # Switchable PRG ROM bank at $8000-$BFFF
@@ -252,6 +253,8 @@ class Mapper002(Mapper):
     def cpu_write(self, addr: int, value: int) -> None:
         if 0x8000 <= addr <= 0xFFFF:  # Bank select register at $8000-$FFFF
             self.prg_bank = value & 0x0F  # Use lower 4 bits to select bank
+        if 0xA000 <= addr <= 0xBFFF:  # CHR bank select (not typical for UxROM, but added for completeness)
+            self.chr_bank = value & 0x0F  # Use lower 4 bits to select CHR bank
 
     def ppu_read(self, addr: int) -> int:
         if 0x0000 <= addr <= 0x1FFF:  # CHR ROM/RAM
@@ -264,7 +267,183 @@ class Mapper002(Mapper):
         pass
 
     def reset(self) -> None:
-        self.prg_bank = 0
+        self.chr_bank = 0
+
+
+class Mapper004(Mapper):
+    """
+    MMC3 (Mapper 004)
+    - PRG ROM size: 16KB switchable banks
+    - CHR ROM/RAM size: 1KB switchable banks
+    - Bank switching: Up to 8 1KB CHR banks and 16KB PRG banks
+    - IRQ: Scanline-based IRQ support
+    - Mirroring: Switchable via mapper control
+    """
+
+    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int) -> None:
+        super().__init__(len(prg_rom) // 0x4000, len(chr_rom) // 0x2000)
+        self.prg_rom: NDArray[np.uint8] = prg_rom
+        self.chr_rom: NDArray[np.uint8] = chr_rom
+        self.mirroring: int = mirroring
+
+        self.prg_ram: NDArray[np.uint8] = np.zeros(0x2000, dtype=np.uint8)  # 8KB PRG RAM
+
+        # MMC3 registers
+        self.bank_select: int = 0x00  # Bank select register ($8000, $8001)
+        self.bank_registers: NDArray[np.uint8] = np.zeros(8, dtype=np.uint8)  # R0-R7
+
+        # Derived bank offsets
+        self.chr_banks: NDArray[np.int32] = np.zeros(8, dtype=np.int32)  # 1KB bank offsets for CHR
+        self.prg_banks: NDArray[np.int32] = np.zeros(4, dtype=np.int32)  # 8KB bank offsets for PRG
+
+        # Mirroring control
+        self.mirror_mode: int = mirroring
+
+        # IRQ state
+        self.irq_counter: int = 0
+        self.irq_reload: int = 0
+        self.irq_enabled: bool = False
+        self.irq_pending: bool = False
+        self.a12_latch: bool = False
+
+        # Internal state for A12 edge detection
+        self.last_a12: bool = False
+
+        self._update_banks()
+
+    def _update_banks(self) -> None:
+        """Update derived bank offsets based on register values."""
+        # Bank select register format:
+        # Bit 7 = PRG bank mode (0: normal, 1: inverted)
+        # Bit 6 = CHR inversion (0: normal, 1: inverted)
+        # Bits 2-0 = register to select
+
+        prg_mode = (self.bank_select >> 6) & 0x01
+        chr_mode = (self.bank_select >> 5) & 0x01
+
+        # Calculate number of 8KB PRG ROM banks
+        num_prg_banks_8kb = len(self.prg_rom) // 0x2000
+
+        # Update CHR banks (1KB banks)
+        if chr_mode == 0:  # Normal CHR mode
+            self.chr_banks[0] = int((int(self.bank_registers[0]) & 0xFE) * 0x400)  # R0 (even)
+            self.chr_banks[1] = self.chr_banks[0] + 0x400  # R0 (odd)
+            self.chr_banks[2] = int((int(self.bank_registers[1]) & 0xFE) * 0x400)  # R1 (even)
+            self.chr_banks[3] = self.chr_banks[2] + 0x400  # R1 (odd)
+            self.chr_banks[4] = int(self.bank_registers[2]) * 0x400  # R2
+            self.chr_banks[5] = int(self.bank_registers[3]) * 0x400  # R3
+            self.chr_banks[6] = int(self.bank_registers[4]) * 0x400  # R4
+            self.chr_banks[7] = int(self.bank_registers[5]) * 0x400  # R5
+        else:  # Inverted CHR mode
+            self.chr_banks[0] = int(self.bank_registers[2]) * 0x400  # R2
+            self.chr_banks[1] = int(self.bank_registers[3]) * 0x400  # R3
+            self.chr_banks[2] = int(self.bank_registers[4]) * 0x400  # R4
+            self.chr_banks[3] = int(self.bank_registers[5]) * 0x400  # R5
+            self.chr_banks[4] = int((int(self.bank_registers[0]) & 0xFE) * 0x400)  # R0 (even)
+            self.chr_banks[5] = self.chr_banks[4] + 0x400  # R0 (odd)
+            self.chr_banks[6] = int((int(self.bank_registers[1]) & 0xFE) * 0x400)  # R1 (even)
+            self.chr_banks[7] = self.chr_banks[6] + 0x400  # R1 (odd)
+
+        # Clamp CHR banks to valid ranges
+        for i in range(8):
+            self.chr_banks[i] = int(self.chr_banks[i] % (len(self.chr_rom))) & ~0x3FF
+
+        # Update PRG banks (8KB banks)
+        if prg_mode == 0:  # Normal PRG mode
+            self.prg_banks[0] = int((int(self.bank_registers[6]) & 0x3F) * 0x2000)
+            self.prg_banks[1] = int((int(self.bank_registers[7]) & 0x3F) * 0x2000)
+            self.prg_banks[2] = int((num_prg_banks_8kb - 2) * 0x2000)
+            self.prg_banks[3] = int((num_prg_banks_8kb - 1) * 0x2000)
+        else:  # Inverted PRG mode
+            self.prg_banks[0] = int((num_prg_banks_8kb - 2) * 0x2000)
+            self.prg_banks[1] = int((int(self.bank_registers[7]) & 0x3F) * 0x2000)
+            self.prg_banks[2] = int((int(self.bank_registers[6]) & 0x3F) * 0x2000)
+            self.prg_banks[3] = int((num_prg_banks_8kb - 1) * 0x2000)
+
+        # Clamp PRG banks to valid ranges
+        for i in range(4):
+            self.prg_banks[i] = int(self.prg_banks[i] % len(self.prg_rom)) & ~0x1FFF
+
+    def cpu_read(self, addr: int) -> int:
+        if 0x6000 <= addr <= 0x7FFF:  # PRG RAM
+            return int(self.prg_ram[addr - 0x6000])
+        elif 0x8000 <= addr <= 0xFFFF:  # PRG ROM
+            # Map address to appropriate bank
+            bank_index = (addr - 0x8000) >> 13  # 0-3 for 8KB banks
+            offset = addr & 0x1FFF
+            return int(self.prg_rom[self.prg_banks[bank_index] + offset])
+        return 0
+
+    def cpu_write(self, addr: int, value: int) -> None:
+        if 0x6000 <= addr <= 0x7FFF:  # PRG RAM
+            self.prg_ram[addr - 0x6000] = value & 0xFF
+        elif addr == 0x8000 or addr == 0x8001:  # Bank select / register data
+            if addr == 0x8000:
+                self.bank_select = value & 0xFF
+            else:  # 0x8001
+                reg_index = self.bank_select & 0x07
+                self.bank_registers[reg_index] = value & 0xFF
+                self._update_banks()
+        elif addr == 0xA000 or addr == 0xA001:  # Mirroring
+            if addr == 0xA000:
+                self.mirror_mode = value & 0x01
+        elif addr == 0xC000 or addr == 0xC001:  # IRQ latch / reload
+            if addr == 0xC000:
+                self.irq_reload = value & 0xFF
+            else:  # 0xC001
+                self.irq_counter = 0
+        elif addr == 0xE000 or addr == 0xE001:  # IRQ disable / enable
+            if addr == 0xE000:
+                self.irq_enabled = False
+                self.irq_pending = False
+            else:  # 0xE001
+                self.irq_enabled = True
+
+    def ppu_read(self, addr: int) -> int:
+        if 0x0000 <= addr <= 0x1FFF:  # CHR ROM/RAM
+            bank_index = (addr >> 10) & 0x07  # 0-7 for 1KB banks
+            offset = addr & 0x3FF
+            bank_offset = self.chr_banks[bank_index]
+            return int(self.chr_rom[bank_offset + offset])
+        return 0
+
+    def ppu_write(self, addr: int, value: int) -> None:
+        # MMC3 typically has CHR ROM, so writes are ignored
+        # If CHR RAM is present, this would write to it
+        pass
+
+    def tick_a12(self, a12: bool) -> None:
+        """
+        Clock the A12 line for IRQ counter (called by PPU on each PPU cycle).
+        A12 is PPU address line 12 (0x1000 bit).
+        """
+        if not self.a12_latch and a12:  # Rising edge on A12
+            self._clock_irq_counter()
+        self.a12_latch = a12
+
+    def _clock_irq_counter(self) -> None:
+        """Decrement IRQ counter and trigger IRQ if needed."""
+        if self.irq_counter == 0:
+            self.irq_counter = self.irq_reload
+        else:
+            self.irq_counter -= 1
+
+        if self.irq_counter == 0 and self.irq_enabled:
+            self.irq_pending = True
+
+    def reset(self) -> None:
+        self.bank_select = 0x00
+        self.bank_registers[:] = 0
+        self.chr_banks[:] = 0
+        self.prg_banks[:] = 0
+        self.mirror_mode = self.mirroring
+        self.irq_counter = 0
+        self.irq_reload = 0
+        self.irq_enabled = False
+        self.irq_pending = False
+        self.a12_latch = False
+        self.last_a12 = False
+        self._update_banks()
 
 
 class Mapper003(Mapper):

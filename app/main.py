@@ -119,7 +119,10 @@ log.info(f"Starting pygame community edition {pygame.__version__}")
 pygame.init()
 pygame.font.init()
 
-font: pygame.font.Font = pygame.font.Font(None, 20)
+assets_path: Path = Path("assets").resolve()
+
+font_path: Path = assets_path / "fonts" / "Tiny5.ttf"
+font: pygame.font.Font = pygame.font.Font(font_path, 15)
 icon_path: Path = Path(__file__).resolve().parent / "icon.ico"
 
 try:
@@ -388,16 +391,20 @@ def draw_debug_overlay() -> None:
         return
 
     debug_info: List[str] = [f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})"]
+    id_mapper: List[str] = ["NROM", "MMC1", "UNROM", "CNROM", "MMC3"]
 
     match debug_mode_index:
         case 0:
             debug_info += [
                 f"NES File: {Path(nes_path).name}",
                 f"ROM Header: {nes_emu.cartridge.HeaderedROM[:0x10]}",
+                f"Mapper ID: {nes_emu.cartridge.MapperID} ({id_mapper[nes_emu.cartridge.MapperID]})",
+                f"Mirroring Mode: {'Vertical' if nes_emu.cartridge.MirroringMode else 'Horizontal'}",
+                f"PRG ROM Size: {len(nes_emu.cartridge.PRGROM)} bytes | CHR ROM Size: {len(nes_emu.cartridge.CHRROM)} bytes",
                 "",
                 f"EMU runtime: {(time.time() - start_time):.2f}s ({hex(int(time.time() - start_time))})",
                 f"IRL estimate: {((time.time() - start_time) * (1 / all_clock)):.2f}s",
-                f"CPU Halted: {nes_emu.Architrcture.Halted}",
+                f"CPU Halted: {nes_emu.Architrcture.Halted} ({'CLASHED, WHAT THE F*CK, I DO WRONG' if nes_emu.Architrcture.Halted else 'Not clashed yay!'})",
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
                 f"PC: ${nes_emu.Architrcture.ProgramCounter:04X} ({nes_emu.Architrcture.ProgramCounter}) | Cycles: {nes_emu.cycles}",
@@ -546,7 +553,7 @@ def mod_picker() -> None:
     mod_window.transient(ctk_root)
 
     # Get all shader files
-    shader_path = Path("assets") / "shaders"
+    shader_path = assets_path / "shaders"
     if not shader_path.exists():
         log.error("Shaders directory not found")
         mod_window.destroy()

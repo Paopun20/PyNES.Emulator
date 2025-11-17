@@ -37,19 +37,20 @@ including the integration of Cython for critical components.
 
 ## Features (some work in progress)
 
-- **CPU Emulation**: Partial implementation of the 6502 CPU instruction set.
-- **PPU Emulation**: Basic PPU functionality for rendering graphics ( BUG ).
-- **APU Emulation**: Basic sound emulation ( WIP ).
-- **Input Emulation**: Keyboard support.
+- **CPU Emulation**: Partial implementation of the 6502 CPU instruction set. (support unofficial opcodes but not complete yet)
+- **PPU Emulation**: Basic PPU functionality for rendering graphics, sprites, and backgrounds. (WIP)
+- **APU Emulation**: Basic sound emulation (WIP).
+- **Input Emulation**: Keyboard support. (You need to hold it until frame is rendered, idk why but it work that way)
 - **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), I can support all of them but I recommended to use Xbox controller).
-- **ROM Loading**: Supports `.nes` ROM files.
-- **Debugging**: Basic FPS and CPU register display.
+- **ROM Loading**: Supports `.nes` ROM files. (iNES format)
+- **Debugging**: Basic FPS and CPU register display. (WIP for more advanced debugging tools)
 - **Discord Rich Presence**: Support for displaying current game activity on Discord.
-- **Fun Settings**: Various fun settings like color filters and screen effects.
+- **Mapper Support**: Basic support for NROM (Mapper 000). (WIP for more mappers)
+- **Fun Settings**: Various fun settings like color filters and screen effects. (not take effects at accurate, just for fun and cool)
 
 ## Fun Settings
 
-- **Shader Mod Support**: Apply custom shaders to the display for various visual effects. (not effects, just shaders, not accurate like real NES hardware (but you can make your own shader))
+- **Shader Mod**: Apply custom shaders to the display for various visual effects. (but you can make your own shader)
 
 ## Planned Features
 
@@ -58,7 +59,6 @@ including the integration of Cython for critical components.
 - **Complete APU Emulation**: Full sound channel support and audio effects.
 - **Save States**: Implement save and load state functionality.
 - **GUI Enhancements**: Improve the user interface for better usability and aesthetics.
-- **Mapper Support**: Implement support for various NES mappers to enhance game compatibility.
 - **Advanced Debugging Tools**: Add features like breakpoints, memory inspection, and step-by-step execution.
 - **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
 - **Cross-Platform Support**: Ensure compatibility across Windows, macOS, and Linux.
@@ -165,6 +165,7 @@ If you want to use a ready-made executable:
 | Pause                       | P        | N/A                           |
 | Debug Overlay               | F5       | N/A                           |
 | Next Mode (`Debug Overlay`) | F6       | N/A                           |
+| Shader Picker               | M        | N/A                           |
 | Reset                       | R        | N/A                           |
 | Quit                        | ESC      | N/A                           |
 

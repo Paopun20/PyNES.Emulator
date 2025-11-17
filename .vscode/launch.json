@@ -8,8 +8,10 @@
             "name": "PyNES Debugger",
             "type": "debugpy",
             "request": "launch",
-            "program": "app/main.py",
-            "console": "integratedTerminal"
+            "program": "${workspaceFolder}/app/main.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": ["--debug"]
         }
     ]
 }
