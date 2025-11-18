@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest] # ubuntu-latest, macos-latest # Temporarily disabled on linux and macOS due to build issues
-        python-version: ["3.13.7"]
+        python-version: ["3.14.0"]
 
     defaults:
       run:
@@ -140,7 +140,7 @@ jobs:
         if: steps.build.outputs.build_success == 'true'
         with:
           name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: |
+          path: | # Upload the built executable and additional assets
             dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
             app/icon.ico
             assets/*

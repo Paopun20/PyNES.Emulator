@@ -124,23 +124,3 @@ class Presence:
         self.close()
         time.sleep(0.5)
         return self.connect()
-
-    def __enter__(self) -> "Presence":
-        self.connect()
-        return self
-
-    def __exit__(
-        self, 
-        exc_type: Optional[type[BaseException]], 
-        exc_val: Optional[BaseException], 
-        exc_tb: Optional[TracebackType]
-    ) -> None:
-        self.close()
-
-    def __del__(self) -> None:
-        """Cleanup when object is destroyed."""
-        try:
-            if self._connected:
-                self.close()
-        except Exception:
-            pass

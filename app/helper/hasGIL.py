@@ -1,6 +1,7 @@
 import sysconfig
+from typing import Literal
 
-def hasGIL() -> int:
+def hasGIL() -> Literal[-1, 0, 1]:
     """
     Check whether the current Python build uses the Global Interpreter Lock (GIL).
 

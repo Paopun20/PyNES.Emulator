@@ -14,9 +14,7 @@ import time
 from pathlib import Path
 from objects.shadercass import Shader
 
-from PIL import Image, ImageTk
 from tkinter import Tk, messagebox
-import tkinter as tk
 import customtkinter as ctk
 from customtkinter import filedialog, CTk
 
@@ -26,8 +24,9 @@ import psutil
 import moderngl
 import platform
 from rich.traceback import install
-from typing import Callable, Optional, Any, Tuple, List, Dict, Union
-from types import FrameType
+from collections.abc import Callable
+from typing import Optional, Any, Tuple, List, Dict, Union, Literal
+from types import FrameType, TracebackType
 from numpy.typing import NDArray
 
 from __version__ import __version__
@@ -43,6 +42,11 @@ from pypresence.types import ActivityType, StatusDisplayType
 from logger import log, debug_mode, console
 from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
+from helper.hasGIL import hasGIL
+
+PYTHON_GIL = 0
+
+GIL: Literal[-1, 0, 1] = hasGIL()
 
 install(console=console)  # make coooooooooooooooooool error output
 
@@ -51,6 +55,7 @@ if sys.version_info < (3, 13):
     raise RuntimeError("Python 3.13 or higher is required to run PyNES.")
 
 log.info("Starting PyNES Emulator")
+threading.excepthook = lambda *args: log.error(f"Uncaught thread exception: {args[1].exc_type.__name__}: {args[1].exc_value}")
 
 sys.set_int_max_str_digits(10_000_000)  # 2**31 - 1
 sys.setrecursionlimit(10_000)  # 2**31 - 1
@@ -110,6 +115,27 @@ NES_HEIGHT: int = 240
 SCALE: int = 3
 
 _thread_list: List[threading.Thread] = []
+
+
+class CoreThread:
+    def __init__(self) -> None:
+        pass
+
+    def __enter__(self) -> CoreThread:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        pass
+
+    def add_thread(self, target: Callable[..., Any], name: str) -> None:
+        global _thread_list
+        _thread_list.append(threading.Thread(target=target, name=name, daemon=True))
+
 
 run_event: threading.Event = threading.Event()  # controls running emulator thread
 run_event.set()  # start in running state
@@ -196,9 +222,7 @@ class DebugOverlay:
         }
         """
 
-        self.program: moderngl.Program = ctx.program(
-            vertex_shader=vertex_shader, fragment_shader=fragment_shader
-        )
+        self.program: moderngl.Program = ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
 
         # Create quad for rendering
         vertices: NDArray[np.float32] = np.array(
@@ -393,6 +417,12 @@ def draw_debug_overlay() -> None:
     debug_info: List[str] = [f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})"]
     id_mapper: List[str] = ["NROM", "MMC1", "UNROM", "CNROM", "MMC3"]
 
+    GIL_status: str = {
+        -1: "Unable to determine GIL status",
+        0: "GIL is disabled (no-GIL build)",
+        1: "GIL is enabled",
+    }[GIL]
+
     match debug_mode_index:
         case 0:
             debug_info += [
@@ -454,6 +484,18 @@ def draw_debug_overlay() -> None:
                         cpu_data.pop(0)
                     cpu_data.append(v)
 
+        case 2:
+            debug_info += [
+                f"Python {platform.python_version()}",
+                f"Platform: {platform.system()} {platform.release()} ({platform.machine()})",
+                f"PyGame Community Edition {pygame.__version__}",
+                f"ModernGL Version: {moderngl.__version__}",  # type: ignore
+                f"CustomTkinter Version: {ctk.__version__}",
+                f"Numpy Version: {np.__version__}",
+                "",
+                f"GIL Status: {GIL_status}",
+            ]
+
         case _:
             debug_mode_index = 0
             draw_debug_overlay()
@@ -491,18 +533,17 @@ def subpro() -> None:
             log.error(f"{e.type.__name__}: {e.message}")
             running = False
 
-
-_thread_list.append(threading.Thread(name="emulator_thread", daemon=True, target=subpro))
-
+with CoreThread() as core_thread:
+    core_thread.add_thread(target=subpro, name="Emulator Cycle Thread")
 
 def tracelogger() -> None:
     @nes_emu.on("tracelogger")
     def _(nes_line: str) -> None:
-        if debug_mode and "--eum_debug" in sys.argv:
-            log.debug(nes_line)
+        log.debug(nes_line)
 
-
-_thread_list.append(threading.Thread(target=tracelogger, daemon=True, name="tracelogger"))
+if debug_mode and "--eum_debug" in sys.argv:
+    with CoreThread() as core_thread:
+        core_thread.add_thread(target=tracelogger, name="TraceLogger Thread")
 
 
 @nes_emu.on("frame_complete")
@@ -533,9 +574,6 @@ for thread in _thread_list:
         log.error(f"Thread {thread.name} failed to start: {e}")
 
 
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("dark-blue")
-
 def mod_picker() -> None:
     ctk_root: CTk = CTk()
     ctk_root.withdraw()
@@ -543,6 +581,9 @@ def mod_picker() -> None:
         ctk_root.iconbitmap(str(icon_path))
     except Exception:
         pass
+
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("dark-blue")
 
     mod_window = ctk.CTkToplevel(ctk_root)
     mod_window.title("Shader Picker")
@@ -558,10 +599,10 @@ def mod_picker() -> None:
         log.error("Shaders directory not found")
         mod_window.destroy()
         return
-    
+
     shader_files = [f for f in shader_path.glob("*.py") if f.name != "__init__.py"]
     shader_list: List[Tuple[str, Shader]] = []
-    
+
     for shader_file in shader_files:
         module_name = shader_file.stem
         try:
@@ -570,11 +611,11 @@ def mod_picker() -> None:
             if spec is None or spec.loader is None:
                 log.error(f"Failed to load spec for {module_name}")
                 continue
-                
+
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             spec.loader.exec_module(module)
-            
+
             # Look for Shader class instances in the module
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
@@ -623,24 +664,21 @@ def mod_picker() -> None:
     # Add shader buttons
     for _, shader_obj in shader_list:
         btn = ctk.CTkButton(
-            scroll_frame, 
+            scroll_frame,
             text=f"{shader_obj.name.replace('_', ' ').title()} by {shader_obj.artist}\n{shader_obj._description}",
             compound="left",
-            command=lambda s=shader_obj: apply_shader(s)
+            command=lambda s=shader_obj: apply_shader(s),
         )
         btn.pack(pady=5, fill="x", padx=5)
 
     # Add reset button at the bottom
     reset_btn = ctk.CTkButton(
-        mod_window, 
-        text="Reset to Default", 
-        command=reset_shader,
-        fg_color="gray30",
-        hover_color="gray40"
+        mod_window, text="Reset to Default", command=reset_shader, fg_color="gray30", hover_color="gray40"
     )
     reset_btn.pack(pady=10, padx=10, fill="x")
 
     mod_window.wait_window()  # Wait until the mod_window is closed
+
 
 while running:
     events: List[pygame.event.Event] = pygame.event.get()

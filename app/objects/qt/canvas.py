@@ -1,6 +1,6 @@
 import moderngl
 import numpy as np
-from PySide6 import QtGui, QtWidgets, QtOpenGLWidgets
+from app.tests.PySide6 import QtGui, QtWidgets, QtOpenGLWidgets
 
 
 class Canvas(QtOpenGLWidgets.QOpenGLWidget):
