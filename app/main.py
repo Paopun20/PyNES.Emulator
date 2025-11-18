@@ -51,8 +51,8 @@ GIL: Literal[-1, 0, 1] = hasGIL()
 install(console=console)  # make coooooooooooooooooool error output
 
 # Now your runtime checks
-if sys.version_info < (3, 13):
-    raise RuntimeError("Python 3.13 or higher is required to run PyNES.")
+if sys.version_info < (3, 14):
+    raise RuntimeError("Python 3.14 or higher is required to run PyNES.")
 
 log.info("Starting PyNES Emulator")
 threading.excepthook = lambda *args: log.error(f"Uncaught thread exception: {args[1].exc_type.__name__}: {args[1].exc_value}")
