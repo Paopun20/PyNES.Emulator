@@ -7,7 +7,7 @@ import numpy as np
 # Obtain the absolute path of the directory containing setup.py
 ROOT_DIR = Path(__file__).parent.resolve()
 
-
+"""
 cython_ext = cythonize([
     CythonExtension(
         name="pynes.api.discord",
@@ -16,6 +16,7 @@ cython_ext = cythonize([
         extra_compile_args=["-O3", "-ffast-math", "-march=native"],
     )
 ])
+""" # Old code kept for reference
 
 rust_ext = [
     RustExtension(
@@ -27,14 +28,14 @@ rust_ext = [
 ]
 
 list_req = []
-with open("requirements.txt") as f:
+with open("requirements.txt", "r") as f:
     list_req = [line.strip() for line in f]
 
 setup(
     name="PyNES",
     version="0.0.0",
     packages=["pynes"],
-    ext_modules=cython_ext,
+    # ext_modules=cython_ext,
     rust_extensions=rust_ext,
     install_requires=list_req,
     # include_package_data=True,
