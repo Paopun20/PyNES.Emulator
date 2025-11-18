@@ -37,3 +37,6 @@ customtkinter
 
 # image handling
 Pillow # image processing
+
+# returns lib
+returns # for functional programming

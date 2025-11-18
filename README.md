@@ -1,7 +1,7 @@
 # PyNES Emulator
 
 [![Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)
-[![Python Version](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/Python-3.14%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](./SECURITY.md)
 [![Code Style: Black](https://img.shields.io/badge/Code%20Style-Black-black.svg)](https://github.com/psf/black)
@@ -99,7 +99,7 @@ If you want to use a ready-made executable:
 
 ### Run emulator from source code (for developers)
 
-1. Ensure you have Python 3.13 or higher installed.
+1. Ensure you have Python 3.14 or higher installed.
 2. Clone this repository.
 
     ```bash

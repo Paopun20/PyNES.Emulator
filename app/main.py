@@ -1,8 +1,6 @@
 from __future__ import annotations, generator_stop
 
 import os
-from pdb import run
-from turtle import up
 
 if os.environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
     os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
@@ -29,7 +27,7 @@ from typing import Optional, Any, Tuple, List, Dict, Union, Literal
 from types import FrameType, TracebackType
 from numpy.typing import NDArray
 
-from __version__ import __version__
+from __version__ import __version_string__ as __version__
 from backend.Control import Control
 from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
@@ -43,8 +41,7 @@ from logger import log, debug_mode, console
 from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
 from helper.hasGIL import hasGIL
-
-PYTHON_GIL = 0
+from returns.result import Success, Failure
 
 GIL: Literal[-1, 0, 1] = hasGIL()
 
@@ -686,9 +683,8 @@ while running:
 
     for event in events:
         if event.type == pygame.QUIT:
-            if not paused:
-                run_event.clear()
-                paused = True
+            run_event.clear()
+            paused = True
             running = False
             break
         elif event.type == pygame.KEYDOWN:
@@ -791,7 +787,8 @@ while _thread_list and retry < 4:
         else:
             log.info(f"Thread {thread.name} is not start")
             _clone_list.remove(thread)
-            continue  # skip
+            # skip to next thread
+            continue
 
         if thread.is_alive():
             log.error(f"Thread {thread.name} did not stop cleanly")
@@ -806,20 +803,38 @@ if not _thread_list:
 else:
     log.warning("Some threads did not join")
     log.warning("Enter force state")
-    _clone_list = _thread_list.copy()
-    while _thread_list:
-        for thread in _thread_list:
-            try:
-                thread_exception(thread, SystemExit)
-                log.info(f'Force stopping thread "{thread.name}": success')
-                _clone_list.remove(thread)
-            except SystemError:
-                log.error(f"Thread {thread.name} failed to force stop")
-            except Exception:
-                pass
-        _thread_list = _clone_list.copy()
+
+    remaining = _thread_list.copy()
+
+    while remaining:
+        next_round = remaining.copy()
+
+        for thread in remaining:
+            result = thread_exception(
+                thread, InterruptedError, "Force stopping thread"
+            )
+
+            if isinstance(result, Success):
+                log.info(
+                    f'Success force stopping thread "{thread.name}" ({thread.ident})'
+                )
+                next_round.remove(thread)
+
+            elif isinstance(result, Failure):
+                exc = result.failure()
+                if isinstance(exc, SystemError):
+                    log.error(
+                        f"Thread {thread.name} failed to force stop ({exc})"
+                    )
+                else:
+                    # match old behavior: silently ignore other exceptions
+                    pass
+
+        remaining = next_round
 
 pygame.quit()
 log.info("Pygame: Shutting down")
+
+log.info("PyNES Emulator: Shutdown complete")
 
 exit(0)
