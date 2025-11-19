@@ -42,8 +42,7 @@ from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
 from helper.hasGIL import hasGIL
 from returns.result import Success, Failure
-
-GIL: Literal[-1, 0, 1] = hasGIL()
+from resources import icon_path, assets_path, font_path
 
 install(console=console)  # make coooooooooooooooooool error output
 
@@ -142,11 +141,7 @@ log.info(f"Starting pygame community edition {pygame.__version__}")
 pygame.init()
 pygame.font.init()
 
-assets_path: Path = Path("assets").resolve()
-
-font_path: Path = assets_path / "fonts" / "Tiny5.ttf"
 font: pygame.font.Font = pygame.font.Font(font_path, 15)
-icon_path: Path = Path(__file__).resolve().parent / "icon.ico"
 
 try:
     icon_surface: Optional[pygame.Surface] = pygame.image.load(icon_path)
@@ -384,7 +379,7 @@ presence.update(
 nes_emu.cartridge = load_cartridge
 nes_emu.logging = True
 nes_emu.debug.Debug = False
-nes_emu.debug.halt_on_unknown_opcode = False
+nes_emu.debug.halt_on_unknown_opcode = True
 
 log.info(f"Loaded: {Path(nes_path).name}")
 
@@ -418,7 +413,7 @@ def draw_debug_overlay() -> None:
         -1: "Unable to determine GIL status",
         0: "GIL is disabled (no-GIL build)",
         1: "GIL is enabled",
-    }[GIL]
+    }[hasGIL()]
 
     match debug_mode_index:
         case 0:
@@ -521,8 +516,7 @@ def render_frame(frame: NDArray[np.uint8]) -> None:
 def subpro() -> None:
     global running, paused
     while running:
-        if paused:
-            run_event.wait()  # block if paused flag cleared
+        if paused: run_event.wait()  # block if paused flag cleared
 
         try:
             nes_emu.step_Cycle()

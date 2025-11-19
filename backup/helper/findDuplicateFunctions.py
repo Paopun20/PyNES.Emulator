@@ -1,4 +1,4 @@
-import os
+pip freeze | % { pip install --upgrade ($_ -split '==')[0] 2>$null }import os
 import ast
 import hashlib
 import argparse
