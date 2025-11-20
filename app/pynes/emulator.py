@@ -181,6 +181,7 @@ class Architrcture:
     current_instruction_mode: CIM = CIM.Undefined
     page_boundary_crossed: bool = False
     page_boundary_crossed_just_happened: bool = False
+    cpu_bus_latch_time: float = 0.0
 
 
 @dataclass
@@ -325,65 +326,43 @@ class Emulator:
         """Read from CPU or PPU memory with proper mirroring."""
         addr = int(Address) & 0xFFFF
 
-        # RAM mirroring ($0000-$1FFF)
+        # RAM ($0000-$1FFF)
         if addr < 0x2000:
             val = int(self.RAM[addr & 0x07FF])
-            self.dataBus = val
-            return val
 
         # PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
             val = self.ReadPPURegister(0x2000 + (addr & 0x07))
-            self.dataBus = val
-            return val
 
-        # APU and I/O registers ($4000-$4017)
+        # APU and I/O ($4000-$4017)
         elif addr <= 0x4017:
             if addr == 0x4016:  # Controller 1
-                bit0 = self.controllers[1].read() & 1
-                val = (bit0) | (self.dataBus & 0xE0)  # preserve open-bus bits
-                self.dataBus = val
-                return val
+                val = (self.controllers[1].read() & 1) | (self.dataBus & 0xE0)
             elif addr == 0x4017:  # Controller 2
-                bit0 = self.controllers[2].read() & 1
-                val = (bit0) | (self.dataBus & 0xE0)
-                self.dataBus = val
-                return val
-            elif 0x4000 <= addr <= 0x4015:
-                reg = addr & 0xFF
-                val = self.apu.read_register(reg)
-                self.dataBus = val
-                return val
-            else:
-                return self.dataBus
+                val = (self.controllers[2].read() & 1) | (self.dataBus & 0xE0)
+            else:  # APU registers ($4000-$4015)
+                val = self.apu.read_register(addr & 0xFF)
 
-        # Unmapped region ($4018-$7FFF)
+        # Unmapped area ($4018-$7FFF)
         elif addr < 0x8000:
-            # Dummy reads only happen when a page boundary is crossed
             if self.Architrcture.page_boundary_crossed:
                 self._emit("onDummyRead", addr)
-                dummy_val = (addr >> 8) & 0xFF
-                self.cpu_bus_latch_time = time.time()
-                return dummy_val
-
-            # Real read immediately after the dummy read: return open bus (don't update bus)
-            if self.Architrcture.page_boundary_crossed_just_happened:
+                val = (addr >> 8) & 0xFF
+            elif self.Architrcture.page_boundary_crossed_just_happened:
                 self.Architrcture.page_boundary_crossed_just_happened = False
-                self.cpu_bus_latch_time = time.time()
-                return self.dataBus
-
-            # Otherwise behave like open bus (no dummy read)
-            self.cpu_bus_latch_time = time.time()
-            return self._cpu_open_bus_value()
+                val = self.dataBus
+            else:
+                val = self._cpu_open_bus_value()
 
         # ROM ($8000-$FFFF)
         else:
-            if self.mapper is not None:
+            if self.mapper:
                 val = self.mapper.cpu_read(addr)
             else:
                 val = int(self.PRGROM[addr - 0x8000])
-            self.dataBus = val
-            return val
+
+        self.dataBus = val
+        return val
 
     def Write(self, Address: int, Value: int) -> None:
         """Write to CPU or PPU memory with proper mirroring."""
@@ -391,7 +370,7 @@ class Emulator:
         val = int(Value) & 0xFF
         self.dataBus = val
 
-        # RAM ($0000-$1FFF)
+        # RAM ($0000-$1FFF) with mirroring
         if addr < 0x2000:
             self.RAM[addr & 0x07FF] = val
 
@@ -400,32 +379,30 @@ class Emulator:
             self.WritePPURegister(0x2000 + (addr & 0x07), val)
 
         # APU / Controller ($4000-$4017)
-        if 0x4000 <= addr <= 0x4017:
+        elif 0x4000 <= addr <= 0x4017:
             if addr == 0x4016:  # Controller 1 strobe
                 strobe = bool(val & 0x01)
                 self.controllers[1].strobe = strobe
                 if strobe:
+                    self.controllers[1].write(val)
                     self.controllers[1].latch()
             elif addr == 0x4017:  # Controller 2 strobe
                 strobe = bool(val & 0x01)
                 self.controllers[2].strobe = strobe
                 if strobe:
                     self.controllers[2].latch()
-            elif 0x4000 <= addr <= 0x4015:  # APU registers
-                reg = addr & 0xFF
-                self.apu.write_register(reg, val)
-                self.RAM[addr & 0x07FF] = val  # also mirror to RAM
+                self.controllers[1].write(val)
+                self.controllers[2].write(val)
+            else:  # APU registers ($4000-$4015)
+                self.apu.write_register(addr & 0xFF, val)
 
         # OAM DMA ($4014)
         if addr == 0x4014:
-            self.oam_dma_page = val
-            self._oam_dma_pending_page = val
+            self.oam_dma_page = self._oam_dma_pending_page = val
 
         # ROM area ($8000+)
-        if addr >= 0x8000:
-            if self.mapper is not None:
-                self.mapper.cpu_write(addr, val)
-            self.dataBus = val
+        if addr >= 0x8000 and self.mapper is not None:
+            self.mapper.cpu_write(addr, val)
 
     def _ppu_open_bus_value(self) -> int:
         """Return current PPU open-bus value with decay before 1 second passes."""
@@ -441,7 +418,7 @@ class Emulator:
         # Real NES capacitors discharge the bus, but we simplify this
         if time.time() - getattr(self, "cpu_bus_latch_time", 0) > 0.9:
             self.dataBus = 0
-            self.cpu_bus_latch_time = time.time()
+            self.Architrcture.cpu_bus_latch_time = time.time()
         return self.dataBus
 
     def ReadPPURegister(self, addr: int) -> int:

@@ -135,6 +135,8 @@ jobs:
           cp cp dist/pynes${"${{ matrix.os }}" == "windows-latest" ? ".exe" : ""} upload/ 
           cp app/icon.ico upload/ 2>/dev/null || true
           cp -r assets/* upload/ 2>/dev/null || true
+          cp -r roms/* upload/ 2>/dev/null || true
+          cp LICENSE.md upload/
 
       - name: Upload Artifact
         if: steps.build.outputs.build_success == 'true'
