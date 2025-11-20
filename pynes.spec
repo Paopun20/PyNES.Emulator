@@ -6,23 +6,17 @@ from PyInstaller.building.api import PYZ, EXE
 block_cipher = None
 
 datas_np, binaries_np, hiddenimports_np = collect_all('numpy')
-
-datas_tk = collect_data_files('tkinter')
+datas_tk, binaries_tk, hiddenimports_tk = collect_all('tkinter')
 
 a = Analysis(
     ['app/main.py'],
     pathex=['app'],  # Make sure PyInstaller can find your modules
-    binaries=binaries_np,
+    binaries=binaries_np + binaries_tk,
     datas=datas_np + datas_tk + [
         ("app/pynes", "pynes"),       # Include 'pynes' folder
         ("app/icon.ico", "."),         # Icon in root of bundle
     ],
-    hiddenimports=hiddenimports_np + [
-        "tkinter",
-        "tkinter.filedialog",
-        "tkinter.messagebox",
-        "tkinter.ttk",
-    ],
+    hiddenimports=hiddenimports_np + hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -46,9 +40,9 @@ exe = EXE(
     name='pynes',
     debug=False,
     strip=True,
-    upx=True,                  # Set to False if UPX causes issues
+    upx=True,
     console=False,             # Set True for console apps
-    disable_windowed_traceback=False,
+    disable_windowed_traceback=True,
     argv_emulation=True,
     icon='app/icon.ico',
 )
