@@ -9,13 +9,17 @@ on:
     types: [published]
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest] # ubuntu-latest, macos-latest # Temporarily disabled on linux and macOS due to build issues
+        os: [windows-latest] # ubuntu-latest, macos-latest # Temporarily disabled
         python-version: ["3.14.0"]
 
     defaults:
