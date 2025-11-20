@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   release:
     types: [published]
   workflow_dispatch: {}
@@ -62,6 +62,42 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
             ${{ runner.os }}-pip-
+
+      - name: Cache PyInstaller
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pyinstaller
+            ~/AppData/Local/pyinstaller
+            ~/Library/Caches/pyinstaller
+          key: ${{ runner.os }}-pyinstaller-${{ matrix.python-version }}-${{ hashFiles('pynes.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-pyinstaller-${{ matrix.python-version }}-
+            ${{ runner.os }}-pyinstaller-
+
+      - name: Cache UPX
+        id: upx-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            upx-*
+            ~/.local/bin/upx
+            /usr/local/bin/upx
+          key: ${{ runner.os }}-upx-5.0.2
+          restore-keys: |
+            ${{ runner.os }}-upx-
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            *.so
+            *.pyd
+          key: ${{ runner.os }}-build-${{ matrix.python-version }}-${{ hashFiles('setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ matrix.python-version }}-
+            ${{ runner.os }}-build-
 
       - name: Install OS dependencies
         run: |
@@ -135,13 +171,21 @@ jobs:
             test -f dist/pynes || exit 1
           fi
 
+      - name: Prepare Upload Directory
+        run: |
+          mkdir -p upload
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp dist/pynes.exe upload/
+          else
+            cp dist/pynes upload/
+          fi
+          cp app/icon.ico upload/ 2>/dev/null || true
+          cp -r assets/* upload/ 2>/dev/null || true
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         if: steps.build.outputs.build_success == 'true'
         with:
           name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: | # Upload the built executable and additional assets
-            dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
-            app/icon.ico
-            assets/*
+          path: upload/
           retention-days: 90
