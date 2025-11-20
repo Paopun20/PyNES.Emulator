@@ -2,63 +2,89 @@
 import os
 import re
 import glob
+import sys
+import platform
 from PyInstaller.utils.hooks import collect_all
 from PyInstaller.building.build_main import Analysis
 from PyInstaller.building.api import PYZ, EXE
 
 block_cipher = None
 
+CURRENT_SYSTEM = platform.system()  # "Windows", "Linux", "Darwin"
+
+def marker_matches(marker: str) -> bool:
+    """
+    Very small PEP 508 marker evaluator for:
+        platform_system == "Windows"
+        platform_system == "Linux"
+        platform_system == "Darwin"
+    """
+    m = marker.replace(" ", "")
+    if m.startswith('platform_system=='):
+        val = m.split("==", 1)[1].strip('"\'')
+        return CURRENT_SYSTEM == val
+    return True  # unsupported marker → assume True
+
 req_packages = []
 
 if os.path.exists("requirements.txt"):
     with open("requirements.txt", "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-
-            # skip comments / empty
+        for raw in f:
+            line = raw.strip()
             if not line or line.startswith("#"):
                 continue
 
-            # remove version markers (>=, ==, <=, ~=)
-            pkg = re.split(r"[><=;~]", line)[0].strip()
+            # e.g.  pywin32; platform_system=="Windows"
+            if ";" in line:
+                pkg, marker = line.split(";", 1)
+                pkg = pkg.strip()
+                marker = marker.strip()
 
-            if pkg:
-                req_packages.append(pkg)
+                if not marker_matches(marker):
+                    continue  # skip package for other OS
+            else:
+                pkg = line
 
-# remove duplicates
+            # remove version constraints: >= <= ~= == etc
+            clean = re.split(r"[><=~]", pkg)[0].strip()
+            if clean:
+                req_packages.append(clean)
+
 req_packages = list(set(req_packages))
 
 datas_all = []
 binaries_all = []
-hiddenimports_all = []
+hidden_all = []
 
 for pkg in req_packages:
     try:
-        datas, bins, hidden = collect_all(pkg)
-        datas_all += datas
-        binaries_all += bins
-        hiddenimports_all += hidden
+        d, b, h = collect_all(pkg)
+        datas_all += d
+        binaries_all += b
+        hidden_all += h
     except Exception:
-        # Some packages (maturin, mypy, typing-only libs) cannot be collected
+        # some packages like maturin/mypy have no importable data
         continue
 
-# Include app/pynes folder
 datas_pynes = [(f, "pynes/" + os.path.basename(f))
                for f in glob.glob("app/pynes/*")]
-
 datas_all += datas_pynes
 datas_all += [("app/icon.ico", ".")]
 
+
+# ---------------------------------------------------
+# Analysis
+# ---------------------------------------------------
 a = Analysis(
     ['app/main.py'],
     pathex=['app'],
     binaries=binaries_all,
     datas=datas_all,
-    hiddenimports=hiddenimports_all,
+    hiddenimports=hidden_all,
+    excludes=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
