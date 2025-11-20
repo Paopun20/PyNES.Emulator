@@ -7,7 +7,7 @@ on:
     branches: ["main", "dev"]
   schedule:
     - cron: "0 6 * * *"
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 jobs:
   analyze:
@@ -64,7 +64,7 @@ jobs:
         if: matrix.language == 'python'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.14.0'
       
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4

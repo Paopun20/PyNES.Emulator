@@ -1,8 +1,9 @@
 from setuptools import (setup, Extension as CythonExtension)
-from Cython.Build import cythonize
+# from Cython.Build import cythonize
 from setuptools_rust import RustExtension
 from pathlib import Path
-import numpy as np
+from app.__version__ import __version_string__
+# import numpy as np
 
 # Obtain the absolute path of the directory containing setup.py
 ROOT_DIR = Path(__file__).parent.resolve()
@@ -28,12 +29,13 @@ rust_ext = [
 ]
 
 list_req = []
-with open("requirements.txt", "r") as f:
+req = ROOT_DIR / "requirements.txt"
+with open(req, "r") as f:
     list_req = [line.strip() for line in f]
 
 setup(
     name="PyNES",
-    version="0.0.0",
+    version=__version_string__,
     packages=["pynes"],
     # ext_modules=cython_ext,
     rust_extensions=rust_ext,
