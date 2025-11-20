@@ -71,10 +71,6 @@ datas_pynes = [(f, "pynes/" + os.path.basename(f))
 datas_all += datas_pynes
 datas_all += [("app/icon.ico", ".")]
 
-
-# ---------------------------------------------------
-# Analysis
-# ---------------------------------------------------
 a = Analysis(
     ['app/main.py'],
     pathex=['app'],
