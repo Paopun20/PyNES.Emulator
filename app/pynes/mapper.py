@@ -12,6 +12,7 @@ from typing import Optional
 
 # Utilities
 
+
 def mask8(v: int) -> int:
     return int(v & 0xFF)
 
@@ -56,7 +57,9 @@ class Mapper:
 class Mapper000(Mapper):
     """NROM — No bank switching. PRG: 16KB or 32KB. CHR: 8KB or CHR-RAM."""
 
-    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0) -> None:
+    def __init__(
+        self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0
+    ) -> None:
         prg_chunks = max(1, len(prg_rom) // 0x4000)
         chr_chunks = max(1, len(chr_rom) // 0x2000)
         super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
@@ -110,7 +113,15 @@ class Mapper001(Mapper):
     - PRG banking modes and CHR 4KB/8KB modes
     """
 
-    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, has_prg_ram: bool = True, open_bus: Optional[int] = 0) -> None:
+    def __init__(
+        self,
+        prg_rom: NDArray[np.uint8],
+        chr_rom: NDArray[np.uint8],
+        mirroring: int,
+        *,
+        has_prg_ram: bool = True,
+        open_bus: Optional[int] = 0,
+    ) -> None:
         prg_chunks = max(1, len(prg_rom) // 0x4000)
         chr_chunks = max(1, len(chr_rom) // 0x2000)
         super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
@@ -123,6 +134,12 @@ class Mapper001(Mapper):
 
         self.prg_ram_present = bool(has_prg_ram)
         self.prg_ram = np.zeros(0x2000, dtype=np.uint8) if self.prg_ram_present else None
+
+        # Detect CHR-RAM if no CHR ROM provided (mirror Mapper000 behavior)
+        self.has_chr_ram = self.chr_size == 0
+        if self.has_chr_ram:
+            # 8KB CHR-RAM fallback
+            self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
 
         # MMC1 registers
         self.control: int = 0x0C  # initial control
@@ -232,17 +249,26 @@ class Mapper001(Mapper):
                 self.write_count = 0
 
     def ppu_read(self, addr: int) -> int:
-        if 0x0000 <= addr <= 0x0FFF:
-            return int(self.chr_rom[self.chr_bank_0_offset + (addr & 0x0FFF)])
-        if 0x1000 <= addr <= 0x1FFF:
-            return int(self.chr_rom[self.chr_bank_1_offset + (addr & 0x0FFF)])
+        # handle CHR-ROM if present, otherwise use CHR-RAM fallback
+        if 0x0000 <= addr <= 0x1FFF:
+            if self.chr_size > 0:
+                # 4KB or 8KB mode offsets already computed in _update_banks
+                if addr <= 0x0FFF:
+                    return int(self.chr_rom[self.chr_bank_0_offset + (addr & 0x0FFF)])
+                else:
+                    return int(self.chr_rom[self.chr_bank_1_offset + (addr & 0x0FFF)])
+            else:
+                # CHR-RAM fallback
+                if not hasattr(self, "chr_ram"):
+                    self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
+                return int(self.chr_ram[addr & 0x1FFF])
         return self.open_bus
 
     def ppu_write(self, addr: int, value: int) -> None:
         # Support CHR-RAM if chr size is zero
         if 0x0000 <= addr <= 0x1FFF and self.chr_size == 0:
             # ensure chr_ram exists
-            if not hasattr(self, 'chr_ram'):
+            if not hasattr(self, "chr_ram"):
                 self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
             self.chr_ram[addr & 0x1FFF] = mask8(value)
 
@@ -260,7 +286,9 @@ class Mapper001(Mapper):
 class Mapper002(Mapper):
     """UxROM (Mapper 002): 16KB switchable bank at $8000-$BFFF, fixed last bank at $C000-$FFFF."""
 
-    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0) -> None:
+    def __init__(
+        self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0
+    ) -> None:
         prg_chunks = max(1, len(prg_rom) // 0x4000)
         chr_chunks = max(1, len(chr_rom) // 0x2000)
         super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
@@ -276,7 +304,9 @@ class Mapper002(Mapper):
             bank_offset = clamp_bank_index(self.prg_bank, max(1, self.prg_size // 0x4000)) * 0x4000
             return int(self.prg_rom[bank_offset + (addr - 0x8000)])
         if 0xC000 <= addr <= 0xFFFF:
-            fixed_bank_offset = clamp_bank_index((self.prg_size // 0x4000) - 1, max(1, self.prg_size // 0x4000)) * 0x4000
+            fixed_bank_offset = (
+                clamp_bank_index((self.prg_size // 0x4000) - 1, max(1, self.prg_size // 0x4000)) * 0x4000
+            )
             return int(self.prg_rom[fixed_bank_offset + (addr - 0xC000)])
         return self.open_bus
 
@@ -289,14 +319,14 @@ class Mapper002(Mapper):
             return int(self.chr_rom[addr & (self.chr_size - 1)])
         if 0x0000 <= addr <= 0x1FFF and self.chr_size == 0:
             # CHR RAM fallback
-            if not hasattr(self, 'chr_ram'):
+            if not hasattr(self, "chr_ram"):
                 self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
             return int(self.chr_ram[addr & 0x1FFF])
         return self.open_bus
 
     def ppu_write(self, addr: int, value: int) -> None:
         if 0x0000 <= addr <= 0x1FFF and self.chr_size == 0:
-            if not hasattr(self, 'chr_ram'):
+            if not hasattr(self, "chr_ram"):
                 self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
             self.chr_ram[addr & 0x1FFF] = mask8(value)
 
@@ -308,7 +338,9 @@ class Mapper002(Mapper):
 class Mapper003(Mapper):
     """CNROM (Mapper 003): PRG fixed (32KB), CHR switched in 8KB banks."""
 
-    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0) -> None:
+    def __init__(
+        self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0
+    ) -> None:
         prg_chunks = max(1, len(prg_rom) // 0x4000)
         chr_chunks = max(1, len(chr_rom) // 0x2000)
         super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
@@ -334,14 +366,14 @@ class Mapper003(Mapper):
             bank_offset = clamp_bank_index(self.chr_bank, max(1, self.chr_size // 0x2000)) * 0x2000
             return int(self.chr_rom[bank_offset + (addr & 0x1FFF)])
         if 0x0000 <= addr <= 0x1FFF and self.chr_size == 0:
-            if not hasattr(self, 'chr_ram'):
+            if not hasattr(self, "chr_ram"):
                 self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
             return int(self.chr_ram[addr & 0x1FFF])
         return self.open_bus
 
     def ppu_write(self, addr: int, value: int) -> None:
         if 0x0000 <= addr <= 0x1FFF and self.chr_size == 0:
-            if not hasattr(self, 'chr_ram'):
+            if not hasattr(self, "chr_ram"):
                 self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
             self.chr_ram[addr & 0x1FFF] = mask8(value)
 
@@ -351,14 +383,22 @@ class Mapper003(Mapper):
 
 # Mapper 004 (MMC3)
 class Mapper004(Mapper):
-    """ MMC3 (Mapper 004):
+    """MMC3 (Mapper 004):
     - Supports 8 x 1KB CHR banks and 4 x 8KB PRG banks
     - Bank select register at $8000/$8001
     - Mirroring at $A000
     - IRQ: $C000-$E001 range
     """
-    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8],
-                 mirroring: int, *, has_prg_ram: bool = True, open_bus: Optional[int] = 0) -> None:
+
+    def __init__(
+        self,
+        prg_rom: NDArray[np.uint8],
+        chr_rom: NDArray[np.uint8],
+        mirroring: int,
+        *,
+        has_prg_ram: bool = True,
+        open_bus: Optional[int] = 0,
+    ) -> None:
         prg_chunks = max(1, len(prg_rom) // 0x4000)
         chr_chunks = max(1, len(chr_rom) // 0x2000)
         super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
@@ -385,7 +425,7 @@ class Mapper004(Mapper):
 
         # IRQ state
         self.irq_counter: int = 0
-        self.irq_reload: int = 0    # latch written by $C000
+        self.irq_reload: int = 0  # latch written by $C000
         self.irq_enabled: bool = False
         self.irq_pending: bool = False
 
@@ -515,7 +555,7 @@ class Mapper004(Mapper):
             return int(self.chr_rom[bank_base + offset])
 
         if 0x0000 <= addr <= 0x1FFF and self.chr_size == 0:
-            if not hasattr(self, 'chr_ram'):
+            if not hasattr(self, "chr_ram"):
                 self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
             return int(self.chr_ram[addr & 0x1FFF])
 
@@ -523,7 +563,7 @@ class Mapper004(Mapper):
 
     def ppu_write(self, addr: int, value: int) -> None:
         if 0x0000 <= addr <= 0x1FFF and self.chr_size == 0:
-            if not hasattr(self, 'chr_ram'):
+            if not hasattr(self, "chr_ram"):
                 self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
             self.chr_ram[addr & 0x1FFF] = mask8(value)
 

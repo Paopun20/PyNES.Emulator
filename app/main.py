@@ -51,7 +51,6 @@ if sys.version_info < (3, 14):
     raise RuntimeError("Python 3.14 or higher is required to run PyNES.")
 
 log.info("Starting PyNES Emulator")
-threading.excepthook = lambda *args: log.error(f"Uncaught thread exception: {args[1].exc_type.__name__}: {args[1].exc_value}")
 
 sys.set_int_max_str_digits(10_000_000)  # 2**31 - 1
 sys.setrecursionlimit(10_000)  # 2**31 - 1
@@ -514,15 +513,18 @@ def render_frame(frame: NDArray[np.uint8]) -> None:
 
 # subthread to run emulator cycles
 def subpro() -> None:
-    global running, paused
+    global running
     while running:
-        if paused: run_event.wait()  # block if paused flag cleared
-
+        if not run_event.is_set():
+            run_event.wait()
+        
         try:
             nes_emu.step_Cycle()
         except EmulatorError as e:
-            log.error(f"{e.type.__name__}: {e.message}")
-            running = False
+            if debug_mode:
+                raise
+            log.error(f"{e.exception.__name__}: {e.message}")
+            break
 
 with CoreThread() as core_thread:
     core_thread.add_thread(target=subpro, name="Emulator Cycle Thread")

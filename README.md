@@ -68,12 +68,21 @@ including the integration of Cython for critical components.
 
 ## Current Status
 
-- CPU: Basic instruction set implemented, but many unofficial opcodes are missing.
-- PPU: Basic rendering, but many features are incomplete.
-- APU: Work in progress.
-- Input: Basic keyboard mapping.
-- Performance: Not optimized for speed; primarily for educational purposes.
-- Mapper: Basic NROM mapper implemented.
+- **CPU:** Basic instruction set implemented; many unofficial opcodes still missing.
+- **PPU:** Basic rendering is working, but several features remain incomplete.
+- **APU:** Work in progress.
+- **Input:** Basic keyboard mapping implemented.
+- **Performance:** Not optimized; designed mainly for educational use.
+
+### Mapper Support
+
+| Status | Mapper ID | Mapper Name | Notes |
+|--------|-----------|-------------|-------|
+| ✅     | 000       | NROM        | No bank switching |
+| ✅     | 001       | MMC1        | PRG/CHR bank switching, simple IRQ |
+| ✅     | 002       | UxROM       | PRG bank switching |
+| ✅     | 003       | CNROM       | CHR bank switching |
+| ⚠️     | 004       | MMC3        | Advanced bank switching + scanline IRQ |
 
 ## Compatibility
 
@@ -102,45 +111,45 @@ If you want to use a ready-made executable:
 1. Ensure you have Python 3.14 or higher installed.
 2. Clone this repository.
 
-    ```bash
-    git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
-    ```
+   ```bash
+   git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
+   ```
 
 3. Create and activate a virtual environment (optional but recommended):
 
-    Create a virtual environment:
+   Create a virtual environment:
 
-    ```bash
-    python -m venv env
-    ```
+   ```bash
+   python -m venv env
+   ```
 
-    Activate the virtual environment:
+   Activate the virtual environment:
 
-    ```bash
-    # windows:
-    .\env\Scripts\activate
+   ```bash
+   # windows:
+   .\env\Scripts\activate
 
-    # macOS / Linux:
-    source env/bin/activate
-    ```
+   # macOS / Linux:
+   source env/bin/activate
+   ```
 
 4. Build the extensions (Cython and Rust components):
 
-    ```bash
-    python setup.py build_ext --inplace
-    ```
+   ```bash
+   python setup.py build_ext --inplace
+   ```
 
 5. Install the required dependencies using (requirements file is included in the repository you don't need to install it manually, it will install automatically):
 
-    ```bash
-    pip install -r requirements.txt
-    ```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 6. Start the emulator with:
 
-    ```bash
-    python app/main.py
-    ```
+   ```bash
+   python app/main.py
+   ```
 
 7. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 

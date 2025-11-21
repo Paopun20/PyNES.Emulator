@@ -5,7 +5,7 @@ import time  # for fps
 from collections import deque
 from dataclasses import dataclass
 from string import Template
-from typing import Dict, List, Final, Callable, Any, Optional
+from typing import Dict, List, Final, Callable, Any, Optional, Type
 from numpy.typing import NDArray
 from pynes.apu import APU
 from pynes.cartridge import Cartridge
@@ -103,8 +103,9 @@ nes_palette: Final[NDArray[np.uint8]] = np.array(
 
 class EmulatorError(Exception):
     def __init__(self, exception: Exception):
-        self.type = type(exception)
-        self.message = str(exception)
+        self.original: Final[Exception] = exception
+        self.exception: Final[Type[Exception]] = type(exception)
+        self.message: Final[str] = str(exception)
         super().__init__(self.message)
 
 
@@ -153,7 +154,11 @@ class PendingsTask:
     BRK: bool = False
 
 
-class CIM(Enum):  # current_instruction_mode
+class CIM(Enum):
+    """
+    Current Instruction Mode
+    """
+
     Undefined = -1
     Immediate = 0
     ZeroPage = 1
@@ -174,8 +179,8 @@ class Architrcture:
     X: int = 0
     Y: int = 0
     Halted: bool = False
-    StackPointer: CByte[8, CSign.UNSIGNED] = 0
-    ProgramCounter: CByte[16, CSign.UNSIGNED] = 0
+    StackPointer: CByte[8, CSign.UNSIGNED]= CByte[8, CSign.UNSIGNED](0)
+    ProgramCounter: CByte[16, CSign.UNSIGNED] = CByte[16, CSign.UNSIGNED](0)
     OpCode: int = 0
     Bus: int = 0
     current_instruction_mode: CIM = CIM.Undefined
@@ -981,19 +986,19 @@ class Emulator:
 
         # Initialize mapper based on cartridge mapper ID
         mapper_id = self.cartridge.MapperID
-        if mapper_id == 0:
-            self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
-        elif mapper_id == 1:
-            self.mapper = Mapper001(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
-        elif mapper_id == 2:
-            self.mapper = Mapper002(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
-        elif mapper_id == 3:
-            self.mapper = Mapper003(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
-        elif mapper_id == 4:
-            self.mapper = Mapper004(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
-        else:
-            _logger.warning(f"Mapper {mapper_id} not supported, using Mapper000 fallback")
-            self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+        match mapper_id:
+            case 0:
+                self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            case 1:
+                self.mapper = Mapper001(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            case 2:
+                self.mapper = Mapper002(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            case 3:
+                self.mapper = Mapper003(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            case 4:
+                self.mapper = Mapper004(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            case _:
+                raise EmulatorError(NotImplementedError(f"Mapper {mapper_id} not supported."))
 
         # Reset CPU
         self.Architrcture = Architrcture(StackPointer=0xFD)
@@ -1055,8 +1060,8 @@ class Emulator:
         elif mapper_id == 4:
             self.mapper = Mapper004(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
         else:
-            _logger.warning(f"Mapper {mapper_id} not supported, using Mapper000 fallback")
-            self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            _logger.warning(f"Mapper {mapper_id} not supported")
+            raise EmulatorError(NotImplementedError(f"Mapper {mapper_id} not supported."))
 
     def SwapAt(self, at_cycles: int, cartridge: Cartridge) -> None:
         raise EmulatorError(NotImplementedError("Cartridge swapping at runtime is not yet implemented."))

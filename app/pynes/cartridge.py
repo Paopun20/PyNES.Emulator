@@ -73,10 +73,13 @@ class Cartridge:
         offset = prg_end
 
         # CHR extract
-        chr_end = offset + chr_size
-        if chr_end > len(obj.HeaderedROM):
-            return False, "CHR size exceeds file length"
-        obj.CHRROM = obj.HeaderedROM[offset:chr_end].copy()
+        if chr_size == 0:
+            obj.CHRROM = np.zeros(0x2000, dtype=np.uint8)
+        else:
+            chr_end = offset + chr_size
+            if chr_end > len(obj.HeaderedROM):
+                return False, "CHR size exceeds file length"
+            obj.CHRROM = obj.HeaderedROM[offset:chr_end].copy()
 
         return True, obj
 
