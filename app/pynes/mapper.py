@@ -1,5 +1,3 @@
-# nes_mappers.py
-# Corrected and safer implementations for common NES mappers
 # - Mapper base class
 # - Mapper000 (NROM)
 # - Mapper001 (MMC1)
@@ -12,7 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import Optional
 
-# ---------------------- Utilities ----------------------
+# Utilities
 
 def mask8(v: int) -> int:
     return int(v & 0xFF)
@@ -25,7 +23,7 @@ def clamp_bank_index(bank: int, bank_count: int) -> int:
     return int(bank) % int(bank_count)
 
 
-# ---------------------- Base Mapper ----------------------
+# Base Mapper
 class Mapper:
     """
     Base class for NES mappers.
@@ -54,7 +52,7 @@ class Mapper:
         pass
 
 
-# ---------------------- Mapper 000 (NROM) ----------------------
+# Mapper 000 (NROM)
 class Mapper000(Mapper):
     """NROM — No bank switching. PRG: 16KB or 32KB. CHR: 8KB or CHR-RAM."""
 
@@ -104,7 +102,7 @@ class Mapper000(Mapper):
         return None
 
 
-# ---------------------- Mapper 001 (MMC1) ----------------------
+# Mapper 001 (MMC1)
 class Mapper001(Mapper):
     """
     MMC1 (Mapper 001)
@@ -258,7 +256,7 @@ class Mapper001(Mapper):
         self._update_banks()
 
 
-# ---------------------- Mapper 002 (UxROM) ----------------------
+# Mapper 002 (UxROM)
 class Mapper002(Mapper):
     """UxROM (Mapper 002): 16KB switchable bank at $8000-$BFFF, fixed last bank at $C000-$FFFF."""
 
@@ -306,7 +304,7 @@ class Mapper002(Mapper):
         self.prg_bank = 0
 
 
-# ---------------------- Mapper 003 (CNROM) ----------------------
+# Mapper 003 (CNROM)
 class Mapper003(Mapper):
     """CNROM (Mapper 003): PRG fixed (32KB), CHR switched in 8KB banks."""
 
@@ -351,17 +349,16 @@ class Mapper003(Mapper):
         self.chr_bank = 0
 
 
-# ---------------------- Mapper 004 (MMC3) ----------------------
+# Mapper 004 (MMC3)
 class Mapper004(Mapper):
-    """
-    MMC3 (Mapper 004):
+    """ MMC3 (Mapper 004):
     - Supports 8 x 1KB CHR banks and 4 x 8KB PRG banks
     - Bank select register at $8000/$8001
     - Mirroring at $A000
     - IRQ: $C000-$E001 range
     """
-
-    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, has_prg_ram: bool = True, open_bus: Optional[int] = 0) -> None:
+    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8],
+                 mirroring: int, *, has_prg_ram: bool = True, open_bus: Optional[int] = 0) -> None:
         prg_chunks = max(1, len(prg_rom) // 0x4000)
         chr_chunks = max(1, len(chr_rom) // 0x2000)
         super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
@@ -388,11 +385,14 @@ class Mapper004(Mapper):
 
         # IRQ state
         self.irq_counter: int = 0
-        self.irq_reload: int = 0
+        self.irq_reload: int = 0    # latch written by $C000
         self.irq_enabled: bool = False
         self.irq_pending: bool = False
-        # A12 latch for rising-edge detection
-        self.a12_latch: bool = False
+
+        # A12 filtering state (MMC3 requires A12 to have been low for >= 3 PPU cycles
+        # before a rising edge will clock the IRQ counter)
+        self.a12_was_high: bool = False
+        self.a12_low_count: int = 0
 
         self._update_banks()
 
@@ -400,41 +400,55 @@ class Mapper004(Mapper):
         prg_mode = (self.bank_select >> 6) & 0x01
         chr_mode = (self.bank_select >> 7) & 0x01
 
+        # number of 8KB PRG banks and 1KB CHR banks present
         num_prg_banks_8kb = max(1, self.prg_size // 0x2000)
         num_chr_1kb = max(1, self.chr_size // 0x400)
 
-        # CHR bank mapping (1KB banks)
+        # CHR bank mapping (1KB banks). Respect the CHR map mode and
+        # that R0/R1 are 2KB pairs (lowest bit ignored).
         if chr_mode == 0:
-            # R0/R1 are 2KB combined (even/odd pairing), others are 1KB
+            # $0000-$07FF : R0 (2KB, even)
             r0 = int(self.bank_registers[0]) & 0xFE
-            self.chr_banks[0] = clamp_bank_index(r0 // 1, num_chr_1kb) * 0x400
-            self.chr_banks[1] = (self.chr_banks[0] + 0x400) & (~0)
+            bank0_idx = clamp_bank_index(r0, num_chr_1kb)
+            self.chr_banks[0] = bank0_idx * 0x400
+            self.chr_banks[1] = (bank0_idx + 1) * 0x400
+
+            # $0800-$0FFF : R1 (2KB, even)
             r1 = int(self.bank_registers[1]) & 0xFE
-            self.chr_banks[2] = clamp_bank_index(r1 // 1, num_chr_1kb) * 0x400
-            self.chr_banks[3] = (self.chr_banks[2] + 0x400) & (~0)
+            bank2_idx = clamp_bank_index(r1, num_chr_1kb)
+            self.chr_banks[2] = bank2_idx * 0x400
+            self.chr_banks[3] = (bank2_idx + 1) * 0x400
+
             self.chr_banks[4] = clamp_bank_index(int(self.bank_registers[2]), num_chr_1kb) * 0x400
             self.chr_banks[5] = clamp_bank_index(int(self.bank_registers[3]), num_chr_1kb) * 0x400
             self.chr_banks[6] = clamp_bank_index(int(self.bank_registers[4]), num_chr_1kb) * 0x400
             self.chr_banks[7] = clamp_bank_index(int(self.bank_registers[5]), num_chr_1kb) * 0x400
         else:
+            # inverted mapping
             self.chr_banks[0] = clamp_bank_index(int(self.bank_registers[2]), num_chr_1kb) * 0x400
             self.chr_banks[1] = clamp_bank_index(int(self.bank_registers[3]), num_chr_1kb) * 0x400
             self.chr_banks[2] = clamp_bank_index(int(self.bank_registers[4]), num_chr_1kb) * 0x400
             self.chr_banks[3] = clamp_bank_index(int(self.bank_registers[5]), num_chr_1kb) * 0x400
+
             r0 = int(self.bank_registers[0]) & 0xFE
-            self.chr_banks[4] = clamp_bank_index(r0 // 1, num_chr_1kb) * 0x400
-            self.chr_banks[5] = (self.chr_banks[4] + 0x400) & (~0)
+            bank4_idx = clamp_bank_index(r0, num_chr_1kb)
+            self.chr_banks[4] = bank4_idx * 0x400
+            self.chr_banks[5] = (bank4_idx + 1) * 0x400
+
             r1 = int(self.bank_registers[1]) & 0xFE
-            self.chr_banks[6] = clamp_bank_index(r1 // 1, num_chr_1kb) * 0x400
-            self.chr_banks[7] = (self.chr_banks[6] + 0x400) & (~0)
+            bank6_idx = clamp_bank_index(r1, num_chr_1kb)
+            self.chr_banks[6] = bank6_idx * 0x400
+            self.chr_banks[7] = (bank6_idx + 1) * 0x400
 
         # PRG bank mapping (8KB banks)
         if prg_mode == 0:
+            # $8000 = R6, $A000 = R7, $C000 = second-last, $E000 = last
             self.prg_banks[0] = clamp_bank_index(int(self.bank_registers[6]) & 0x3F, num_prg_banks_8kb) * 0x2000
             self.prg_banks[1] = clamp_bank_index(int(self.bank_registers[7]) & 0x3F, num_prg_banks_8kb) * 0x2000
             self.prg_banks[2] = max(0, (num_prg_banks_8kb - 2)) * 0x2000
             self.prg_banks[3] = max(0, (num_prg_banks_8kb - 1)) * 0x2000
         else:
+            # $8000 = second-last, $A000 = R7, $C000 = R6, $E000 = last
             self.prg_banks[0] = max(0, (num_prg_banks_8kb - 2)) * 0x2000
             self.prg_banks[1] = clamp_bank_index(int(self.bank_registers[7]) & 0x3F, num_prg_banks_8kb) * 0x2000
             self.prg_banks[2] = clamp_bank_index(int(self.bank_registers[6]) & 0x3F, num_prg_banks_8kb) * 0x2000
@@ -443,19 +457,23 @@ class Mapper004(Mapper):
     def cpu_read(self, addr: int) -> int:
         if 0x6000 <= addr <= 0x7FFF and self.prg_ram_present:
             return int(self.prg_ram[addr - 0x6000])
+
         if 0x8000 <= addr <= 0xFFFF:
             bank_index = ((addr - 0x8000) >> 13) & 0x03  # which 8KB bank (0..3)
             offset = addr & 0x1FFF
             bank_base = int(self.prg_banks[bank_index])
             return int(self.prg_rom[bank_base + offset])
+
         return self.open_bus
 
     def cpu_write(self, addr: int, value: int) -> None:
         value = mask8(value)
+
         # PRG RAM
         if 0x6000 <= addr <= 0x7FFF and self.prg_ram_present:
             self.prg_ram[addr - 0x6000] = value
             return
+
         # Bank select / bank data / mirroring / IRQ registers are accessed using addr & 0xE001
         reg = addr & 0xE001
         if reg == 0x8000:
@@ -475,13 +493,14 @@ class Mapper004(Mapper):
             # Some MMC3 variants: PRG RAM protect — ignored here
             pass
         elif reg == 0xC000:
-            # IRQ latch
+            # IRQ latch (latched value)
             self.irq_reload = value
         elif reg == 0xC001:
-            # IRQ reload (reset counter)
+            # IRQ reload: writing any value clears the counter immediately.
+            # The hardware reload happens on the NEXT qualifying A12 rising edge.
             self.irq_counter = 0
         elif reg == 0xE000:
-            # IRQ disable
+            # IRQ disable: disable and acknowledge
             self.irq_enabled = False
             self.irq_pending = False
         elif reg == 0xE001:
@@ -494,10 +513,12 @@ class Mapper004(Mapper):
             offset = addr & 0x3FF
             bank_base = int(self.chr_banks[bank_index])
             return int(self.chr_rom[bank_base + offset])
+
         if 0x0000 <= addr <= 0x1FFF and self.chr_size == 0:
             if not hasattr(self, 'chr_ram'):
                 self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
             return int(self.chr_ram[addr & 0x1FFF])
+
         return self.open_bus
 
     def ppu_write(self, addr: int, value: int) -> None:
@@ -507,18 +528,33 @@ class Mapper004(Mapper):
             self.chr_ram[addr & 0x1FFF] = mask8(value)
 
     def tick_a12(self, a12: bool) -> None:
-        # Called on each PPU cycle with the current state of address line A12
-        prev = self.a12_latch
-        # detect rising edge
-        if (not prev) and a12:
-            self._clock_irq_counter()
-        self.a12_latch = a12
+        """
+        Called on each PPU cycle with the current state of address line A12.
+        Implements the required filtering: A12 must have been low for >=3 PPU
+        cycles before a rising edge (low->high) will clock the IRQ counter.
+        """
+        if not a12:
+            # count consecutive cycles A12 is low (cap to avoid unbounded growth)
+            self.a12_low_count = min(self.a12_low_count + 1, 1000)
+            self.a12_was_high = False
+        else:
+            # currently high
+            # detect a filtered rising edge: previously low, and low stayed for >=3 cycles
+            if (not self.a12_was_high) and (self.a12_low_count >= 3):
+                self._clock_irq_counter()
+            # reset low counter and mark high
+            self.a12_low_count = 0
+            self.a12_was_high = True
 
     def _clock_irq_counter(self) -> None:
+        # When the IRQ is clocked (filtered A12 0->1), the counter value is checked.
+        # If zero, it's reloaded with the latched value; otherwise it decrements.
         if self.irq_counter == 0:
             self.irq_counter = self.irq_reload
         else:
             self.irq_counter = (self.irq_counter - 1) & 0xFF
+
+        # If the counter becomes zero and IRQs are enabled, request IRQ
         if self.irq_counter == 0 and self.irq_enabled:
             self.irq_pending = True
 
@@ -532,5 +568,6 @@ class Mapper004(Mapper):
         self.irq_reload = 0
         self.irq_enabled = False
         self.irq_pending = False
-        self.a12_latch = False
+        self.a12_was_high = False
+        self.a12_low_count = 0
         self._update_banks()
