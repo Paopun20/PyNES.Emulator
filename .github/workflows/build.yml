@@ -19,9 +19,9 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
       fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     defaults:
       run:
@@ -45,17 +45,34 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "requirements.txt"
 
+      - name: Install Linux GL Deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev \
+            libxext-dev \
+            libxi-dev \
+            libxxf86vm-dev \
+            libgl1-mesa-dev \
+            mesa-common-dev \
+            libgl-dev
+
+      # Linux/Windows only
       - name: Setup UPX
+        if: matrix.os != 'macos-latest'
         uses: crazy-max/ghaction-upx@v3
         with:
           install-only: true
 
       - name: Get UPX path
         id: upx
+        if: matrix.os != 'macos-latest'
         run: |
           UPX_PATH=$(which upx || echo "")
           echo "upx_path=$UPX_PATH" >> $GITHUB_OUTPUT
 
+      # ---------- Cache
       - name: Cache pip packages
         uses: actions/cache@v4
         with:
@@ -108,18 +125,65 @@ jobs:
           uv pip install --system --upgrade -r requirements.txt
           uv pip install --system --upgrade git+https://github.com/pyinstaller/pyinstaller.git
 
+      - name: Prepare macOS universal build env
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "Preparing macOS Universal2 environment..."
+          export MACOSX_DEPLOYMENT_TARGET=11.0
+
+          # Universal compile flags for Cython and C extensions
+          echo "ARCHFLAGS=\"-arch x86_64 -arch arm64\"" >> $GITHUB_ENV
+
+          # Rust: build both archs
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+
       - name: Build Extensions
-        run: python setup.py build_ext --inplace
+        run: |
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            #
+            # 1) Build Rust EXT for both archs
+            #
+            for TARGET in x86_64-apple-darwin aarch64-apple-darwin; do
+              echo "Building Rust target: $TARGET"
+              cargo build --release --target $TARGET
+            done
+
+            #
+            # 2) Lipo merge Rust universal dylibs
+            #
+            for LIB in $(find app -name "*.dylib"); do
+              BASE=$(basename "$LIB")
+              DIR=$(dirname "$LIB")
+              LIPO_OUT="$DIR/$BASE"
+              echo "Lipo merging $BASE"
+              lipo -create \
+                "app/**/target/x86_64-apple-darwin/release/$BASE" \
+                "app/**/target/aarch64-apple-darwin/release/$BASE" \
+                -output "$LIPO_OUT"
+            done
+
+            #
+            # 3) Build Cython EXT universal2
+            #
+            python setup.py build_ext --inplace
+          else
+            python setup.py build_ext --inplace
+          fi
 
       - name: Build PyNES
         id: build
         run: |
           echo "build_success=false" >> $GITHUB_OUTPUT
 
-          if [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
-            uv run pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "${{ steps.upx.outputs.upx_path }}")"
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+              # macOSUniversal2
+              uv run pyinstaller pynes.spec --clean --noconfirm --target-arch universal2
+          elif [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
+              # Win/Linux + UPX
+              uv run pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "${{ steps.upx.outputs.upx_path }}")"
           else
-            uv run pyinstaller pynes.spec --clean --noconfirm
+              uv run pyinstaller pynes.spec --clean --noconfirm
           fi
 
           echo "build_success=true" >> $GITHUB_OUTPUT
@@ -140,6 +204,7 @@ jobs:
           else
             cp dist/pynes upload/
           fi
+
           cp app/icon.ico upload/ 2>/dev/null || true
           cp -r assets/* upload/ 2>/dev/null || true
           cp -r roms/* upload/ 2>/dev/null || true
