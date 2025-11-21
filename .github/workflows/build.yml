@@ -150,10 +150,8 @@ jobs:
         id: build
         run: |
           echo "build_success=false" >> $GITHUB_OUTPUT
-
-          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            uv run pyinstaller pynes.spec --clean --noconfirm --target-arch universal2
-          elif [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
+          
+          if [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
             uv run pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "${{ steps.upx.outputs.upx_path }}")"
           else
             uv run pyinstaller pynes.spec --clean --noconfirm
