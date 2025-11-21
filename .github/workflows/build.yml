@@ -143,31 +143,7 @@ jobs:
       # Build Extensions (Cython + Rust universal2)
       - name: Build Extensions
         run: |
-          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            # Rust universal build
-            cd app
-            for TARGET in x86_64-apple-darwin aarch64-apple-darwin; do
-              echo "Building Rust target: $TARGET"
-              cargo build --release --target $TARGET
-            done
-
-            # Lipo merge Rust dylibs
-            for LIB in $(find target/*/release -name "*.dylib"); do
-              BASE=$(basename "$LIB")
-              echo "Lipo merging $BASE"
-              lipo -create \
-                "target/x86_64-apple-darwin/release/$BASE" \
-                "target/aarch64-apple-darwin/release/$BASE" \
-                -output "../../$BASE"
-            done
-            cd ..
-
-            # Cython build (root folder)
-            python setup.py build_ext --inplace
-          else
-            # Linux / Windows
-            python setup.py build_ext --inplace
-          fi
+          python setup.py build_ext --inplace
 
       # Build PyNES
       - name: Build PyNES
