@@ -20,8 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest]
-        python-version: [$PYTHON_VERSION]
+        os: [windows-latest, ubuntu-latest, macos-latest]
       fail-fast: false
 
     defaults:
@@ -35,7 +34,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -58,14 +57,12 @@ jobs:
           echo "upx_path=$UPX_PATH" >> $GITHUB_OUTPUT
 
       - name: Cache pip packages
-        id: pip-cache
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('app/requirements.txt') }}
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+            ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
             ${{ runner.os }}-pip-
 
       - name: Cache PyInstaller
@@ -75,12 +72,12 @@ jobs:
             ~/.cache/pyinstaller
             ~/AppData/Local/pyinstaller
             ~/Library/Caches/pyinstaller
-          key: ${{ runner.os }}-pyinstaller-${{ matrix.python-version }}-${{ hashFiles('pynes.spec') }}
+          key: ${{ runner.os }}-pyinstaller-${{ env.PYTHON_VERSION }}-${{ hashFiles('pynes.spec') }}
           restore-keys: |
-            ${{ runner.os }}-pyinstaller-${{ matrix.python-version }}-
+            ${{ runner.os }}-pyinstaller-${{ env.PYTHON_VERSION }}-
             ${{ runner.os }}-pyinstaller-
 
-      - name: Cache Rust dependencies
+      - name: Cache Rust
         uses: actions/cache@v4
         with:
           path: |
@@ -100,9 +97,9 @@ jobs:
             build/
             *.so
             *.pyd
-          key: ${{ runner.os }}-build-${{ matrix.python-version }}-${{ hashFiles('setup.py') }}
+          key: ${{ runner.os }}-build-${{ env.PYTHON_VERSION }}-${{ hashFiles('setup.py') }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ matrix.python-version }}-
+            ${{ runner.os }}-build-${{ env.PYTHON_VERSION }}-
             ${{ runner.os }}-build-
 
       - name: Install Python dependencies
@@ -118,30 +115,40 @@ jobs:
         id: build
         run: |
           echo "build_success=false" >> $GITHUB_OUTPUT
+
           if [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
             uv run pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "${{ steps.upx.outputs.upx_path }}")"
           else
             uv run pyinstaller pynes.spec --clean --noconfirm
           fi
+
           echo "build_success=true" >> $GITHUB_OUTPUT
 
-      - name: Verify Build Output
+      - name: Verify Output
         run: |
-          test -f dist/pynes${"${{ matrix.os }}" == "windows-latest" ? ".exe" : ""} || exit 1
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            test -f dist/pynes.exe
+          else
+            test -f dist/pynes
+          fi
 
       - name: Prepare Upload Directory
         run: |
           mkdir -p upload
-          cp cp dist/pynes${"${{ matrix.os }}" == "windows-latest" ? ".exe" : ""} upload/ 
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp dist/pynes.exe upload/
+          else
+            cp dist/pynes upload/
+          fi
           cp app/icon.ico upload/ 2>/dev/null || true
           cp -r assets/* upload/ 2>/dev/null || true
           cp -r roms/* upload/ 2>/dev/null || true
-          cp LICENSE.md upload/
+          cp LICENSE.md upload/ 2>/dev/null || true
 
       - name: Upload Artifact
         if: steps.build.outputs.build_success == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
+          name: pynes-${{ matrix.os }}-py${{ env.PYTHON_VERSION }}
           path: upload/
           retention-days: 90
