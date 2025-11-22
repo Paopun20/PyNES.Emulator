@@ -88,8 +88,7 @@ including the integration of Cython for critical components.
 
 - **Operating Systems**:
   - Windows: Fully supported.
-  - macOS: Partially supported (Old builds available, but may have minor issues).
-  - Linux: Partially supported (Old builds available, but may have minor issues).
+
 
 ## Installation
 
@@ -139,7 +138,7 @@ If you want to use a ready-made executable:
    python setup.py build_ext --inplace
    ```
 
-5. Install the required dependencies using (requirements file is included in the repository you don't need to install it manually, it will install automatically):
+5. Install the required dependencies using (requirements file is included in the repository you don't need to install it manually, it will install automatically) (best to uv):
 
    ```bash
    pip install -r requirements.txt

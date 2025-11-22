@@ -1,5 +1,3 @@
-from __future__ import annotations, generator_stop
-
 import os
 
 if os.environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
@@ -8,9 +6,9 @@ if os.environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
 import sys
 import importlib.util
 import threading
-import time
 from pathlib import Path
-from objects.shadercass import Shader
+from types import FrameType, TracebackType
+from typing import Optional, Any, Tuple, List, Dict, Union, Callable
 
 from tkinter import Tk, messagebox
 import customtkinter as ctk
@@ -22,9 +20,6 @@ import psutil
 import moderngl
 import platform
 from rich.traceback import install
-from collections.abc import Callable
-from typing import Optional, Any, Tuple, List, Dict, Union, Literal
-from types import FrameType, TracebackType
 from numpy.typing import NDArray
 
 from __version__ import __version_string__ as __version__
@@ -32,6 +27,7 @@ from backend.Control import Control
 from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
 from objects.RenderSprite import RenderSprite
+from objects.shadercass import Shader
 from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE
 from api.discord import Presence
 from pynes.cartridge import Cartridge
@@ -42,19 +38,20 @@ from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
 from helper.hasGIL import hasGIL
 from returns.result import Success, Failure
+from util.timer import Timer  # ← NEW typed pause/resume Timer
 from resources import icon_path, assets_path, font_path
 
 install(console=console)  # make coooooooooooooooooool error output
 
-# Now your runtime checks
+# Runtime checks
 if sys.version_info < (3, 14):
     raise RuntimeError("Python 3.14 or higher is required to run PyNES.")
 
 log.info("Starting PyNES Emulator")
 
-sys.set_int_max_str_digits(10_000_000)  # 2**31 - 1
-sys.setrecursionlimit(10_000)  # 2**31 - 1
-sys.setswitchinterval(1e-5)  # 1e-322
+sys.set_int_max_str_digits(10_000_000)
+sys.setrecursionlimit(10_000)
+sys.setswitchinterval(1e-5)
 
 process: psutil.Process = psutil.Process(os.getpid())
 
@@ -111,12 +108,11 @@ SCALE: int = 3
 
 _thread_list: List[threading.Thread] = []
 
-
 class CoreThread:
     def __init__(self) -> None:
         pass
 
-    def __enter__(self) -> CoreThread:
+    def __enter__(self) -> "CoreThread":
         return self
 
     def __exit__(
@@ -132,8 +128,8 @@ class CoreThread:
         _thread_list.append(threading.Thread(target=target, name=name, daemon=True))
 
 
-run_event: threading.Event = threading.Event()  # controls running emulator thread
-run_event.set()  # start in running state
+run_event: threading.Event = threading.Event()
+run_event.set()
 
 log.info(f"Starting pygame community edition {pygame.__version__}")
 
@@ -160,22 +156,14 @@ pyWindow: pyWindowColorMode = pyWindowColorMode(hwnd)
 pyWindow.dark_mode = True
 
 log.info("Starting ModernGL")
-# Create ModernGL context
 ctx: moderngl.Context = moderngl.create_context()
 ctx.enable(moderngl.BLEND)
 ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
-
-# Disable depth testing (2D rendering)
 ctx.disable(moderngl.DEPTH_TEST)
-
-# Set clear color
 ctx.clear(0.0, 0.0, 0.0, 1.0)
 
 
-# Debug overlay helper class
 class DebugOverlay:
-    """Manages a ModernGL texture for rendering debug text overlay."""
-
     def __init__(self, ctx: moderngl.Context, screen_w: int, screen_h: int) -> None:
         self.ctx: moderngl.Context = ctx
         self.screen_w: int = screen_w
@@ -183,7 +171,6 @@ class DebugOverlay:
         self.texture: Optional[moderngl.Texture] = None
         self.prev_lines: Optional[Tuple[str, ...]] = None
 
-        # Create shader program for overlay rendering
         vertex_shader: str = """
         #version 330 core
         in vec2 in_pos;
@@ -215,28 +202,13 @@ class DebugOverlay:
 
         self.program: moderngl.Program = ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
 
-        # Create quad for rendering
         vertices: NDArray[np.float32] = np.array(
             [
-                # x,   y,   u,   v
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                1.0,
-                0.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                0.0,
-                1.0,
-                0.0,
-                1.0,
-            ],
-            dtype=np.float32,
+                0.0, 0.0, 0.0, 0.0,
+                1.0, 0.0, 1.0, 0.0,
+                1.0, 1.0, 1.0, 1.0,
+                0.0, 1.0, 0.0, 1.0,
+            ], dtype=np.float32
         )
 
         indices: NDArray[np.int32] = np.array([0, 1, 2, 2, 3, 0], dtype=np.int32)
@@ -248,7 +220,6 @@ class DebugOverlay:
         )
 
     def render_text_to_surface(self, text_lines: List[str], width: int, height: int) -> pygame.Surface:
-        """Return a pygame Surface (RGBA) with the rendered text."""
         surf: pygame.Surface = pygame.Surface((width, height), pygame.SRCALPHA)
         surf.fill((0, 0, 0, 180))
         y_pos: int = 5
@@ -258,8 +229,6 @@ class DebugOverlay:
         return surf
 
     def update(self, text_lines: List[str]) -> None:
-        """Update the debug overlay texture with new text."""
-        # If same text, skip update
         if self.prev_lines == tuple(text_lines):
             return
         self.prev_lines = tuple(text_lines)
@@ -270,7 +239,6 @@ class DebugOverlay:
         surf: pygame.Surface = self.render_text_to_surface(text_lines, tex_w, tex_h)
         text_data: bytes = pygame.image.tobytes(surf, "RGBA", True)
 
-        # Create or update texture
         if self.texture is None or self.texture.size != (tex_w, tex_h):
             if self.texture:
                 self.texture.release()
@@ -280,14 +248,10 @@ class DebugOverlay:
         self.texture.write(text_data)
 
     def draw(self, offset: Tuple[int, int] = (0, 0)) -> None:
-        """Draw the overlay at the specified offset."""
         if self.texture is None:
             return
 
-        tex_w: int
-        tex_h: int
         tex_w, tex_h = self.texture.size
-
         self.program["u_resolution"].value = (self.screen_w, self.screen_h)
         self.program["u_offset"].value = offset
         self.program["u_size"].value = (tex_w, tex_h)
@@ -297,7 +261,6 @@ class DebugOverlay:
         self.vao.render(moderngl.TRIANGLES)
 
     def destroy(self) -> None:
-        """Release resources."""
         if self.texture:
             self.texture.release()
         self.vao.release()
@@ -306,18 +269,13 @@ class DebugOverlay:
         self.program.release()
 
 
-# create a sprite renderer
 log.info("Starting sprite renderer")
 sprite: RenderSprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 
-# Create debug overlay
 debug_overlay: DebugOverlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
-
-# sprite.set_fragment_shader(test_shader)  # lol
 
 clock: pygame.time.Clock = pygame.time.Clock()
 
-# init emulator and controller
 log.info("Starting emulator")
 nes_emu: Emulator = Emulator()
 log.info("Starting controller")
@@ -382,13 +340,17 @@ nes_emu.debug.halt_on_unknown_opcode = True
 
 log.info(f"Loaded: {Path(nes_path).name}")
 
+# ← NEW Timer
+emu_timer: Timer = Timer()
+
 # EMU LOOP
 nes_emu.Reset()
+emu_timer.start()
+
 running: bool = True
 paused: bool = False
 show_debug: bool = False
 frame_count: int = 0
-start_time: float = time.time()
 frame_lock: threading.Lock = threading.Lock()
 latest_frame: Optional[NDArray[np.uint8]] = None
 frame_ready: bool = False
@@ -398,7 +360,6 @@ ppu_clock: int = 5_369_317
 all_clock: int = cpu_clock + ppu_clock
 
 debug_mode_index: int = 0
-
 
 def draw_debug_overlay() -> None:
     global debug_mode_index
@@ -423,13 +384,14 @@ def draw_debug_overlay() -> None:
                 f"Mirroring Mode: {'Vertical' if nes_emu.cartridge.MirroringMode else 'Horizontal'}",
                 f"PRG ROM Size: {len(nes_emu.cartridge.PRGROM)} bytes | CHR ROM Size: {len(nes_emu.cartridge.CHRROM)} bytes",
                 "",
-                f"EMU runtime: {(time.time() - start_time):.2f}s ({hex(int(time.time() - start_time))})",
-                f"IRL estimate: {((time.time() - start_time) * (1 / all_clock)):.2f}s",
+                f"EMU runtime: {emu_timer.get_elapsed_time():.4f}s",
+                f"IRL estimate: {((emu_timer.get_elapsed_time()) * (1 / all_clock)):.67f}s",
                 f"CPU Halted: {nes_emu.Architrcture.Halted} ({'CLASHED, WHAT THE F*CK, I DO WRONG' if nes_emu.Architrcture.Halted else 'Not clashed yay!'})",
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
                 f"PC: ${nes_emu.Architrcture.ProgramCounter:04X} ({nes_emu.Architrcture.ProgramCounter}) | Cycles: {nes_emu.cycles}",
                 f"A: ${nes_emu.Architrcture.A:02X} X: ${nes_emu.Architrcture.X:02X} Y: ${nes_emu.Architrcture.Y:02X}",
+                f"Current Instruction Mode: {nes_emu.Architrcture.current_instruction_mode}",
                 f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
                 f"{'V' if nes_emu.flag.Overflow else '-'}"
                 f"{'B' if nes_emu.flag.Break else '-'}"
@@ -692,8 +654,10 @@ while running:
                 paused = not paused
                 if paused:
                     run_event.clear()  # pause the main thread
+                    emu_timer.pause()
                 else:
                     run_event.set()  # resume normal execution
+                    emu_timer.resume()
                 log.info(f"{'Paused' if paused else 'Resumed'}")
             elif event.key == pygame.K_F10:
                 if paused:
@@ -710,7 +674,7 @@ while running:
                 log.info("Resetting emulator")
                 nes_emu.Reset()
                 frame_count = 0
-                start_time = time.time()
+                emu_timer.reset()
             elif event.key == pygame.K_m:
                 log.info("Opening shader picker")
                 run_event.clear()  # pause the main thread

@@ -1,4 +1,3 @@
-from __future__ import annotations
 import moderngl
 import numpy as np
 from numpy.typing import NDArray

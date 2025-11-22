@@ -1,4 +1,3 @@
-from __future__ import annotations
 import re
 import textwrap
 from typing import Type, Final, Optional, List, Dict, Set

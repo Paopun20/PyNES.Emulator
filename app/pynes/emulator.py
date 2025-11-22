@@ -21,7 +21,6 @@ import numpy as np
 
 
 # Template
-# TEMPLATE: Final[Template] = Template("${PC}.${OP}${A}${X}${Y}${SP}.${N}${V}-${D}${I}${Z}${C}")
 TEMPLATE: Final[Template] = Template(
     "Run at line: ${PC} | opcode: ${OP} | "
     "A: ${A} | X: ${X} | Y: ${Y} | SP: ${SP} | "
@@ -154,7 +153,7 @@ class PendingsTask:
     BRK: bool = False
 
 
-class CIM(Enum):
+class CurrentInstructionMode(Enum):
     """
     Current Instruction Mode
     """
@@ -179,11 +178,11 @@ class Architrcture:
     X: int = 0
     Y: int = 0
     Halted: bool = False
-    StackPointer: CByte[8, CSign.UNSIGNED]= CByte[8, CSign.UNSIGNED](0)
-    ProgramCounter: CByte[16, CSign.UNSIGNED] = CByte[16, CSign.UNSIGNED](0)
-    OpCode: int = 0
+    StackPointer: CByte = CByte[8, CSign.UNSIGNED](0)
+    ProgramCounter: CByte = CByte[16, CSign.UNSIGNED](0)
+    OpCode: CByte = CByte[8, CSign.UNSIGNED](0)
     Bus: int = 0
-    current_instruction_mode: CIM = CIM.Undefined
+    current_instruction_mode: CurrentInstructionMode = CurrentInstructionMode.Undefined
     page_boundary_crossed: bool = False
     page_boundary_crossed_just_happened: bool = False
     cpu_bus_latch_time: float = 0.0
@@ -365,7 +364,12 @@ class Emulator:
                 val = self.mapper.cpu_read(addr)
             else:
                 val = int(self.PRGROM[addr - 0x8000])
-
+    
+        if hasattr(self.mapper, 'tick_a12') and addr < 0x2000:
+            # A12 = bit 12 of PPU address
+            a12_state = bool(addr & 0x1000)
+            self.mapper.tick_a12(a12_state) # type: ignore
+        
         self.dataBus = val
         return val
 
@@ -639,7 +643,7 @@ class Emulator:
     # @lru_cache(maxsize=None)
     def ReadOperands_AbsoluteAddressed(self) -> None:
         """Read 16-bit absolute address (little endian)."""
-        self.Architrcture.current_instruction_mode = CIM.Absolute
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.Absolute
         low = self.Read(self.Architrcture.ProgramCounter)
         self.Architrcture.ProgramCounter += 1
         high = self.Read(self.Architrcture.ProgramCounter)
@@ -649,7 +653,7 @@ class Emulator:
     # @lru_cache(maxsize=None)
     def ReadOperands_AbsoluteAddressed_YIndexed(self) -> None:
         """Read absolute address and add Y (Y is NOT modified)."""
-        self.Architrcture.current_instruction_mode = CIM.AbsoluteIndexed
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.AbsoluteIndexed
         low = self.Read(self.Architrcture.ProgramCounter)
         self.Architrcture.ProgramCounter += 1
         high = self.Read(self.Architrcture.ProgramCounter)
@@ -675,14 +679,14 @@ class Emulator:
     # @lru_cache(maxsize=None)
     def ReadOperands_ZeroPage(self) -> None:
         """Read zero page address."""
-        self.Architrcture.current_instruction_mode = CIM.ZeroPage
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.ZeroPage
         self.addressBus = self.Read(self.Architrcture.ProgramCounter)
         self.Architrcture.ProgramCounter += 1
 
     # @lru_cache(maxsize=None)
     def ReadOperands_ZeroPage_XIndexed(self) -> None:
         """Read zero page address and add X."""
-        self.Architrcture.current_instruction_mode = CIM.ZeroPageIndexd
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.ZeroPageIndexd
         addr = self.Read(self.Architrcture.ProgramCounter)
         self.Architrcture.ProgramCounter += 1
         self.addressBus = (addr + self.Architrcture.X) & 0xFF
@@ -690,7 +694,7 @@ class Emulator:
     # @lru_cache(maxsize=None)
     def ReadOperands_ZeroPage_YIndexed(self) -> None:
         """Read zero page address and add Y."""
-        self.Architrcture.current_instruction_mode = CIM.ZeroPageIndexd
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.ZeroPageIndexd
         addr = self.Read(self.Architrcture.ProgramCounter)
         self.Architrcture.ProgramCounter += 1
         self.addressBus = (addr + self.Architrcture.Y) & 0xFF
@@ -698,7 +702,7 @@ class Emulator:
     # @lru_cache(maxsize=None)
     def ReadOperands_IndirectAddressed_YIndexed(self) -> None:
         """Indirect indexed addressing (zero page),Y."""
-        self.Architrcture.current_instruction_mode = CIM.IndirectIndexed
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.IndirectIndexed
         zp_addr = self.Read(self.Architrcture.ProgramCounter)
         self.Architrcture.ProgramCounter += 1
         low = self.Read(zp_addr)
@@ -724,7 +728,7 @@ class Emulator:
     # @lru_cache(maxsize=None)
     def ReadOperands_IndirectAddressed_XIndexed(self) -> None:
         """Indexed indirect addressing (zero page,X)."""
-        self.Architrcture.current_instruction_mode = CIM.IndexedIndirect
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.IndexedIndirect
         zp_addr = (self.Read(self.Architrcture.ProgramCounter) + self.Architrcture.X) & 0xFF
         self.Architrcture.ProgramCounter += 1
         low = self.Read(zp_addr)
@@ -733,7 +737,7 @@ class Emulator:
 
     def ReadOperands_AbsoluteAddressed_XIndexed(self) -> None:
         """Read absolute address and add X (X is NOT modified)."""
-        self.Architrcture.current_instruction_mode = CIM.AbsoluteIndexed
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.AbsoluteIndexed
         low = self.Read(self.Architrcture.ProgramCounter)
         self.Architrcture.ProgramCounter += 1
         high = self.Read(self.Architrcture.ProgramCounter)
@@ -1129,7 +1133,7 @@ class Emulator:
 
     def Emulate_CPU(self) -> None:
         # Reset instruction mode at the start of each cycle
-        self.Architrcture.current_instruction_mode = CIM.Undefined
+        self.Architrcture.current_instruction_mode = CurrentInstructionMode.Undefined
 
         # If an interrupt (NMI) was requested, handle it before fetching
         # the next Architrcture.OpCode. This ensures NMI fires between instructions and
@@ -1145,6 +1149,11 @@ class Emulator:
             self.PendingsTask.IRQ = False
             self.IRQ_RUN()
             return
+        
+        if hasattr(self.mapper, 'irq_pending') and self.mapper.irq_pending:
+            if not self.flag.InterruptDisable:
+                self.mapper.irq_pending = False
+                self.IRQ_RUN()
 
         self.cycles = min(self.cycles, 0)
 
@@ -2297,6 +2306,34 @@ class Emulator:
             if self.PPUCycles == 1:
                 self.renderScanline()
 
+    def ReadPPUMemory(self, ppu_addr: int) -> int:
+        """Read from PPU memory space (for internal PPU use)"""
+        addr = ppu_addr & 0x3FFF
+
+        # CHR ROM/RAM ($0000-$1FFF) - use mapper
+        if addr < 0x2000:
+            # Track A12 for MMC3
+            if hasattr(self.mapper, 'tick_a12'):
+                a12_state = bool(addr & 0x1000)
+                self.mapper.tick_a12(a12_state) # type: ignore
+
+            # Read through mapper
+            if self.mapper:
+                return self.mapper.ppu_read(addr)
+            else:
+                return int(self.CHRROM[addr])
+
+        # VRAM ($2000-$3EFF)
+        elif addr < 0x3F00:
+            return int(self.VRAM[addr & 0x0FFF])
+
+        # Palette RAM ($3F00-$3FFF)
+        else:
+            pal_addr = addr & 0x1F
+            if pal_addr in (0x10, 0x14, 0x18, 0x1C):
+                pal_addr -= 0x10
+            return int(self.PaletteRAM[pal_addr])
+
     def renderScanline(self) -> None:
         """Render a single scanline with background and sprites."""
         if not self.PPUMASK & 0x18:  # Rendering disabled
@@ -2319,74 +2356,70 @@ class Emulator:
             self.RenderSprites(self.Scanline)
 
     def RenderBackground(self) -> None:
-        """
-        Render background for current scanline with proper scrolling.
-        Uses PPU scroll registers (v, t, x) for accurate scrolling.
-        """
-        # Check if background is enabled
-        if not self.PPUMASK & 0x08:
+        """Render background for current scanline with proper mapper support."""
+        if not self.PPUMASK & 0x08:  # Background disabled
             return
 
-        # Get scroll position from legacy PPUSCROLL for compatibility
         scroll_x = self.PPUSCROLL[0]
         scroll_y = self.PPUSCROLL[1]
-
-        # Calculate which nametable to use from PPUCTRL
         base_nametable = self.PPUCTRL & 0x03
-
-        # Universal background color (palette entry 0)
         backdrop_color = int(self.PaletteRAM[0])
-
-        # Left 8-pixel clipping check
         clip_left = (self.PPUMASK & 0x02) == 0
 
-        # Render each pixel on the scanline
         for x in range(256):
-            # Skip rendering left 8 pixels if clipping enabled
             if clip_left and x < 8:
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
-                self._bg_opaque_line[x] = False
+                if hasattr(self, '_bg_opaque_line'):
+                    self._bg_opaque_line[x] = False
                 continue
 
-            # Calculate absolute scroll position
+            # Calculate tile position with scrolling
             abs_x = x + scroll_x
             abs_y = self.Scanline + scroll_y
 
-            # Determine which nametable (with horizontal and vertical wrapping)
-            nt_h = (abs_x // 256) & 1  # Horizontal nametable select
-            nt_v = (abs_y // 240) & 1  # Vertical nametable select
+            # Calculate nametable with mirroring
+            nt_h = (abs_x // 256) & 1
+            nt_v = (abs_y // 240) & 1
             nametable = base_nametable ^ nt_h ^ (nt_v << 1)
             nametable_base = 0x2000 | (nametable << 10)
 
-            # Tile position within nametable
+            # Calculate tile coordinates
             tile_x = (abs_x // 8) & 31
-            tile_y = (abs_y // 8) % 30  # 30 rows of tiles
+            tile_y = (abs_y // 8) % 30
 
-            # Get tile index from nametable
+            # Read tile index from nametable
             tile_offset = tile_y * 32 + tile_x
             vram_addr = (nametable_base + tile_offset) & 0x0FFF
             tile_index = int(self.VRAM[vram_addr])
 
-            # Get pattern table base from PPUCTRL
+            # Get pattern table base from PPUCTRL bit 4
             pattern_base = 0x1000 if (self.PPUCTRL & 0x10) else 0x0000
             tile_addr = pattern_base + tile_index * 16
-
-            # Get pixel within tile
             tile_row = abs_y % 8
             pixel_x = abs_x % 8
 
-            # Read pattern data (2 bit planes)
-            plane1 = int(self.CHRROM[tile_addr + tile_row])
-            plane2 = int(self.CHRROM[tile_addr + tile_row + 8])
+            # **CRITICAL: Read pattern data through mapper**
+            # Call tick_a12 for MMC3
+            if hasattr(self.mapper, 'tick_a12'):
+                a12_state = bool(tile_addr & 0x1000)
+                self.mapper.tick_a12(a12_state)
 
-            # Extract pixel color index (2 bits)
+            if self.mapper and hasattr(self.mapper, 'ppu_read'):
+                plane1 = self.mapper.ppu_read(tile_addr + tile_row)
+                plane2 = self.mapper.ppu_read(tile_addr + tile_row + 8)
+            else:
+                plane1 = int(self.CHRROM[tile_addr + tile_row])
+                plane2 = int(self.CHRROM[tile_addr + tile_row + 8])
+
+            # Extract pixel
             bit = 7 - pixel_x
             color_idx = ((plane1 >> bit) & 1) | (((plane2 >> bit) & 1) << 1)
 
-            # If transparent (color 0), draw backdrop
             if color_idx == 0:
+                # Transparent - use backdrop
                 self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
-                self._bg_opaque_line[x] = False
+                if hasattr(self, '_bg_opaque_line'):
+                    self._bg_opaque_line[x] = False
                 continue
 
             # Get palette from attribute table
@@ -2395,146 +2428,102 @@ class Emulator:
             attr_addr = (nametable_base + 0x3C0 + attr_y * 8 + attr_x) & 0x0FFF
             attr_byte = int(self.VRAM[attr_addr])
 
-            # Calculate which 2x2 metatile quadrant
             quadrant_x = (tile_x % 4) // 2
             quadrant_y = (tile_y % 4) // 2
             attr_shift = (quadrant_y * 2 + quadrant_x) * 2
             palette_idx = (attr_byte >> attr_shift) & 0x03
 
-            # Get final color from palette RAM
+            # Get final color
             palette_addr = (palette_idx * 4 + color_idx) & 0x1F
             color = int(self.PaletteRAM[palette_addr])
 
-            # Draw pixel
             self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
-
-            # Mark as opaque background for sprite priority
-            self._bg_opaque_line[x] = True
+            if hasattr(self, '_bg_opaque_line'):
+                self._bg_opaque_line[x] = True
 
     def RenderSprites(self, scanline: int) -> None:
-        """
-        Render up to 8 sprites on the given scanline.
-        Handles sprite priority, sprite 0 hit detection, and 8x8/8x16 modes.
-
-        Args:
-            scanline: Current scanline (0-239)
-        """
-        if not self.PPUMASK & 0x10:  # Sprites disabled
+        """Render sprites with proper mapper support."""
+        if not self.PPUMASK & 0x10:
             return
 
-        # Get sprite height from PPUCTRL
         sprite_height = 16 if (self.PPUCTRL & 0x20) else 8
-
-        # Left 8-pixel sprite clipping
         clip_left = (self.PPUMASK & 0x04) == 0
-
-        # Track sprites drawn (for overflow)
         sprites_drawn = 0
 
-        # Clear sprite 0 hit flag at start of visible scanline
         if self.PPUCycles == 1 and 0 <= scanline < 240:
             self.PPUSTATUS &= ~0x40
 
-        # Iterate through all 64 sprites in OAM
-        for i in range(0, 256, 4):  # Each sprite = 4 bytes
-            y = self.OAM[i] + 1  # Y position (+ 1 because sprites are delayed by 1)
+        for i in range(0, 256, 4):
+            y = self.OAM[i] + 1
             tile_index = self.OAM[i + 1]
             attributes = self.OAM[i + 2]
             x = self.OAM[i + 3]
 
-            # Check if sprite is visible on this scanline
             if not y <= scanline < y + sprite_height:
                 continue
 
-            # Sprite overflow (more than 8 sprites on same line)
             sprites_drawn += 1
             if sprites_drawn > 8:
-                self.PPUSTATUS |= 0x20  # Set sprite overflow flag
+                self.PPUSTATUS |= 0x20
                 break
 
             # Determine pattern table base
             if sprite_height == 16:
-                # 8x16 mode: pattern table from bit 0 of tile index
                 pattern_table_base = (tile_index & 1) * 0x1000
-                tile_index &= 0xFE  # Use even tile index
+                tile_index &= 0xFE
             else:
-                # 8x8 mode: pattern table from PPUCTRL bit 3
                 pattern_table_base = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
 
-            # Calculate which row of the sprite to render
             row = scanline - y
-
-            # Vertical flip
             if attributes & 0x80:
                 row = sprite_height - 1 - row
 
-            # For 8x16 sprites, handle top/bottom tile
             if sprite_height == 16:
                 if row >= 8:
-                    tile_index |= 1  # Bottom tile
+                    tile_index |= 1
                     row -= 8
 
-            # Fetch pattern data for this row
             pattern_addr = pattern_table_base + (tile_index * 16) + row
-            low = self.CHRROM[pattern_addr]
-            high = self.CHRROM[pattern_addr + 8]
 
-            # Draw 8 pixels of the sprite
+            # **CRITICAL: Read pattern data through mapper**
+            low = self.ReadPPUMemory(pattern_addr)
+            high = self.ReadPPUMemory(pattern_addr + 8)
+
             for col in range(8):
-                # Horizontal flip
                 if attributes & 0x40:
                     px = 7 - col
                 else:
                     px = col
 
-                # Extract 2-bit color index
                 bit0 = (low >> (7 - px)) & 1
                 bit1 = (high >> (7 - px)) & 1
                 color_idx = (bit1 << 1) | bit0
 
-                # Skip transparent pixels
                 if color_idx == 0:
                     continue
 
-                # Calculate screen X position
                 sx = x + col
-
-                # Skip offscreen pixels
                 if sx < 0 or sx >= 256:
                     continue
-
-                # Skip clipped left 8 pixels
                 if clip_left and sx < 8:
                     continue
 
-                # Get sprite palette (0-3 from bits 0-1 of attributes)
                 sprite_palette = attributes & 0x03
                 palette_base = 0x10 + (sprite_palette << 2)
                 palette_addr = (palette_base + color_idx) & 0x1F
                 color = self.PaletteRAM[palette_addr]
                 rgb = self.NESPaletteToRGB(color & 0x3F)
 
-                # Check for sprite 0 hit (only for sprite 0)
-                if i == 0 and (self.PPUMASK & 0x18) == 0x18:  # Both BG and sprites enabled
-                    # Sprite 0 hit requires:
-                    # - Opaque background pixel
-                    # - Opaque sprite pixel
-                    # - Not at x=255
-                    # - Not in clipped region (if clipping enabled)
+                # Sprite 0 hit detection
+                if i == 0 and (self.PPUMASK & 0x18) == 0x18:
                     bg_opaque = self._bg_opaque_line[sx] if hasattr(self, "_bg_opaque_line") else False
-
                     if bg_opaque and color_idx != 0 and sx != 255:
-                        # Check clipping
                         if not ((clip_left or (self.PPUMASK & 0x02) == 0) and sx < 8):
-                            self.PPUSTATUS |= 0x40  # Set sprite 0 hit flag
+                            self.PPUSTATUS |= 0x40
 
-                # Sprite priority (bit 5 of attributes)
-                # 0 = in front of background
-                # 1 = behind background
                 priority = (attributes >> 5) & 1
                 bg_pixel_opaque = self._bg_opaque_line[sx] if hasattr(self, "_bg_opaque_line") else False
 
-                # Draw sprite pixel based on priority
                 if priority == 0 or not bg_pixel_opaque:
                     if 0 <= scanline < 240:
                         self.FrameBuffer[scanline, sx] = rgb
