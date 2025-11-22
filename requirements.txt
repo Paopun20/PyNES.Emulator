@@ -37,4 +37,4 @@ customtkinter
 returns # for functional programming
 
 # JIT compiler
-numba @ git+https://github.com/numba/numba.git@717dd2f75fcf07b5a152a26f2941193e6f262b0a # python 3.14 is not supported yet, so I use the latest commit from the main branch
+# numba @ git+https://github.com/numba/numba.git@717dd2f75fcf07b5a152a26f2941193e6f262b0a # Don't do it, make files big

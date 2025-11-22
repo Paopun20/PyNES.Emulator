@@ -5,7 +5,7 @@ import time  # for fps
 from collections import deque
 from dataclasses import dataclass
 from string import Template
-from typing import Dict, List, Final, Callable, Any, Optional, Type
+from typing import Dict, List, Final, Callable, Any, Optional, Type, final
 from numpy.typing import NDArray
 from pynes.apu import APU
 from pynes.cartridge import Cartridge
@@ -100,7 +100,9 @@ nes_palette: Final[NDArray[np.uint8]] = np.array(
 )
 
 
+@final
 class EmulatorError(Exception):
+    @final
     def __init__(self, exception: Exception):
         self.original: Final[Exception] = exception
         self.exception: Final[Type[Exception]] = type(exception)
@@ -152,7 +154,7 @@ class PendingsTask:
     IRQ: bool = False
     BRK: bool = False
 
-
+@final
 class CurrentInstructionMode(Enum):
     """
     Current Instruction Mode
@@ -203,12 +205,13 @@ class PPUPendingWrites:
     value: int
     remaining_ppu_cycles: int
 
-
+@final
 class Emulator:
     """
     Main NES Emulator class
     """
 
+    @final
     def __init__(self) -> None:
         # CPU initialization
         self.cartridge: Cartridge = None

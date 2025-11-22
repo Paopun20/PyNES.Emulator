@@ -8,16 +8,13 @@
 import numpy as np
 from numpy.typing import NDArray
 from typing import Optional
-from numba import njit
 
 
 # Utilities
-@njit
 def mask8(value: int) -> int:
     """Mask to 8-bit value"""
     return int(value) & 0xFF
 
-@njit
 def clamp_bank_index(bank: int, num_banks: int) -> int:
     """Clamp bank index to valid range with proper wrapping"""
     if num_banks <= 0:

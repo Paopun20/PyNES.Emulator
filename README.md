@@ -8,7 +8,7 @@
 
 ## About
 
-A NES (Nintendo Entertainment System) emulator written in Python, Cython and Rust
+A NES (Nintendo Entertainment System) emulator written in Python
 
 ## Accuracy (may be outdated)
 
@@ -32,8 +32,7 @@ Some code may be messy or not well-optimized as this is a learning project. Cont
 
 ## Performance
 
-The emulator is still under development, and performance is not yet optimized. Expect some slowdowns, especially on less powerful machines. We are actively working on improving performance through various optimizations,
-including the integration of Cython for critical components.
+The emulator is still under development, and performance is not yet optimized. Expect some slowdowns, especially on less powerful machines, and file size.
 
 ## Features (some work in progress)
 
@@ -64,7 +63,7 @@ including the integration of Cython for critical components.
 - **Cross-Platform Support**: Ensure compatibility across Windows, macOS, and Linux.
 - **Multiplayer Support**: Implement support for multiple controllers for two-player games.
 - **Documentation**: Improve documentation for users and developers.
-- **Add more Rust components**: Move more performance-critical parts to Rust for better speed. (You can help me with this if you know Rust language).
+- **Add Cython and Rust components**: Move more performance-critical parts to Rust for better speed.
 
 ## Current Status
 
@@ -88,7 +87,8 @@ including the integration of Cython for critical components.
 
 - **Operating Systems**:
   - Windows: Fully supported.
-
+  - macOS: IDK.
+  - Linux: IDK.
 
 ## Installation
 
