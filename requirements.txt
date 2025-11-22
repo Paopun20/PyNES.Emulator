@@ -13,9 +13,7 @@ pypresence # discord rich presence
 rich # rich terminal output
 
 # rendering
-PyOpenGL # gpu rendering
-PyOpenGL-accelerate # gpu rendering
-moderngl>=5.12.0 # modern OpenGL wrapper
+moderngl # modern OpenGL wrapper
 
 # data processing
 numpy # numerical computing
@@ -34,9 +32,6 @@ mypy # types-requests # for mypy to check requests library
 
 # ui tkinter
 customtkinter
-
-# image handling
-Pillow # image processing
 
 # returns lib
 returns # for functional programming

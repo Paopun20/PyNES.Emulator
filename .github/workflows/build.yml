@@ -70,7 +70,7 @@ jobs:
         id: upx
         if: matrix.os != 'macos-latest'
         run: |
-          UPX_PATH=$(which upx || echo "")
+          UPX_PATH=$(ommand -v upx || echo "")
           echo "upx_path=$UPX_PATH" >> $GITHUB_OUTPUT
 
       # Cache pip
@@ -140,8 +140,9 @@ jobs:
           rustup target add x86_64-apple-darwin
           rustup target add aarch64-apple-darwin
 
-      # Build Extensions (Cython + Rust universal2)
+      # Build Extensions (Cython + Rust) # not needed to build extensions for now
       - name: Build Extensions
+        if: false
         run: |
           python setup.py build_ext --inplace
 

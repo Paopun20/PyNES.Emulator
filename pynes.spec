@@ -12,6 +12,7 @@ block_cipher = None
 
 CURRENT_SYSTEM = platform.system()  # "Windows", "Linux", "Darwin"
 
+
 def marker_matches(marker: str) -> bool:
     """
     Very small PEP 508 marker evaluator for:
@@ -20,10 +21,11 @@ def marker_matches(marker: str) -> bool:
         platform_system == "Darwin"
     """
     m = marker.replace(" ", "")
-    if m.startswith('platform_system=='):
-        val = m.split("==", 1)[1].strip('"\'')
+    if m.startswith("platform_system=="):
+        val = m.split("==", 1)[1].strip("\"'")
         return CURRENT_SYSTEM == val
     return True  # unsupported marker → assume True
+
 
 req_packages = []
 
@@ -34,21 +36,26 @@ if os.path.exists("requirements.txt"):
             if not line or line.startswith("#"):
                 continue
 
-            # e.g.  pywin32; platform_system=="Windows"
+            # strip inline comments
+            if "#" in line:
+                line = line.split("#", 1)[0].strip()
+
+            # e.g. pywin32; platform_system=="Windows"
             if ";" in line:
                 pkg, marker = line.split(";", 1)
                 pkg = pkg.strip()
                 marker = marker.strip()
-
                 if not marker_matches(marker):
-                    continue  # skip package for other OS
+                    continue
             else:
                 pkg = line
 
-            # remove version constraints: >= <= ~= == etc
-            clean = re.split(r"[><=~]", pkg)[0].strip()
-            if clean:
-                req_packages.append(clean)
+            # only remove version constraints if it's not a direct URL
+            if "@" not in pkg:
+                pkg = re.split(r"[><=~]", pkg)[0].strip()
+
+            if pkg:
+                req_packages.append(pkg)
 
 req_packages = list(set(req_packages))
 
@@ -66,14 +73,13 @@ for pkg in req_packages:
         # some packages like maturin/mypy have no importable data
         continue
 
-datas_pynes = [(f, "pynes/" + os.path.basename(f))
-               for f in glob.glob("app/pynes/*")]
+datas_pynes = [(f, "pynes/" + os.path.basename(f)) for f in glob.glob("app/pynes/*")]
 datas_all += datas_pynes
 datas_all += [("app/icon.ico", ".")]
 
 a = Analysis(
-    ['app/main.py'],
-    pathex=['app'],
+    ["app/main.py"],
+    pathex=["app"],
     binaries=binaries_all,
     datas=datas_all,
     hiddenimports=hidden_all,
@@ -85,7 +91,7 @@ a = Analysis(
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
-    optimize=1,
+    optimize=1,  # safer for numpy
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -102,7 +108,7 @@ exe = EXE(
     strip=True,
     upx=True,
     console=False,
-    disable_windowed_traceback=True,
+    disable_windowed_traceback=False,
     argv_emulation=True,
     icon="app/icon.ico",
 )

@@ -19,6 +19,7 @@ cython_ext = cythonize([
 ])
 """ # Old code kept for reference
 
+"""
 rust_ext = [
     RustExtension(
         target="pynes.rust.disklist",
@@ -27,7 +28,9 @@ rust_ext = [
         py_limited_api=False,
     ),
 ]
+"""
 
+"""
 list_req = []
 req = ROOT_DIR / "requirements.txt"
 with open(req, "r") as f:
@@ -38,9 +41,10 @@ setup(
     version=__version_string__,
     packages=["pynes"],
     # ext_modules=cython_ext,
-    rust_extensions=rust_ext,
-    install_requires=list_req,
+    # rust_extensions=rust_ext,
+    # install_requires=list_req,
     # include_package_data=True,
     package_dir={'pynes': 'app/pynes'},
     zip_safe=False,
 )
+"""

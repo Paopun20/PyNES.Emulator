@@ -797,4 +797,4 @@ log.info("Pygame: Shutting down")
 
 log.info("PyNES Emulator: Shutdown complete")
 
-exit(0)
+sys.exit(0)
