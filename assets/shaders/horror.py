@@ -1,7 +1,7 @@
 from objects.shadercass import Shader
 
-@Shader("A VHS-like shader with various distortions and effects.", "Paopaodev")
-class VHS:
+@Shader("undescription", "Paopaodev")
+class horror:
     """
     #version 430
     uniform float u_time;
@@ -307,8 +307,8 @@ class VHS:
 
         video.rgb = drawTimestamp(uv, video.rgb);
         video.rgb = drawPlay(uv, video.rgb);
-        // else if(mode == 3) video.rgb = drawRec(uv, video.rgb);
-        // else if(mode == 4) video.rgb = drawPause(uv, video.rgb);
+        // video.rgb = drawRec(uv, video.rgb);
+        // video.rgb = drawPause(uv, video.rgb);
 
         fragColor = video;
 
