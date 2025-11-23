@@ -75,13 +75,13 @@ The emulator is still under development, and performance is not yet optimized. E
 
 ### Mapper Support
 
-| Status | Mapper ID | Mapper Name | Notes |
-|--------|-----------|-------------|-------|
-| ✅     | 000       | NROM        | No bank switching |
-| ✅     | 001       | MMC1        | PRG/CHR bank switching, simple IRQ |
-| ✅     | 002       | UxROM       | PRG bank switching |
-| ✅     | 003       | CNROM       | CHR bank switching |
-| ⚠️     | 004       | MMC3        | Advanced bank switching + scanline IRQ |
+| Status | Mapper ID | Mapper Name | Notes | Problem |
+|--------|-----------|-------------|-------| ------- |
+| ✅     | 000       | NROM        | No bank switching | Nope |
+| ✅     | 001       | MMC1        | PRG/CHR bank switching, simple IRQ | Nope |
+| ✅     | 002       | UxROM       | PRG bank switching | Nope |
+| ✅     | 003       | CNROM       | CHR bank switching | Nope |
+| ⚠️     | 004       | MMC3        | Advanced bank switching + scanline IRQ | MMC3 IRQ but I can't |
 
 ## Compatibility
 
