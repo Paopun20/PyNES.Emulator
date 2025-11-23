@@ -173,9 +173,11 @@ If you want to use a ready-made executable:
 | Pause                       | P        | N/A                           |
 | Debug Overlay               | F5       | N/A                           |
 | Next Mode (`Debug Overlay`) | F6       | N/A                           |
+| Step Cycle On Pause         | F10      | N/A                           |
 | Shader Picker               | M        | N/A                           |
 | Reset                       | R        | N/A                           |
 | Quit                        | ESC      | N/A                           |
+| Screenshot                  | F12      | N/A                           |
 
 > ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly. It is recommended to use an Xbox controller for the best compatibility.
 

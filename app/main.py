@@ -19,6 +19,7 @@ import pygame
 import psutil
 import moderngl
 import platform
+from util.clip import Clip as PyClip
 from rich.traceback import install
 from numpy.typing import NDArray
 
@@ -27,7 +28,7 @@ from backend.Control import Control
 from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
 from objects.RenderSprite import RenderSprite
-from objects.shadercass import Shader
+from objects.shadercass import Shader, ShaderUniformEnum
 from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE
 from api.discord import Presence
 from pynes.cartridge import Cartridge
@@ -38,8 +39,9 @@ from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
 from helper.hasGIL import hasGIL
 from returns.result import Success, Failure
-from util.timer import Timer  # ← NEW typed pause/resume Timer
+from util.timer import Timer
 from resources import icon_path, assets_path, font_path
+
 
 install(console=console)  # make coooooooooooooooooool error output
 
@@ -107,6 +109,7 @@ NES_HEIGHT: int = 240
 SCALE: int = 3
 
 _thread_list: List[threading.Thread] = []
+
 
 class CoreThread:
     def __init__(self) -> None:
@@ -204,11 +207,24 @@ class DebugOverlay:
 
         vertices: NDArray[np.float32] = np.array(
             [
-                0.0, 0.0, 0.0, 0.0,
-                1.0, 0.0, 1.0, 0.0,
-                1.0, 1.0, 1.0, 1.0,
-                0.0, 1.0, 0.0, 1.0,
-            ], dtype=np.float32
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                1.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                0.0,
+                1.0,
+                0.0,
+                1.0,
+            ],
+            dtype=np.float32,
         )
 
         indices: NDArray[np.int32] = np.array([0, 1, 2, 2, 3, 0], dtype=np.int32)
@@ -361,6 +377,7 @@ all_clock: int = cpu_clock + ppu_clock
 
 debug_mode_index: int = 0
 
+
 def draw_debug_overlay() -> None:
     global debug_mode_index
     if not show_debug:
@@ -479,7 +496,7 @@ def subpro() -> None:
     while running:
         if not run_event.is_set():
             run_event.wait()
-        
+
         try:
             nes_emu.step_Cycle()
         except EmulatorError as e:
@@ -488,13 +505,16 @@ def subpro() -> None:
             log.error(f"{e.exception.__name__}: {e.message}")
             break
 
+
 with CoreThread() as core_thread:
     core_thread.add_thread(target=subpro, name="Emulator Cycle Thread")
+
 
 def tracelogger() -> None:
     @nes_emu.on("tracelogger")
     def _(nes_line: str) -> None:
         log.debug(nes_line)
+
 
 if debug_mode and "--eum_debug" in sys.argv:
     with CoreThread() as core_thread:
@@ -529,39 +549,51 @@ for thread in _thread_list:
         log.error(f"Thread {thread.name} failed to start: {e}")
 
 
+def _show_error_dialog(parent: ctk.CTkToplevel, message: str) -> None:
+    """Show an error dialog with the given message."""
+    error_label = ctk.CTkLabel(parent, text=message, font=ctk.CTkFont(size=14), text_color="red")
+    error_label.pack(pady=20, padx=20)
+
+    close_btn = ctk.CTkButton(parent, text="Close", command=parent.destroy, width=120)
+    close_btn.pack(pady=10)
+
+    parent.wait_window()
+
+
 def mod_picker() -> None:
     ctk_root: CTk = CTk()
     ctk_root.withdraw()
+
     try:
-        ctk_root.iconbitmap(str(icon_path))
+        ctk_root.iconbitmap(str(icon_path))  # type: ignore
     except Exception:
         pass
 
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
 
-    mod_window = ctk.CTkToplevel(ctk_root)
+    mod_window: ctk.CTkToplevel = ctk.CTkToplevel(ctk_root)
     mod_window.title("Shader Picker")
-    mod_window.geometry("500x400")
+    mod_window.geometry("600x500")
     mod_window.grab_set()
-    mod_window.resizable(False, False)
+    mod_window.resizable(True, True)
+    mod_window.minsize(500, 400)
     mod_window.protocol("WM_DELETE_WINDOW", mod_window.destroy)
     mod_window.transient(ctk_root)
 
-    # Get all shader files
-    shader_path = assets_path / "shaders"
+    # Load shaders
+    shader_path: Path = assets_path / "shaders"
     if not shader_path.exists():
         log.error("Shaders directory not found")
-        mod_window.destroy()
+        _show_error_dialog(mod_window, "Shaders directory not found")
         return
 
-    shader_files = [f for f in shader_path.glob("*.py") if f.name != "__init__.py"]
+    shader_files: List[Path] = [f for f in shader_path.glob("*.py") if f.name != "__init__.py"]
     shader_list: List[Tuple[str, Shader]] = []
 
     for shader_file in shader_files:
-        module_name = shader_file.stem
+        module_name: str = shader_file.stem
         try:
-            # Load the module from file path directly
             spec = importlib.util.spec_from_file_location(module_name, shader_file)
             if spec is None or spec.loader is None:
                 log.error(f"Failed to load spec for {module_name}")
@@ -569,70 +601,239 @@ def mod_picker() -> None:
 
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
-            spec.loader.exec_module(module)
+            spec.loader.exec_module(module)  # type: ignore
 
-            # Look for Shader class instances in the module
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
-                # Check if it's a Shader instance (not the class itself)
                 if isinstance(attr, Shader) and attr_name != "DEFAULT_FRAGMENT_SHADER":
                     shader_list.append((attr.name, attr))
-                    log.debug(f"Loaded shader: {attr.name} from {module_name}")
                     break
         except Exception as e:
             log.error(f"Failed to load shader module '{module_name}': {e}")
             continue
 
+    shader_list.sort(key=lambda x: x[1].name)
+
     if not shader_list:
-        log.warning("No shaders found")
-        label = ctk.CTkLabel(mod_window, text="No shaders available")
-        label.pack(pady=20)
-        close_btn = ctk.CTkButton(mod_window, text="Close", command=mod_window.destroy)
-        close_btn.pack(pady=10)
-        mod_window.wait_window()
+        _show_error_dialog(mod_window, "No shaders available")
         return
 
+    # UI HEADER
+    header_frame: ctk.CTkFrame = ctk.CTkFrame(mod_window, fg_color="transparent")
+    header_frame.pack(pady=(15, 10), padx=20, fill="x")
+
+    title_label: ctk.CTkLabel = ctk.CTkLabel(
+        header_frame, text="Select a Shader", font=ctk.CTkFont(size=20, weight="bold")
+    )
+    title_label.pack(side="left")
+
+    count_label: ctk.CTkLabel = ctk.CTkLabel(
+        header_frame, text=f"{len(shader_list)} available", font=ctk.CTkFont(size=12), text_color="gray60"
+    )
+    count_label.pack(side="right")
+
+    # Search bar
+    search_var: ctk.StringVar = ctk.StringVar()
+    search_frame: ctk.CTkFrame = ctk.CTkFrame(mod_window, fg_color="transparent")
+    search_frame.pack(pady=(0, 10), padx=20, fill="x")
+
+    search_entry: ctk.CTkEntry = ctk.CTkEntry(
+        search_frame, placeholder_text="Search shaders...", textvariable=search_var, height=35
+    )
+    search_entry.pack(fill="x")
+
+    # Scroll frame for shader cards
+    scroll_frame: ctk.CTkScrollableFrame = ctk.CTkScrollableFrame(mod_window, fg_color="transparent")
+    scroll_frame.pack(pady=10, padx=20, fill="both", expand=True)
+
+    shader_buttons: List[Tuple[ctk.CTkFrame, Shader]] = []
+
+    # Apply shader
     def apply_shader(selected_shader: Shader) -> None:
-        """Apply the selected shader and close the window."""
         try:
-            sprite.set_fragment_shader(selected_shader)
-            log.info(f"Applied shader: {selected_shader.name}")
+            if sprite.set_fragment_shader(selected_shader): # if true run this line
+                log.info(f"Applied shader: {selected_shader.name}")
+                refresh_buttons()
         except Exception as e:
             log.error(f"Failed to apply shader: {e}")
-        finally:
-            mod_window.destroy()
+            _show_error_dialog(mod_window, f"Failed to apply shader:\n{str(e)}")
 
+    # Reset shader
     def reset_shader() -> None:
-        """Reset to default shader."""
         try:
             sprite.reset_fragment_shader()
             log.info("Reset to default shader")
+            mod_window.destroy()
         except Exception as e:
             log.error(f"Failed to reset shader: {e}")
-        finally:
-            mod_window.destroy()
+            _show_error_dialog(mod_window, f"Failed to reset shader:\n{str(e)}")
 
-    # Create a scrollable frame for shader buttons
-    scroll_frame = ctk.CTkScrollableFrame(mod_window, width=380, height=200)
-    scroll_frame.pack(pady=10, padx=10, fill="both", expand=True)
+    # Filter shaders
+    def filter_shaders(*_: str) -> None:
+        query: str = search_var.get().lower()
+        for card_frame, shader_obj in shader_buttons:
+            shader_text: str = f"{shader_obj.name} {shader_obj.artist} {shader_obj.description}".lower()
+            if query in shader_text:
+                card_frame.pack(pady=5, padx=5, fill="x")
+            else:
+                card_frame.pack_forget()
 
-    # Add shader buttons
+    # Settings window
+    def set_window() -> None:
+        win: ctk.CTkToplevel = ctk.CTkToplevel(mod_window)
+        win.title("Shader Settings")
+        win.geometry("600x500")
+        win.grab_set()
+        win.resizable(True, True)
+        win.minsize(500, 400)
+        win.protocol("WM_DELETE_WINDOW", win.destroy)
+        win.transient(mod_window)
+
+        set_scroll_frame: ctk.CTkScrollableFrame = ctk.CTkScrollableFrame(win, fg_color="transparent")
+        set_scroll_frame.pack(pady=10, padx=20, fill="both", expand=True)
+
+        for uniform in sprite._shclass.uniforms:
+            if uniform.name in ("u_time", "u_tex", "u_resolution", "u_scale"):
+                continue
+
+            card: ctk.CTkFrame = ctk.CTkFrame(set_scroll_frame, corner_radius=10)
+            card.pack(pady=8, padx=5, fill="x")
+
+            name_label: ctk.CTkLabel = ctk.CTkLabel(
+                card, text=uniform.name, font=ctk.CTkFont(size=14, weight="bold"), anchor="w"
+            )
+            name_label.pack(pady=(10, 2), padx=15, anchor="w")
+
+            # Float / Int / UInt
+            if uniform.type in (ShaderUniformEnum.FLOAT, ShaderUniformEnum.INT, ShaderUniformEnum.UINT):
+                val: float = float(uniform.default_value) if uniform.default_value else 0.0
+                val_label: ctk.CTkLabel = ctk.CTkLabel(
+                    card, text=f"{val:.3f}", font=ctk.CTkFont(size=12), text_color="gray70"
+                )
+                val_label.pack(pady=(0, 5), padx=15, anchor="w")
+
+                slider: ctk.CTkSlider = ctk.CTkSlider(card, from_=0.0, to=10.0, number_of_steps=200)
+                slider.set(val)
+                slider.pack(pady=(0, 15), padx=15, fill="x")
+
+                def slider_callback(
+                    v: float,
+                    u: Shader = uniform,
+                    is_int: bool = uniform.type in (ShaderUniformEnum.INT, ShaderUniformEnum.UINT),
+                ) -> None:
+                    if is_int:
+                        v = int(round(v))
+                    u.default_value = str(v)
+                    val_label.configure(text=str(v))
+
+                slider.configure(command=slider_callback)
+
+            # BOOL → checkbox
+            elif uniform.type == ShaderUniformEnum.BOOL:
+                val: bool = uniform.default_value.lower() == "true" if uniform.default_value else False
+                var: ctk.BooleanVar = ctk.BooleanVar(value=val)
+                chk: ctk.CTkCheckBox = ctk.CTkCheckBox(card, text="", variable=var)
+                chk.pack(pady=(0, 15), padx=15, anchor="w")
+
+                def checkbox_callback(var=var, u=uniform) -> None:
+                    u.default_value = str(var.get())
+
+                var.trace_add("write", lambda *args: checkbox_callback())
+
+    # Refresh apply buttons
+    def refresh_buttons() -> None:
+        for card_frame, shader_obj in shader_buttons:
+            apply_btn: ctk.CTkButton = card_frame.winfo_children()[-1]  # type: ignore
+            if sprite._shclass.name == shader_obj.name:
+                apply_btn.configure(state="disabled")
+            else:
+                apply_btn.configure(state="normal")
+
+    # Create shader cards
     for _, shader_obj in shader_list:
-        btn = ctk.CTkButton(
-            scroll_frame,
-            text=f"{shader_obj.name.replace('_', ' ').title()} by {shader_obj.artist}\n{shader_obj._description}",
-            compound="left",
-            command=lambda s=shader_obj: apply_shader(s),
+        card_frame: ctk.CTkFrame = ctk.CTkFrame(scroll_frame, corner_radius=10)
+        card_frame.pack(pady=5, padx=5, fill="x")
+
+        name_label: ctk.CTkLabel = ctk.CTkLabel(
+            card_frame, text=shader_obj.name.replace("_", " "), font=ctk.CTkFont(size=14, weight="bold"), anchor="w"
         )
-        btn.pack(pady=5, fill="x", padx=5)
+        name_label.pack(pady=(10, 2), padx=15, anchor="w")
 
-    # Add reset button at the bottom
-    reset_btn = ctk.CTkButton(
-        mod_window, text="Reset to Default", command=reset_shader, fg_color="gray30", hover_color="gray40"
+        artist_label: ctk.CTkLabel = ctk.CTkLabel(
+            card_frame, text=f"by {shader_obj.artist}", font=ctk.CTkFont(size=11), text_color="gray60", anchor="w"
+        )
+        artist_label.pack(pady=(0, 5), padx=15, anchor="w")
+
+        if shader_obj.description:
+            desc_label: ctk.CTkLabel = ctk.CTkLabel(
+                card_frame,
+                text=shader_obj.description,
+                font=ctk.CTkFont(size=11),
+                text_color="gray70",
+                anchor="w",
+                wraplength=500,
+            )
+            desc_label.pack(pady=(0, 10), padx=15, anchor="w")
+
+        apply_btn: ctk.CTkButton = ctk.CTkButton(
+            card_frame,
+            text="Apply",
+            command=lambda s=shader_obj: apply_shader(s),
+            width=100,
+            height=30,
+            corner_radius=8,
+        )
+        apply_btn.pack(pady=(0, 10), padx=15, anchor="e")
+
+        if sprite._shclass.name == shader_obj.name:
+            apply_btn.configure(state="disabled")
+
+        shader_buttons.append((card_frame, shader_obj))
+
+    search_var.trace_add("write", filter_shaders)
+
+    # Bottom buttons
+    bottom_frame: ctk.CTkFrame = ctk.CTkFrame(mod_window, fg_color="transparent")
+    bottom_frame.pack(pady=15, padx=20, fill="x")
+
+    reset_btn: ctk.CTkButton = ctk.CTkButton(
+        bottom_frame,
+        text="Reset to Default",
+        command=reset_shader,
+        fg_color="gray30",
+        hover_color="gray40",
+        height=40,
+        corner_radius=10,
     )
-    reset_btn.pack(pady=10, padx=10, fill="x")
+    reset_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
-    mod_window.wait_window()  # Wait until the mod_window is closed
+    close_btn: ctk.CTkButton = ctk.CTkButton(
+        bottom_frame,
+        text="Close",
+        command=mod_window.destroy,
+        fg_color="transparent",
+        hover_color="gray20",
+        border_width=2,
+        height=40,
+        corner_radius=10,
+    )
+    close_btn.pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+    set_btn: ctk.CTkButton = ctk.CTkButton(
+        bottom_frame,
+        text="⚙",
+        command=set_window,
+        fg_color="transparent",
+        hover_color="gray20",
+        border_width=2,
+        width=20,
+        height=40,
+        corner_radius=10,
+    )
+    set_btn.pack(side="right", padx=(5, 0))
+
+    search_entry.focus()
+    mod_window.wait_window()
 
 
 while running:
@@ -677,9 +878,13 @@ while running:
                 emu_timer.reset()
             elif event.key == pygame.K_m:
                 log.info("Opening shader picker")
-                run_event.clear()  # pause the main thread
+                run_event.clear()  # pause\ the main thread
+                emu_timer.pause()
                 mod_picker()
+                emu_timer.resume()
                 run_event.set()  # resume normal execution
+            elif event.key == pygame.K_F12:
+                PyClip.copy(sprite.export())
 
     if frame_ready:
         with frame_lock:
@@ -770,22 +975,16 @@ else:
         next_round = remaining.copy()
 
         for thread in remaining:
-            result = thread_exception(
-                thread, InterruptedError, "Force stopping thread"
-            )
+            result = thread_exception(thread, InterruptedError, "Force stopping thread")
 
             if isinstance(result, Success):
-                log.info(
-                    f'Success force stopping thread "{thread.name}" ({thread.ident})'
-                )
+                log.info(f'Success force stopping thread "{thread.name}" ({thread.ident})')
                 next_round.remove(thread)
 
             elif isinstance(result, Failure):
                 exc = result.failure()
                 if isinstance(exc, SystemError):
-                    log.error(
-                        f"Thread {thread.name} failed to force stop ({exc})"
-                    )
+                    log.error(f"Thread {thread.name} failed to force stop ({exc})")
                 else:
                     # match old behavior: silently ignore other exceptions
                     pass

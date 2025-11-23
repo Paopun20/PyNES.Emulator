@@ -1,3 +1,4 @@
+from xmlrpc.client import Boolean
 import moderngl
 import numpy as np
 from numpy.typing import NDArray
@@ -99,14 +100,14 @@ class RenderSprite:
             raise ValueError(f"Frame must be ({self.height},{self.width},3)")
         self.texture.write(frame.tobytes())
 
-    def set_fragment_shader(self, shadercass: Shader) -> None:
+    def set_fragment_shader(self, shadercass: Shader) -> bool:
         old_program = self.program
         old_vao = self.vao
         old_shader = self.fragment_shader
 
         if shadercass.shader_type != ShaderType.FRAGMENT:
             log.error("Provided shader is not a fragment shader. Aborting shader change.")
-            return
+            return False
 
         try:
             new_shader = str(shadercass.code)
@@ -120,7 +121,7 @@ class RenderSprite:
             self.vao = new_vao
             self.fragment_shader = new_shader
             self._shclass = shadercass
-
+            return True
         except moderngl.Error as e:
             log.error(f"Failed to compile fragment shader:\n{str(shadercass.code)}")
             log.error(f"Error:\n{e}")
@@ -128,6 +129,7 @@ class RenderSprite:
             self.program = old_program
             self.vao = old_vao
             self.fragment_shader = old_shader
+            return False
 
     def get_current_shader_name(self) -> str:
         """Get the name of the current shader."""
