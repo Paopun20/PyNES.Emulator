@@ -172,7 +172,9 @@ jobs:
 
       - name: Prepare Zip Name
         id: export_name
-        run: echo "zip_name="pynes-${$(echo "${{ matrix.os }}" | sed 's/-latest//g')}-py${"${{ env.python }}"}"" >> $GITHUB_OUTPUT
+        run: |
+          zip_name="pynes-$(echo "${{ matrix.os }}" | sed 's/-latest//g')-py${{ env.python }}"
+          echo "zip_name=$zip_name" >> $GITHUB_OUTPUT
 
       # Upload artifact
       - name: Upload Artifact Build
