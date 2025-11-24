@@ -70,7 +70,7 @@ jobs:
         id: upx
         if: matrix.os != 'macos-latest'
         run: |
-          UPX_PATH=$(ommand -v upx || echo "")
+          UPX_PATH=$(command -v upx || echo "")
           echo "upx_path=$UPX_PATH" >> $GITHUB_OUTPUT
 
       # Cache pip
