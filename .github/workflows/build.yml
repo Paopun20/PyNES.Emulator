@@ -13,7 +13,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  PYTHON_VERSION: 3.14.0
+  python: 3.14.0
 
 jobs:
   build:
@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest] # macos-latest
+        os: [windows-latest, ubuntu-latest, macos-latest]
 
     defaults:
       run:
@@ -29,18 +29,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ env.python }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.70
 
       - name: Setup UV
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: "requirements.txt"
@@ -77,10 +77,13 @@ jobs:
       - name: Cache pip packages
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
+          path: |
+            ~/.cache/pip
+            ~/AppData/Local/pip/Cache
+            ~/Library/Caches/pip
+          key: ${{ runner.os }}-pip-${{ env.python }}-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-pip-${{ env.python }}-
             ${{ runner.os }}-pip-
 
       # Cache PyInstaller
@@ -91,9 +94,9 @@ jobs:
             ~/.cache/pyinstaller
             ~/AppData/Local/pyinstaller
             ~/Library/Caches/pyinstaller
-          key: ${{ runner.os }}-pyinstaller-${{ env.PYTHON_VERSION }}-${{ hashFiles('pynes.spec') }}
+          key: ${{ runner.os }}-pyinstaller-${{ env.python }}-${{ hashFiles('pynes.spec') }}
           restore-keys: |
-            ${{ runner.os }}-pyinstaller-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-pyinstaller-${{ env.python }}-
             ${{ runner.os }}-pyinstaller-
 
       # Cache Rust
@@ -118,9 +121,9 @@ jobs:
             build/
             *.so
             *.pyd
-          key: ${{ runner.os }}-build-${{ env.PYTHON_VERSION }}-${{ hashFiles('setup.py') }}
+          key: ${{ runner.os }}-build-${{ env.python }}-${{ hashFiles('setup.py') }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-build-${{ env.python }}-
             ${{ runner.os }}-build-
 
       # Install Python deps
@@ -128,7 +131,6 @@ jobs:
         run: |
           uv pip install --system --upgrade pip
           uv pip install --system --upgrade -r requirements.txt
-          uv pip install --system --upgrade git+https://github.com/pyinstaller/pyinstaller.git
 
       # Prepare macOS universal environment
       - name: Prepare macOS universal build env
@@ -140,54 +142,43 @@ jobs:
           rustup target add x86_64-apple-darwin
           rustup target add aarch64-apple-darwin
 
-      # Build Extensions (Cython + Rust) # not needed to build extensions for now
+      # Build Extensions (Cython + Rust) # not needed to build extensions for now because It don't have any extensions for now
       - name: Build Extensions
         if: false
-        run: |
-          python setup.py build_ext --inplace
+        run: python setup.py build_ext --inplace
 
       # Build PyNES
       - name: Build PyNES
         id: build
         run: |
           echo "build_success=false" >> $GITHUB_OUTPUT
-          
-          if [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
-            uv run pyinstaller pynes.spec --clean --noconfirm --upx-dir "$(dirname "${{ steps.upx.outputs.upx_path }}")"
-          else
-            uv run pyinstaller pynes.spec --clean --noconfirm
-          fi
-
+          UPX_DIR="${{ steps.upx.outputs.upx_path }}"
+          uv run pyinstaller pynes.spec --clean --noconfirm ${UPX_DIR:+--upx-dir "$(dirname "$UPX_DIR")"}
           echo "build_success=true" >> $GITHUB_OUTPUT
 
       # Verify output
       - name: Verify Output
-        run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            test -f dist/pynes.exe
-          else
-            test -f dist/pynes
-          fi
+        run: test -f dist/${{ matrix.os == 'windows-latest' && 'pynes.exe' || 'pynes' }}
 
       # Prepare upload
       - name: Prepare Upload Directory
         run: |
           mkdir -p upload
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            cp dist/pynes.exe upload/
-          else
-            cp dist/pynes upload/
-          fi
+          cp dist/${{ matrix.os == 'windows-latest' && 'pynes.exe' || 'pynes' }} upload/ 2>/dev/null || true
           cp app/icon.ico upload/ 2>/dev/null || true
           cp -r assets/* upload/ 2>/dev/null || true
           cp -r roms/* upload/ 2>/dev/null || true
           cp LICENSE.md upload/ 2>/dev/null || true
 
+      - name: Prepare Zip Name
+        id: export_name
+        run: echo "zip_name="pynes-${$(echo "${{ matrix.os }}" | sed 's/-latest//g')}-py${"${{ env.python }}"}"" >> $GITHUB_OUTPUT
+
       # Upload artifact
-      - name: Upload Artifact
+      - name: Upload Artifact Build
         if: steps.build.outputs.build_success == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: pynes-${{ matrix.os }}-py${{ env.PYTHON_VERSION }}
+          name: ${{ steps.export_name.outputs.zip_name }}
           path: upload/
           retention-days: 90
