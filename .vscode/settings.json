@@ -5,15 +5,11 @@
     "**/*.pyc": true,
     "**/.pytest_cache": true,
     "**/.mypy_cache": true,
-    "env": true,
+    ".env": true,
     "build": true,
     "dist": true,
     "__PatreonRoms": true,
-    "AccuracyCoin-Link": true,
-    "art": true,
-    "docs": true,
-    "tests": true,
-    "git-update.cmd":true
+    "AccuracyCoin-Link": false,
   },
   // "editor.formatOnSave": true,
   // "editor.formatOnType": true,
@@ -24,4 +20,7 @@
     
   },
   "ruff.enable": true,
+  "files.readonlyInclude": {
+    "{**/.c4z/.extsrcs/*.PROTSYM.cbl,**/.c4z/.extsrcs/*.PROTSYM.listing}": true
+  },
 }

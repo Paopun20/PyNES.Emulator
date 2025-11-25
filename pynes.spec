@@ -1,46 +1,101 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all, collect_data_files
+import os
+import re
+import glob
+import sys
+import platform
+from PyInstaller.utils.hooks import collect_all
 from PyInstaller.building.build_main import Analysis
 from PyInstaller.building.api import PYZ, EXE
 
 block_cipher = None
 
-# --- Collect NumPy ---
-datas_np, binaries_np, hiddenimports_np = collect_all('numpy')
-datas_tk = collect_data_files('tkinter')
+CURRENT_SYSTEM = platform.system()  # "Windows", "Linux", "Darwin"
+
+
+def marker_matches(marker: str) -> bool:
+    """
+    Very small PEP 508 marker evaluator for:
+        platform_system == "Windows"
+        platform_system == "Linux"
+        platform_system == "Darwin"
+    """
+    m = marker.replace(" ", "")
+    if m.startswith("platform_system=="):
+        val = m.split("==", 1)[1].strip("\"'")
+        return CURRENT_SYSTEM == val
+    return True  # unsupported marker → assume True
+
+
+req_packages = []
+
+if os.path.exists("requirements.txt"):
+    with open("requirements.txt", "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            # strip inline comments
+            if "#" in line:
+                line = line.split("#", 1)[0].strip()
+
+            # e.g. pywin32; platform_system=="Windows"
+            if ";" in line:
+                pkg, marker = line.split(";", 1)
+                pkg = pkg.strip()
+                marker = marker.strip()
+                if not marker_matches(marker):
+                    continue
+            else:
+                pkg = line
+
+            # only remove version constraints if it's not a direct URL
+            if "@" not in pkg:
+                pkg = re.split(r"[><=~]", pkg)[0].strip()
+
+            if pkg:
+                req_packages.append(pkg)
+
+req_packages = list(set(req_packages))
+
+datas_all = []
+binaries_all = []
+hidden_all = []
+
+for pkg in req_packages:
+    try:
+        d, b, h = collect_all(pkg)
+        datas_all += d
+        binaries_all += b
+        hidden_all += h
+    except Exception:
+        # some packages like maturin/mypy have no importable data
+        continue
+
+datas_pynes = [(f, "pynes/" + os.path.basename(f)) for f in glob.glob("app/pynes/*")]
+datas_all += datas_pynes
+datas_all += [("app/icon.ico", ".")]
 
 a = Analysis(
-    ['app/main.py'],
-    pathex=[],
-    binaries=binaries_np,
-    datas=datas_np + datas_tk + [
-        ("app/pynes", "app/pynes"),  # pynes core module
-        ("app/icon.ico", "."),   # icon file (placed in root of bundle)
-    ],
-    hiddenimports=hiddenimports_np + [
-        "tkinter",
-        "tkinter.filedialog",
-        "tkinter.messagebox",
-        "tkinter.ttk",
-    ],
+    ["app/main.py"],
+    pathex=["app"],
+    binaries=binaries_all,
+    datas=datas_all,
+    hiddenimports=hidden_all,
+    excludes=["unittest","test", "pydoc"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
-    optimize=1, # do try 2 if it can't run it errors by numpy.
+    optimize=1,  # safer for numpy
 )
 
-pyz = PYZ(
-    a.pure,
-    a.zipped_data,
-    cipher=block_cipher
-)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-# Single-file executable configuration
 exe = EXE(
     pyz,
     a.scripts,
@@ -48,18 +103,12 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='pynes',
+    name="pynes",
     debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=True,  # Set to False to hide console window
+    console=False,
     disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon='app/icon.ico'  # Icon for the executable
+    argv_emulation=True,
+    icon="app/icon.ico",
 )

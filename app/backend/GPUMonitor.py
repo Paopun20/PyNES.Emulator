@@ -21,7 +21,7 @@ class GPUMonitor:
             print(monitor.get_error_message())
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._initialized = False
         self._gpu = None
         self._gpu_utilization = 0
@@ -48,7 +48,7 @@ class GPUMonitor:
         """Get the last error message if initialization failed."""
         return self._error_message
 
-    def update(self):
+    def update(self) -> None:
         """Update the latest GPU metrics."""
         if not self._initialized:
             return
@@ -82,6 +82,6 @@ class GPUMonitor:
             return self._gpu.name
         return "Unknown"
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """Shutdown GPU monitoring."""
         self._initialized = False

@@ -1,4 +1,4 @@
-# 100th Coin | https://www.patreon.com/posts/making-your-nes-137873901
+# 100th Coin's Rom Test From https://www.patreon.com/posts/making-your-nes-137873901
 __PatreonRoms/*
 
 # don't facking shere this files
@@ -24,10 +24,13 @@ reference/*
 *.pyd
 
 # rust build
-app/pynes/rust/*/target
-app/pynes/rust/*/Cargo.lock
+app/rust/*/target
+app/rust/*/Cargo.lock
 
 # log file
 *.log
 *.bak
 *.backup
+
+# venv
+.env/*

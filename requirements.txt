@@ -13,8 +13,6 @@ pypresence # discord rich presence
 rich # rich terminal output
 
 # rendering
-PyOpenGL # gpu rendering
-PyOpenGL-accelerate # gpu rendering
 moderngl # modern OpenGL wrapper
 
 # data processing
@@ -28,3 +26,24 @@ GPUtil # GPU monitoring (supports both NVIDIA and AMD GPUs)
 
 # Windows specific
 pywin32;platform_system=="Windows" # Windows API
+
+# type checking
+mypy # types-requests # for mypy to check requests library
+
+# ui tkinter
+customtkinter
+
+# returns lib
+returns # for functional programming
+
+# test lib
+pytest
+
+# JIT compiler
+# numba @ git+https://github.com/numba/numba.git@717dd2f75fcf07b5a152a26f2941193e6f262b0a # Don't do it, make files big
+
+# clip
+pillow
+
+# build exe tool
+pyinstaller

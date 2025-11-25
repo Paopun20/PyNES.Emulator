@@ -1,8 +1,14 @@
 from setuptools import (setup, Extension as CythonExtension)
-from Cython.Build import cythonize
+# from Cython.Build import cythonize
 from setuptools_rust import RustExtension
-import numpy as np
+from pathlib import Path
+from app.__version__ import __version_string__
+# import numpy as np
 
+# Obtain the absolute path of the directory containing setup.py
+ROOT_DIR = Path(__file__).parent.resolve()
+
+"""
 cython_ext = cythonize([
     CythonExtension(
         name="pynes.api.discord",
@@ -11,28 +17,34 @@ cython_ext = cythonize([
         extra_compile_args=["-O3", "-ffast-math", "-march=native"],
     )
 ])
+""" # Old code kept for reference
 
+"""
 rust_ext = [
     RustExtension(
-        target="disklist",
-        path="app/pynes/rust/disklist/Cargo.toml",
+        target="pynes.rust.disklist",
+        path="app/rust/disklist/Cargo.toml",
         debug=False,
         py_limited_api=False,
     ),
 ]
+"""
 
+"""
 list_req = []
-with open("requirements.txt") as f:
+req = ROOT_DIR / "requirements.txt"
+with open(req, "r") as f:
     list_req = [line.strip() for line in f]
 
 setup(
     name="PyNES",
-    version="0.0.0",
+    version=__version_string__,
     packages=["pynes"],
-    ext_modules=cython_ext,
-    rust_extensions=rust_ext,
-    install_requires=list_req,
+    # ext_modules=cython_ext,
+    # rust_extensions=rust_ext,
+    # install_requires=list_req,
     # include_package_data=True,
     package_dir={'pynes': 'app/pynes'},
     zip_safe=False,
 )
+"""

@@ -1,18 +1,19 @@
 # PyNES Emulator
 
 [![Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml/badge.svg)](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)
-[![Python Version](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
-[![GitHub Stars](https://img.shields.io/github/stars/Paopun20/PyNES.Emulator.svg?style=social&label=Star)](https://github.com/Paopun20/PyNES.Emulator)
+[![Python Version](https://img.shields.io/badge/Python-3.14%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](./SECURITY.md)
+[![Code Style: Black](https://img.shields.io/badge/Code%20Style-Black-black.svg)](https://github.com/psf/black)
 
 ## About
 
-A NES (Nintendo Entertainment System) emulator written in Python, Cython and Rust
+A NES (Nintendo Entertainment System) emulator written in Python
 
 ## Accuracy (may be outdated)
 
 <div style="display: flex; gap: 10px;">
-    <img src="./assets/screenshot/testshot 2025-10-31 200135.png" width="400" alt="PyNES Test"/>
+    <img src="./docs/screenshot/testshot 2025-10-31 200135.png" width="480" alt="PyNES Emulator Screenshot it take ⁓9 minutes to run all test results. It's not 100% accurate yet, but it's getting there!"/>
 </div>
 
 Not suitable for speedrunning at this time—please wait for future updates before using PyNES for these purposes.
@@ -31,19 +32,24 @@ Some code may be messy or not well-optimized as this is a learning project. Cont
 
 ## Performance
 
-The emulator is still under development, and performance is not yet optimized. Expect some slowdowns, especially on less powerful machines. We are actively working on improving performance through various optimizations,
-including the integration of Cython for critical components.
+The emulator is still under development, and performance is not yet optimized. Expect some slowdowns, especially on less powerful machines, and file size.
 
 ## Features (some work in progress)
 
-- **CPU Emulation**: Partial implementation of the 6502 CPU instruction set.
-- **PPU Emulation**: Basic PPU functionality for rendering graphics ( BUG ).
-- **APU Emulation**: Basic sound emulation ( WIP ).
-- **Input Emulation**: Keyboard support.
-- **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), I can support all of them but I recommended to use Xbox controller)
-- **ROM Loading**: Supports `.nes` ROM files.
-- **Debugging**: Basic FPS and CPU register display.
+- **CPU Emulation**: Partial implementation of the 6502 CPU instruction set. (support unofficial opcodes but not complete yet)
+- **PPU Emulation**: Basic PPU functionality for rendering graphics, sprites, and backgrounds. (WIP)
+- **APU Emulation**: Basic sound emulation (WIP).
+- **Input Emulation**: Keyboard support. (You need to hold it until frame is rendered, idk why but it work that way)
+- **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), I can support all of them but I recommended to use Xbox controller).
+- **ROM Loading**: Supports `.nes` ROM files. (iNES format)
+- **Debugging**: Basic FPS and CPU register display. (WIP for more advanced debugging tools)
 - **Discord Rich Presence**: Support for displaying current game activity on Discord.
+- **Mapper Support**: Basic support for NROM (Mapper 000). (WIP for more mappers)
+- **Fun Settings**: Various fun settings like color filters and screen effects. (not take effects at accurate, just for fun and cool)
+
+## Fun Settings
+
+- **Shader Mod**: Apply custom shaders to the display for various visual effects. (but you can make your own shader)
 
 ## Planned Features
 
@@ -52,30 +58,37 @@ including the integration of Cython for critical components.
 - **Complete APU Emulation**: Full sound channel support and audio effects.
 - **Save States**: Implement save and load state functionality.
 - **GUI Enhancements**: Improve the user interface for better usability and aesthetics.
-- **Mapper Support**: Implement support for various NES mappers to enhance game compatibility.
 - **Advanced Debugging Tools**: Add features like breakpoints, memory inspection, and step-by-step execution.
 - **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
 - **Cross-Platform Support**: Ensure compatibility across Windows, macOS, and Linux.
 - **Multiplayer Support**: Implement support for multiple controllers for two-player games.
-- **Fun Settings**: Add features like cheat codes, graphical filters, and custom key mappings.
 - **Documentation**: Improve documentation for users and developers.
-- **Add more Rust components**: Move more performance-critical parts to Rust for better speed. (You can help me with this if you know Rust language).
+- **Add Cython and Rust components**: Move more performance-critical parts to Rust for better speed.
 
 ## Current Status
 
-- CPU: Basic instruction set implemented, but many unofficial opcodes are missing.
-- PPU: Basic rendering, but many features are incomplete.
-- APU: Work in progress.
-- Input: Basic keyboard mapping.
-- Performance: Not optimized for speed; primarily for educational purposes.
-- Mapper: Basic NROM mapper implemented.
+- **CPU:** Basic instruction set implemented; many unofficial opcodes still missing.
+- **PPU:** Basic rendering is working, but several features remain incomplete.
+- **APU:** Work in progress.
+- **Input:** Basic keyboard mapping implemented.
+- **Performance:** Not optimized; designed mainly for educational use.
+
+### Mapper Support
+
+| Status | Mapper ID | Mapper Name | Notes | Problem |
+|--------|-----------|-------------|-------| ------- |
+| ✅     | 000       | NROM        | No bank switching | Nope |
+| ✅     | 001       | MMC1        | PRG/CHR bank switching, simple IRQ | Nope |
+| ✅     | 002       | UxROM       | PRG bank switching | Nope |
+| ✅     | 003       | CNROM       | CHR bank switching | Nope |
+| ⚠️     | 004       | MMC3        | Advanced bank switching + scanline IRQ | MMC3 IRQ but I can't |
 
 ## Compatibility
 
 - **Operating Systems**:
   - Windows: Fully supported.
-  - macOS: Partially supported (Old builds available, but may have minor issues).
-  - Linux: Partially supported (Old builds available, but may have minor issues).
+  - macOS: IDK.
+  - Linux: IDK.
 
 ## Installation
 
@@ -94,56 +107,53 @@ If you want to use a ready-made executable:
 
 ### Run emulator from source code (for developers)
 
-1. Ensure you have Python 3.13 or higher installed.
+1. Ensure you have Python 3.14 or higher installed.
 2. Clone this repository.
 
-```bash
-git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
-```
+   ```bash
+   git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
+   ```
 
 3. Create and activate a virtual environment (optional but recommended):
 
-Create a virtual environment:
+   Create a virtual environment:
 
-```bash
-python -m venv env
-```
+   ```bash
+   python -m venv env
+   ```
 
-Activate the virtual environment:
+   Activate the virtual environment:
 
-```bash
-# windows:
-.\env\Scripts\activate
+   ```bash
+   # windows:
+   .\env\Scripts\activate
 
-# macOS / Linux:
-source env/bin/activate
-```
+   # macOS / Linux:
+   source env/bin/activate
+   ```
 
-4. Build the extensions:
+4. Build the extensions (Cython and Rust components):
 
-```bash
-python setup.py build_ext --inplace
-```
+   ```bash
+   python setup.py build_ext --inplace
+   ```
 
-5. Install the required dependencies using:
+5. Install the required dependencies using (requirements file is included in the repository you don't need to install it manually, it will install automatically) (best to uv):
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 6. Start the emulator with:
 
-```bash
-python app/main.py
-```
+   ```bash
+   python app/main.py
+   ```
 
 7. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
-> Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.
-
-> Advance Tip: Nope, there is no advance tip.
-
-> Additional Tip: If you encounter issues with missing dependencies, ensure all required packages are installed as per the `requirements.txt` file.
+> Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.\
+> Advance Tip For Developer: You can pass the `--eum_debug` after `--debug` FLAG to enable eumulator tracelogger in debug mode.
 
 ## Controls
 
@@ -163,8 +173,11 @@ python app/main.py
 | Pause                       | P        | N/A                           |
 | Debug Overlay               | F5       | N/A                           |
 | Next Mode (`Debug Overlay`) | F6       | N/A                           |
+| Step Cycle On Pause         | F10      | N/A                           |
+| Shader Picker               | M        | N/A                           |
 | Reset                       | R        | N/A                           |
 | Quit                        | ESC      | N/A                           |
+| Screenshot                  | F12      | N/A                           |
 
 > ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly. It is recommended to use an Xbox controller for the best compatibility.
 
@@ -181,3 +194,7 @@ For information on how to report security vulnerabilities, please refer to our [
 This project is open-source and licensed under the MIT - see the [LICENSE](LICENSE.md) file for details.
 
 > it have changed from Apache 2.0 to MIT License, i don't know what different is, but Apache 2.0 and MIT is same but I realized that different is, so I changed it to MIT. (LOL)
+
+<h9>
+You can find easter eggs in the emulator or the source code! Good luck searching! :3
+</h9>

@@ -1,10 +1,10 @@
 import functools
 from collections import OrderedDict
 from collections.abc import Hashable
-from typing import Literal
+from typing import Literal, Callable, Optional
 
 
-def memoize(maxsize=None, policy: Literal["lru", "fifo"] = "lru"):
+def memoize(maxsize: Optional[int] = None, policy: Optional[Literal["lru", "fifo"]] = "lru") -> Callable:
     """
     Decorator to memoize function results with optional cache size and eviction policy.
 
@@ -25,11 +25,11 @@ def memoize(maxsize=None, policy: Literal["lru", "fifo"] = "lru"):
     if policy not in {"lru", "fifo"}:
         raise ValueError("policy must be 'lru' or 'fifo'")
 
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         cache = OrderedDict()
 
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: tuple, **kwargs: dict) -> Callable:
             key = args + tuple(sorted(kwargs.items()))
             if not all(isinstance(k, Hashable) for k in key):
                 return func(*args, **kwargs)

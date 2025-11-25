@@ -18,7 +18,7 @@ class pyWindowColorMode:
     DWMSBT_MAINWINDOW_LIGHT = 1
     DWMSBT_DISABLE = 0  # Added for explicitly disabling backdrop
 
-    def __init__(self, window_handle: int = None):
+    def __init__(self, window_handle: int) -> None:
         """
         Initialize a pyWindowColorMode instance to control dark/light theme
         for a Pygame window on Windows 10/11.
@@ -77,7 +77,7 @@ class pyWindowColorMode:
         return self._dark_mode
 
     @dark_mode.setter
-    def dark_mode(self, value: bool):
+    def dark_mode(self, value: bool) -> None:
         """
         Enable or disable dark mode.
 
@@ -102,7 +102,7 @@ class pyWindowColorMode:
         self.dark_mode = not self.dark_mode
         return self._dark_mode
     
-    def reset_to_system(self):
+    def reset_to_system(self) -> None:
         """
         Reset to system default (disables custom backdrop).
         """

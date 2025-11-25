@@ -1,13 +1,19 @@
 name: Build PyNES Emulator
 
+permissions:
+  contents: write
+  actions: write
+  statuses: write
+
 on:
   push:
     branches: [main, dev]
   pull_request:
-    branches: [main]
-  release:
-    types: [published]
+    branches: [main, dev]
   workflow_dispatch: {}
+
+env:
+  python: 3.14.0
 
 jobs:
   build:
@@ -15,8 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest] # ubuntu-latest, macos-latest # Temporarily disabled on linux and macOS due to build issues
-        python-version: ["3.13.7"]
+        os: [windows-latest, ubuntu-latest, macos-latest]
 
     defaults:
       run:
@@ -24,17 +29,78 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.python }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.70
 
-      - name: Cache Rust dependencies
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements.txt"
+
+      # Linux dependencies
+      - name: Install Linux GL Deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev \
+            libxext-dev \
+            libxi-dev \
+            libxxf86vm-dev \
+            libgl1-mesa-dev \
+            mesa-common-dev \
+            libgl-dev
+
+      # UPX (skip macOS)
+      - name: Setup UPX
+        if: matrix.os != 'macos-latest'
+        uses: crazy-max/ghaction-upx@v3
+        with:
+          install-only: true
+
+      - name: Get UPX path
+        id: upx
+        if: matrix.os != 'macos-latest'
+        run: |
+          UPX_PATH=$(command -v upx || echo "")
+          echo "upx_path=$UPX_PATH" >> $GITHUB_OUTPUT
+
+      # Cache pip
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/AppData/Local/pip/Cache
+            ~/Library/Caches/pip
+          key: ${{ runner.os }}-pip-${{ env.python }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ env.python }}-
+            ${{ runner.os }}-pip-
+
+      # Cache PyInstaller
+      - name: Cache PyInstaller
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pyinstaller
+            ~/AppData/Local/pyinstaller
+            ~/Library/Caches/pyinstaller
+          key: ${{ runner.os }}-pyinstaller-${{ env.python }}-${{ hashFiles('pynes.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-pyinstaller-${{ env.python }}-
+            ${{ runner.os }}-pyinstaller-
+
+      # Cache Rust
+      - name: Cache Rust
         uses: actions/cache@v4
         with:
           path: |
@@ -42,106 +108,79 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            app/target/
+            app/**/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('app/**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Get pip cache dir
-        id: pip-cache-dir
-        working-directory: app
-        run: |
-          echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
-
-      - name: Cache pip packages
-        id: pip-cache
+      # Cache build artifacts
+      - name: Cache build artifacts
         uses: actions/cache@v4
         with:
-          path: ${{ steps.pip-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('app/requirements.txt') }}
+          path: |
+            build/
+            *.so
+            *.pyd
+          key: ${{ runner.os }}-build-${{ env.python }}-${{ hashFiles('setup.py') }}
           restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-build-${{ env.python }}-
+            ${{ runner.os }}-build-
 
-      - name: Install OS dependencies
-        run: |
-          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-            sudo apt-get update
-            sudo apt-get install -y libgl1 libglib2.0-0 libxrender1 libgomp1
-          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            brew install libomp
-          fi
-
-      - name: Install UPX
-        id: upx
-        run: |
-          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-            sudo apt-get install -y upx
-            echo "upx_path=$(command -v upx)" >> $GITHUB_OUTPUT
-
-          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            brew install upx
-            echo "upx_path=$(command -v upx)" >> $GITHUB_OUTPUT
-
-          elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            if ! winget install --id=UPX.UPX -e --accept-source-agreements --accept-package-agreements --silent; then
-              echo "Winget install failed, attempting direct download..."
-              curl -L -o upx.zip https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win64.zip
-              unzip -q upx.zip
-              upx_dir="$(pwd)/upx-5.0.2-win64"
-              echo "upx_path=$upx_dir/upx.exe" >> $GITHUB_OUTPUT
-            else
-              userprofile_win="$USERPROFILE"
-              userprofile=$(cygpath "$userprofile_win" 2>/dev/null || echo "$userprofile_win")
-              upx_link_path="$userprofile/AppData/Local/Microsoft/WinGet/Links"
-              upx_exe="$upx_link_path/upx.exe"
-              if [[ -f "$upx_exe" ]]; then
-                echo "UPX found at $upx_exe"
-                echo "upx_path=$upx_exe" >> $GITHUB_OUTPUT
-              else
-                echo "upx_path=" >> $GITHUB_OUTPUT
-              fi
-            fi
-          fi
-
+      # Install Python deps
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade -r requirements.txt
-          pip install --upgrade git+https://github.com/pyinstaller/pyinstaller.git
+          uv pip install --system --upgrade pip
+          uv pip install --system --upgrade -r requirements.txt
 
+      # Prepare macOS universal environment
+      - name: Prepare macOS universal build env
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "Preparing macOS Universal2 environment..."
+          export MACOSX_DEPLOYMENT_TARGET=11.0
+          echo "ARCHFLAGS=\"-arch x86_64 -arch arm64\"" >> $GITHUB_ENV
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+
+      # Build Extensions (Cython + Rust) # not needed to build extensions for now because It don't have any extensions for now
       - name: Build Extensions
-        id: build_extensions
+        if: false
         run: python setup.py build_ext --inplace
 
+      # Build PyNES
       - name: Build PyNES
         id: build
-        # working-directory: app
         run: |
-          if [[ -n "${{ steps.upx.outputs.upx_path }}" ]]; then
-            upx_dir="$(dirname "${{ steps.upx.outputs.upx_path }}")"
-            echo "Using UPX from: $upx_dir"
-            pyinstaller pynes.spec --clean --noconfirm --upx-dir "$upx_dir"
-          else
-            echo "UPX not found, building without compression"
-            pyinstaller pynes.spec --clean --noconfirm
-          fi
+          echo "build_success=false" >> $GITHUB_OUTPUT
+          UPX_DIR="${{ steps.upx.outputs.upx_path }}"
+          uv run pyinstaller pynes.spec --clean --noconfirm ${UPX_DIR:+--upx-dir "$(dirname "$UPX_DIR")"}
           echo "build_success=true" >> $GITHUB_OUTPUT
 
-      - name: Verify Build Output
-        run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            test -f dist/pynes.exe || exit 1
-          else
-            test -f dist/pynes || exit 1
-          fi
+      # Verify output
+      - name: Verify Output
+        run: test -f dist/${{ matrix.os == 'windows-latest' && 'pynes.exe' || 'pynes' }}
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      # Prepare upload
+      - name: Prepare Upload Directory
+        run: |
+          mkdir -p upload
+          cp dist/${{ matrix.os == 'windows-latest' && 'pynes.exe' || 'pynes' }} upload/ 2>/dev/null || true
+          cp app/icon.ico upload/ 2>/dev/null || true
+          cp -r assets/* upload/ 2>/dev/null || true
+          cp -r roms/* upload/ 2>/dev/null || true
+          cp LICENSE.md upload/ 2>/dev/null || true
+
+      - name: Prepare Zip Name
+        id: export_name
+        run: |
+          zip_name="pynes-$(echo "${{ matrix.os }}" | sed 's/-latest//g')-py${{ env.python }}"
+          echo "zip_name=$zip_name" >> $GITHUB_OUTPUT
+
+      # Upload artifact
+      - name: Upload Artifact Build
         if: steps.build.outputs.build_success == 'true'
+        uses: actions/upload-artifact@v5
         with:
-          name: pynes-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: |
-            dist/pynes${{ matrix.os == 'windows-latest' && '.exe' || '' }}
-            app/icon.ico
+          name: ${{ steps.export_name.outputs.zip_name }}
+          path: upload/
           retention-days: 90
