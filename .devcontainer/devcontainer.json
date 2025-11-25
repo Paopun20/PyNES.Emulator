@@ -1,11 +1,11 @@
 {
   "name": "NES.Dev",
-  "image": "mcr.microsoft.com/devcontainers/python:3.13.7",
+  "image": "mcr.microsoft.com/devcontainers/python:3.14.0",
 
   "postCreateCommand": [
-    "pip install --upgrade pip",
-    "pip install --upgrade -r requirements.txt",
-    "python -m venv .env",
+    "python -m pip install --upgrade pip",
+    "pip install uv",
+    "uv pip install --upgrade -r requirements.txt",
     "python setup.py build_ext --inplace"
   ],
 
