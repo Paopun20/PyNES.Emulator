@@ -3,7 +3,7 @@ import time
 from typing import Optional, Dict, Deque
 from collections import deque
 import psutil
-from logger import log
+from logger import log as _log
 from helper.thread_exception import thread_exception as _raise_exception_in_thread
 
 class ThreadCPUMonitor:
@@ -63,7 +63,7 @@ class ThreadCPUMonitor:
             raise e
         except Exception as e:
             # Handle other potential errors gracefully
-            print(f"Error getting thread CPU times: {e}")
+            _log.error(f"Error getting thread CPU times: {e}")
             return {}
     
     def _monitor_loop(self) -> None:
@@ -111,20 +111,20 @@ class ThreadCPUMonitor:
                 self._last_update = current_time
                 
             except psutil.NoSuchProcess:
-                print("Process no longer exists. Stopping monitor.")
+                _log.warning("Process no longer exists. Stopping monitor.")
                 self.running = False
                 break
             except psutil.AccessDenied:
-                print("Access denied to process. Stopping monitor.")
+                _log.warning("Access denied to process. Stopping monitor.")
                 self.running = False
                 break
             except Exception as e:
                 self._error_count += 1
-                print(f"CPU monitor error ({self._error_count}/{self._max_errors}): {e}")
+                _log.error(f"CPU monitor error: {e}")
                 
                 # Stop if too many errors
                 if self._error_count >= self._max_errors:
-                    print("Too many errors. Stopping monitor.")
+                    _log.warning("Too many errors. Stopping monitor.")
                     self.running = False
                     break
             
@@ -145,7 +145,7 @@ class ThreadCPUMonitor:
                 self._last_times = self.get_thread_cpu_times()
                 self._last_update = time.time()
             except Exception as e:
-                print(f"Failed to initialize monitor: {e}")
+                _log.error(f"Error initializing CPU monitor: {e}")
                 self.running = False
                 return
             
@@ -168,7 +168,7 @@ class ThreadCPUMonitor:
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_thread.join(timeout=timeout)
             if self.monitor_thread.is_alive():
-                log.warning("Monitor thread did not stop cleanly")
+                _log.warning("Monitor thread did not stop cleanly")
                 return False
         return True
     

@@ -3,7 +3,7 @@ import moderngl
 import numpy as np
 from numpy.typing import NDArray
 from typing import Any, Final, TypeAlias, List, Tuple
-from objects.shadercass import Shader, ShaderVariable, ShaderType
+from objects.shaderclass import Shader, ShaderVariable, ShaderType
 from logger import log
 
 # --- Shader defaults ---

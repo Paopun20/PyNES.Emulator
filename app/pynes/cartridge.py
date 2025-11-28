@@ -1,108 +1,126 @@
 import numpy as np
-from typing import Final, Tuple, Union
+from numpy.typing import NDArray
+from typing import Final, Optional, Tuple
 from logger import log
+from returns.result import Result, Success, Failure
 
-type UInt8Array = np.ndarray
 
 class Cartridge:
     HEADER_SIZE: Final[int] = 0x10
     TRAINER_SIZE: Final[int] = 0x200  # 512 bytes
 
-    file: str
-    HeaderedROM: UInt8Array
-    PRGROM: UInt8Array
-    CHRROM: UInt8Array
-    Trainer: UInt8Array
-    MapperID: int
-    MirroringMode: int
-
     def __init__(self) -> None:
-        self.file = ""
-        self.HeaderedROM = np.zeros(0, dtype=np.uint8)
-        self.PRGROM = np.zeros(0, dtype=np.uint8)
-        self.CHRROM = np.zeros(0, dtype=np.uint8)
-        self.Trainer = np.zeros(0, dtype=np.uint8)
-        self.MapperID = 0
-        self.MirroringMode = 0
+        self.file: str = ""
+        self.HeaderedROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
+        self.PRGROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
+        self.CHRROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
+        self.Trainer: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
+        self.MapperID: int = 0
+        self.MirroringMode: int = 0
+
+    def __repr__(self) -> str:
+        return (
+            f"<Cartridge file={self.file!r} "
+            f"PRG={len(self.PRGROM)} bytes "
+            f"CHR={len(self.CHRROM)} bytes "
+            f"Trainer={len(self.Trainer)} bytes "
+            f"Mapper={self.MapperID} "
+            f"Mirroring={'Vertical' if self.MirroringMode else 'Horizontal'}>"
+        )
 
     @classmethod
-    def from_bytes(
-        cls,
-        data: bytes
-    ) -> Tuple[bool, Union["Cartridge", str]]:
+    def from_bytes(cls, data: bytes) -> Result["Cartridge", str]:
+        """Load and validate cartridge from bytes."""
+        if not isinstance(data, (bytes, bytearray)):
+            return Failure(f"Expected bytes or bytearray, got {type(data).__name__}")
+
+        if len(data) < cls.HEADER_SIZE:
+            return Failure(f"ROM too short: {len(data)} bytes, minimum {cls.HEADER_SIZE}")
+
+        if data[0:4] != b"NES\x1a":
+            return Failure(f"Invalid header magic: {data[0:4]}")
+
         obj = cls()
         obj.HeaderedROM = np.frombuffer(data, dtype=np.uint8)
 
-        if len(obj.HeaderedROM) < cls.HEADER_SIZE:
-            return False, "Invalid ROM bytes"
+        prg_size = int(data[4]) * 0x4000
+        chr_size = int(data[5]) * 0x2000
+        flags6 = int(data[6])
+        flags7 = int(data[7])
 
-        # NES header magic
-        if obj.HeaderedROM[0:4].tobytes() != b"NES\x1A":
-            return False, "Invalid iNES header"
+        if flags6 & 0b100 and len(data) < cls.HEADER_SIZE + cls.TRAINER_SIZE:
+            return Failure("Trainer flag set but ROM too small for trainer")
 
-        prg_size: int = int(obj.HeaderedROM[4]) * 0x4000  # 16KB units
-        chr_size: int = int(obj.HeaderedROM[5]) * 0x2000  # 8KB units
-        flags6: int = int(obj.HeaderedROM[6])
-        flags7: int = int(obj.HeaderedROM[7])
-
-        # Extract mapper ID from flags6 (bits 4-7) and flags7 (bits 4-7)
+        # Mapper ID bits
         mapper_low = (flags6 >> 4) & 0x0F
         mapper_high = (flags7 >> 4) & 0x0F
         obj.MapperID = (mapper_high << 4) | mapper_low
 
-        # Extract mirroring mode from flags6 (bit 0)
-        # 0 = horizontal, 1 = vertical
         obj.MirroringMode = flags6 & 0x01
+        offset = cls.HEADER_SIZE
 
-        # Trainer detection (bit 2 of flags6)
-        has_trainer = (flags6 & 0b100) != 0
-        offset: int = cls.HEADER_SIZE
-        if has_trainer:
+        # Trainer
+        if flags6 & 0b100:
             trainer_end = offset + cls.TRAINER_SIZE
-            if trainer_end > len(obj.HeaderedROM):
-                return False, "Trainer size exceeds file length"
+            if trainer_end > len(data):
+                return Failure("Trainer exceeds ROM length")
             obj.Trainer = obj.HeaderedROM[offset:trainer_end].copy()
-            offset = trainer_end  # move offset past trainer
+            offset = trainer_end
 
-        # PRG extract
+        # PRG ROM
         prg_end = offset + prg_size
-        if prg_end > len(obj.HeaderedROM):
-            return False, "PRG size exceeds file length"
+        if prg_end > len(data):
+            return Failure(f"PRG ROM exceeds file length ({prg_end} > {len(data)})")
         obj.PRGROM = obj.HeaderedROM[offset:prg_end].copy()
         offset = prg_end
 
-        # CHR extract
+        # CHR ROM
         if chr_size == 0:
             obj.CHRROM = np.zeros(0x2000, dtype=np.uint8)
         else:
             chr_end = offset + chr_size
-            if chr_end > len(obj.HeaderedROM):
-                return False, "CHR size exceeds file length"
+            if chr_end > len(data):
+                return Failure(f"CHR ROM exceeds file length ({chr_end} > {len(data)})")
             obj.CHRROM = obj.HeaderedROM[offset:chr_end].copy()
 
-        return True, obj
+        # Extra bytes warning
+        if len(data) > offset + chr_size:
+            log.warning(f"Extra {len(data) - (offset + chr_size)} bytes at end of ROM ignored")
+
+        return Success(obj)
 
     @classmethod
-    def from_file(
-        cls,
-        filepath: str
-    ) -> Tuple[bool, Union["Cartridge", str]]:
+    def is_valid_file(cls, filepath: str) -> Tuple[bool, Optional[str]]:
+        """Check if a file is a valid NES ROM."""
         try:
             with open(filepath, "rb") as f:
-                data: bytes = f.read()
+                data = f.read()
         except OSError as e:
-            return False, f"File error: {e}"
+            return False, f"Failed to read file: {e}"
 
-        ok, result = cls.from_bytes(data)
-        if ok and isinstance(result, Cartridge):
-            result.file = filepath
+        result = cls.from_bytes(data)
+        if isinstance(result, Success):
+            return True, None
+        else:
+            return False, result.failure()
 
-        return ok, result
+    @classmethod
+    def from_file(cls, filepath: str) -> Result["Cartridge", str]:
+        """Load a cartridge from file path."""
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            return Failure(f"Failed to read file {filepath}: {e}")
+
+        result = cls.from_bytes(data)
+        return result.map(lambda cart: (setattr(cart, "file", filepath)) or cart)
 
     @property
-    def ROM(self) -> UInt8Array:
-        """Alias for PRGROM for backward compatibility."""
-        log.warning(
-            "Accessing .ROM is deprecated. Use .PRGROM instead."
-        )
+    def ROM(self) -> NDArray[np.uint8]:
+        """Alias for PRGROM, with warning."""
+        try:
+            log.warning("Accessing .ROM is deprecated. Use .PRGROM instead.")
+        except Exception:
+            pass
         return self.PRGROM

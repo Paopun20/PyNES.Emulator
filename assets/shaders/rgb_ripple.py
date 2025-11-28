@@ -1,4 +1,4 @@
-from objects.shadercass import Shader
+from objects.shaderclass import Shader
 
 @Shader("RGB Rainbow Time", "Paopaodev")
 class rgb_ripple:

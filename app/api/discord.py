@@ -1,4 +1,5 @@
-from pypresence import Presence as DiscordPresence
+from pypresence import Presence as DiscordPresence # type: ignore
+from logger import log as _log
 import time
 import threading
 from typing import Optional, Any
@@ -52,7 +53,7 @@ class Presence:
             return True
 
         except Exception as e:
-            print(f"❌ Failed to connect to Discord RPC: {e}")
+            _log.error(f"❌ Failed to connect to Discord RPC: {e}")
             self.connected = False
             return False
 
@@ -65,7 +66,7 @@ class Presence:
                 try:
                     self.rpc.update(start=self.start_time)
                 except Exception as e:
-                    print(f"Background update failed: {e}")
+                    _log.error(f"Background update failed: {e}")
                     self._connected = False
                     break
             
@@ -76,7 +77,7 @@ class Presence:
         """Update presence with all supported RPC fields."""
         with self._lock:
             if not self._connected or self.rpc is None:
-                print("Not connected. Call connect() first.")
+                _log.error("Not connected. Call connect() first.")
                 return
         
             if 'start' not in kwargs:
@@ -85,7 +86,7 @@ class Presence:
             try:
                 self.rpc.update(**kwargs)
             except Exception as e:
-                print(f"Failed to update Discord RPC: {e}")
+                _log.error(f"Failed to update Discord RPC: {e}")
                 self._connected = False
 
     def clear(self) -> None:
@@ -96,7 +97,7 @@ class Presence:
             try:
                 self.rpc.clear()
             except Exception as e:
-                print(f"Failed to clear Discord RPC: {e}")
+                _log.error(f"Failed to clear Discord RPC: {e}")
 
     def close(self) -> None:
         """Disconnect from Discord RPC and stop background thread."""

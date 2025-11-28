@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).parent.resolve()
 """
 cython_ext = cythonize([
     CythonExtension(
-        name="pynes.api.discord",
+        name="api.discord",
         sources=["app/pynes/api/discord.pyx"],
         include_dirs=[np.get_include()],
         extra_compile_args=["-O3", "-ffast-math", "-march=native"],
@@ -22,7 +22,7 @@ cython_ext = cythonize([
 """
 rust_ext = [
     RustExtension(
-        target="pynes.rust.disklist",
+        target="rust.disklist",
         path="app/rust/disklist/Cargo.toml",
         debug=False,
         py_limited_api=False,

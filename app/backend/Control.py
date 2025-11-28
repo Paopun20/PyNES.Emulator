@@ -1,8 +1,6 @@
 import pygame
-from rich.console import Console
 from typing import Final
-
-console = Console()
+from logger import log as _log
 
 
 class Control(object):
@@ -55,13 +53,9 @@ class Control(object):
                 js.init()
                 js_id = js.get_instance_id() if hasattr(js, "get_instance_id") else i
                 self.joysticks[js_id] = js
-                console.print(
-                    f"[green]Detected controller:[/green] {js.get_name()} (id={js.get_id()})"
-                )
+                _log.info(f"Joystick {js_id} initialized")
             except Exception as e:
-                console.print(
-                    f"[yellow]Joystick init failed for index {i}: {e}[/yellow]"
-                )
+                _log.error(f"Failed to initialize joystick {i}: {e}")
 
     def update(self, events: list[pygame.event.Event]) -> None:
         """Update controller state based on pygame events"""

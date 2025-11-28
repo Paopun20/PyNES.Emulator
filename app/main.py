@@ -6,9 +6,14 @@ if os.environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
 import sys
 import importlib.util
 import threading
+
+from resources import icon_path, shader_path, font_path
+
 from pathlib import Path
 from types import FrameType, TracebackType
 from typing import Optional, Any, Tuple, List, Dict, Union, Callable
+from returns.result import Result, Success, Failure
+from numpy.typing import NDArray
 
 from tkinter import Tk, messagebox
 import customtkinter as ctk
@@ -19,28 +24,27 @@ import pygame
 import psutil
 import moderngl
 import platform
+
 from util.clip import Clip as PyClip
+from util.timer import Timer
+# from util.network import Network
 from rich.traceback import install
-from numpy.typing import NDArray
 
 from __version__ import __version_string__ as __version__
 from backend.Control import Control
 from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
 from objects.RenderSprite import RenderSprite
-from objects.shadercass import Shader, ShaderUniformEnum
+from objects.shaderclass import Shader, ShaderUniformEnum
 from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE
 from api.discord import Presence
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
 from pypresence.types import ActivityType, StatusDisplayType
-from logger import log, debug_mode, console
+from logger import log as _log, debug_mode, console
 from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
 from helper.hasGIL import hasGIL
-from returns.result import Success, Failure
-from util.timer import Timer
-from resources import icon_path, assets_path, font_path
 
 
 install(console=console)  # make coooooooooooooooooool error output
@@ -49,7 +53,7 @@ install(console=console)  # make coooooooooooooooooool error output
 if sys.version_info < (3, 14):
     raise RuntimeError("Python 3.14 or higher is required to run PyNES.")
 
-log.info("Starting PyNES Emulator")
+_log.info("Starting PyNES Emulator")
 
 sys.set_int_max_str_digits(10_000_000)
 sys.setrecursionlimit(10_000)
@@ -74,7 +78,7 @@ try:
         except (AttributeError, psutil.AccessDenied):
             pass
 except psutil.AccessDenied as e:
-    print(f"Failed to set process priority: {e}")
+    _log.error(f"Failed to set process priority: {e}")
 
 if "--realdebug" in sys.argv and debug_mode:
 
@@ -84,23 +88,23 @@ if "--realdebug" in sys.argv and debug_mode:
         co_name: str = frame.f_code.co_name
 
         if event in {"call", "c_call"}:
-            log.debug(f"Calling {co_name}")
+            _log.debug(f"Calling {co_name}")
         elif event in {"return", "c_return"}:
-            log.debug(f"Returning from {co_name}")
+            _log.debug(f"Returning from {co_name}")
         elif event in {"exception", "c_exception"}:
             exc_type, exc_value, _tb = arg  # type: ignore
-            log.debug(f"Exception {exc_type.__name__} in {co_name}: {exc_value}")
+            _log.debug(f"Exception {exc_type.__name__} in {co_name}: {exc_value}")
         elif event in {"line", "c_line"}:
-            log.debug(f"Line {frame.f_lineno} in {co_name}")
+            _log.debug(f"Line {frame.f_lineno} in {co_name}")
         elif event in {"opcode", "c_opcode"}:
-            log.debug(f"Opcode {arg} in {co_name}")
+            _log.debug(f"Opcode {arg} in {co_name}")
 
         return threadProfile
 
     threading.setprofile_all_threads(threadProfile)
     threading.settrace_all_threads(threadProfile)
 
-log.info("Starting Discord presence")
+_log.info("Starting Discord presence")
 presence: Presence = Presence(1429842237432266752, update_interval=1)
 presence.connect()
 
@@ -134,7 +138,7 @@ class CoreThread:
 run_event: threading.Event = threading.Event()
 run_event.set()
 
-log.info(f"Starting pygame community edition {pygame.__version__}")
+_log.info(f"Starting pygame community edition {pygame.__version__}")
 
 pygame.init()
 pygame.font.init()
@@ -145,7 +149,7 @@ try:
     icon_surface: Optional[pygame.Surface] = pygame.image.load(icon_path)
 except Exception as e:
     icon_surface = None
-    log.error(f"Failed to load icon: {icon_path} ({e})")
+    _log.error(f"Failed to load icon: {icon_path} ({e})")
 
 screen: pygame.Surface = pygame.display.set_mode(
     (NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE
@@ -158,7 +162,7 @@ hwnd: int = pygame.display.get_wm_info()["window"]
 pyWindow: pyWindowColorMode = pyWindowColorMode(hwnd)
 pyWindow.dark_mode = True
 
-log.info("Starting ModernGL")
+_log.info("Starting ModernGL")
 ctx: moderngl.Context = moderngl.create_context()
 ctx.enable(moderngl.BLEND)
 ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
@@ -285,25 +289,25 @@ class DebugOverlay:
         self.program.release()
 
 
-log.info("Starting sprite renderer")
+_log.info("Starting sprite renderer")
 sprite: RenderSprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
 
 debug_overlay: DebugOverlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
 
 clock: pygame.time.Clock = pygame.time.Clock()
 
-log.info("Starting emulator")
+_log.info("Starting emulator")
 nes_emu: Emulator = Emulator()
-log.info("Starting controller")
+_log.info("Starting controller")
 controller: Control = Control()
-log.info("Starting CPU monitor")
+_log.info("Starting CPU monitor")
 cpu_monitor: ThreadCPUMonitor = ThreadCPUMonitor(process, update_interval=1.0)
 cpu_monitor.start()
 gpu_monitor: GPUMonitor = GPUMonitor()
 if gpu_monitor.is_available():
-    log.info("GPU monitor initialized")
+    _log.info("GPU monitor initialized")
 else:
-    log.warning("GPU monitor not available")
+    _log.warning("GPU monitor not available")
 
 root: Tk = Tk()
 root.withdraw()
@@ -316,45 +320,53 @@ except Exception:
 while True:
     if pygame.event.get(pygame.QUIT):
         pygame.quit()
-        exit(0)
+        sys.exit(0)
 
     nes_path: str = filedialog.askopenfilename(
         title="Select a NES file", filetypes=[("NES file", "*.nes"), ("All files", "*.*")]
     )
     if nes_path:
-        if not nes_path.endswith(".nes"):
+        if Path(nes_path).suffix != ".nes":
             messagebox.showerror("Error", "Invalid file type, please select a NES file")
             continue
-        break
+        if not Path(nes_path).exists():
+            messagebox.showinfo("???", "What, how should this be possible?")
+            continue
+        if Path(nes_path).is_file():
+            break
+
+        if (_temp := Cartridge.is_valid_file(nes_path)) and _temp[0] == True:
+            break
+        else:
+            messagebox.showerror("Error", _temp[1])
+            continue
     else:
         if pygame.event.get(pygame.QUIT):
             pygame.quit()
-            exit(0)
+            sys.exit(0)
         else:
             messagebox.showerror("Error", "No NES file selected, please select a NES file")
         continue
 
-valid: bool
-load_cartridge: Union[Cartridge, str]
-valid, load_cartridge = Cartridge.from_file(nes_path)
-if not valid:
-    messagebox.showerror("Error", load_cartridge)
-    exit(1)
+result: Result[Cartridge, str] = Cartridge.from_file(nes_path)
+if isinstance(result, Failure):
+    messagebox.showerror("Error", result.failure())
+    sys.exit(1)
 
 presence.update(
-    status_display_type=StatusDisplayType.STATE,
+    status_display_type=StatusDisplayType.DETAILS,
     activity_type=ActivityType.PLAYING,
     name="PyNES Emulator",
-    details=f"Play NES Game | PyNES Version: {__version__}",
-    state=f"Play {Path(nes_path).name}",
+    details=f"Play NES Game | PyNES.Emulator Version: {__version__}",
+    state=f"Playing {Path(nes_path).name}",
 )
 
-nes_emu.cartridge = load_cartridge
+nes_emu.cartridge = result.unwrap()
 nes_emu.logging = True
 nes_emu.debug.Debug = False
 nes_emu.debug.halt_on_unknown_opcode = True
 
-log.info(f"Loaded: {Path(nes_path).name}")
+_log.info(f"Loaded: {Path(nes_path).name}")
 
 # ← NEW Timer
 emu_timer: Timer = Timer()
@@ -402,7 +414,7 @@ def draw_debug_overlay() -> None:
                 f"PRG ROM Size: {len(nes_emu.cartridge.PRGROM)} bytes | CHR ROM Size: {len(nes_emu.cartridge.CHRROM)} bytes",
                 "",
                 f"EMU runtime: {emu_timer.get_elapsed_time():.4f}s",
-                f"IRL estimate: {((emu_timer.get_elapsed_time()) * (1 / all_clock)):.67f}s",
+                f"IRL estimate: {((emu_timer.get_elapsed_time()) * (1 / all_clock)):.8f}s",
                 f"CPU Halted: {nes_emu.Architrcture.Halted} ({'CLASHED, WHAT THE F*CK, I DO WRONG' if nes_emu.Architrcture.Halted else 'Not clashed yay!'})",
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
@@ -462,6 +474,7 @@ def draw_debug_overlay() -> None:
                 f"ModernGL Version: {moderngl.__version__}",  # type: ignore
                 f"CustomTkinter Version: {ctk.__version__}",
                 f"Numpy Version: {np.__version__}",
+                # f"Your IP: {Network.get_public_ip().unwrap()}", # as joke
                 "",
                 f"GIL Status: {GIL_status}",
             ]
@@ -487,7 +500,7 @@ def render_frame(frame: NDArray[np.uint8]) -> None:
         draw_debug_overlay()
         pygame.display.flip()
     except Exception as e:
-        log.error(f"Frame render error: {e}")
+        _log.error(f"Frame render error: {e}")
 
 
 # subthread to run emulator cycles
@@ -502,7 +515,7 @@ def subpro() -> None:
         except EmulatorError as e:
             if debug_mode:
                 raise
-            log.error(f"{e.exception.__name__}: {e.message}")
+            _log.error(f"{e.exception.__name__}: {e.message}")
             break
 
 
@@ -513,10 +526,10 @@ with CoreThread() as core_thread:
 def tracelogger() -> None:
     @nes_emu.on("tracelogger")
     def _(nes_line: str) -> None:
-        log.debug(nes_line)
+        _log.debug(nes_line)
 
 
-if debug_mode and "--eum_debug" in sys.argv:
+if debug_mode and "--emu_debug" in sys.argv:
     with CoreThread() as core_thread:
         core_thread.add_thread(target=tracelogger, name="TraceLogger Thread")
 
@@ -541,12 +554,12 @@ last_render: NDArray[np.uint8] = np.zeros((NES_HEIGHT, NES_WIDTH, 3), dtype=np.u
 frame_ui: int = 0
 
 for thread in _thread_list:
-    log.info(f"Starting thread: {thread.name}")
+    _log.info(f"Starting thread: {thread.name}")
     try:
         thread.start()
-        log.info(f"Thread {thread.name} started successfully")
+        _log.info(f"Thread {thread.name} started successfully")
     except threading.ThreadError as e:
-        log.error(f"Thread {thread.name} failed to start: {e}")
+        _log.error(f"Thread {thread.name} failed to start: {e}")
 
 
 def _show_error_dialog(parent: ctk.CTkToplevel, message: str) -> None:
@@ -582,9 +595,8 @@ def mod_picker() -> None:
     mod_window.transient(ctk_root)
 
     # Load shaders
-    shader_path: Path = assets_path / "shaders"
     if not shader_path.exists():
-        log.error("Shaders directory not found")
+        _log.error("Shaders directory not found")
         _show_error_dialog(mod_window, "Shaders directory not found")
         return
 
@@ -596,7 +608,7 @@ def mod_picker() -> None:
         try:
             spec = importlib.util.spec_from_file_location(module_name, shader_file)
             if spec is None or spec.loader is None:
-                log.error(f"Failed to load spec for {module_name}")
+                _log.error(f"Failed to load spec for {module_name}")
                 continue
 
             module = importlib.util.module_from_spec(spec)
@@ -609,7 +621,7 @@ def mod_picker() -> None:
                     shader_list.append((attr.name, attr))
                     break
         except Exception as e:
-            log.error(f"Failed to load shader module '{module_name}': {e}")
+            _log.error(f"Failed to load shader module '{module_name}': {e}")
             continue
 
     shader_list.sort(key=lambda x: x[1].name)
@@ -640,38 +652,54 @@ def mod_picker() -> None:
     search_entry: ctk.CTkEntry = ctk.CTkEntry(
         search_frame, placeholder_text="Search shaders...", textvariable=search_var, height=35
     )
-    search_entry.pack(fill="x")
+    search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+    def cls() -> None:
+        search_var.set("")
+        filter_shaders()
+
+    clear_btn: ctk.CTkButton = ctk.CTkButton(
+        search_frame,
+        text="X",
+        command=cls,
+        width=35,
+        height=35,
+        corner_radius=8,
+        fg_color="#ff3030",
+        hover_color="#ff4040",
+    )
+    clear_btn.pack(side="right")
 
     # Scroll frame for shader cards
     scroll_frame: ctk.CTkScrollableFrame = ctk.CTkScrollableFrame(mod_window, fg_color="transparent")
     scroll_frame.pack(pady=10, padx=20, fill="both", expand=True)
 
-    shader_buttons: List[Tuple[ctk.CTkFrame, Shader]] = []
+    shader_buttons: List[Tuple[ctk.CTkFrame, Shader, ctk.CTkButton]] = []
 
     # Apply shader
     def apply_shader(selected_shader: Shader) -> None:
         try:
-            if sprite.set_fragment_shader(selected_shader): # if true run this line
-                log.info(f"Applied shader: {selected_shader.name}")
+            if sprite.set_fragment_shader(selected_shader):
+                _log.info(f"Applied shader: {selected_shader.name}")
                 refresh_buttons()
         except Exception as e:
-            log.error(f"Failed to apply shader: {e}")
+            _log.error(f"Failed to apply shader: {e}")
             _show_error_dialog(mod_window, f"Failed to apply shader:\n{str(e)}")
 
     # Reset shader
     def reset_shader() -> None:
         try:
             sprite.reset_fragment_shader()
-            log.info("Reset to default shader")
-            mod_window.destroy()
+            _log.info("Reset to default shader")
+            refresh_buttons()
         except Exception as e:
-            log.error(f"Failed to reset shader: {e}")
+            _log.error(f"Failed to reset shader: {e}")
             _show_error_dialog(mod_window, f"Failed to reset shader:\n{str(e)}")
 
     # Filter shaders
     def filter_shaders(*_: str) -> None:
         query: str = search_var.get().lower()
-        for card_frame, shader_obj in shader_buttons:
+        for card_frame, shader_obj, _ in shader_buttons:
             shader_text: str = f"{shader_obj.name} {shader_obj.artist} {shader_obj.description}".lower()
             if query in shader_text:
                 card_frame.pack(pady=5, padx=5, fill="x")
@@ -716,34 +744,39 @@ def mod_picker() -> None:
                 slider.set(val)
                 slider.pack(pady=(0, 15), padx=15, fill="x")
 
-                def slider_callback(
-                    v: float,
-                    u: Shader = uniform,
-                    is_int: bool = uniform.type in (ShaderUniformEnum.INT, ShaderUniformEnum.UINT),
-                ) -> None:
-                    if is_int:
-                        v = int(round(v))
-                    u.default_value = str(v)
-                    val_label.configure(text=str(v))
+                def make_slider_callback(u: Shader, lbl: ctk.CTkLabel, is_int: bool):
+                    def slider_callback(v: float) -> None:
+                        if is_int:
+                            v = int(round(v))
+                        u.default_value = str(v)
+                        lbl.configure(text=str(v))
 
-                slider.configure(command=slider_callback)
+                    return slider_callback
+
+                slider.configure(
+                    command=make_slider_callback(
+                        uniform, val_label, uniform.type in (ShaderUniformEnum.INT, ShaderUniformEnum.UINT)
+                    )
+                )
 
             # BOOL → checkbox
             elif uniform.type == ShaderUniformEnum.BOOL:
-                val: bool = uniform.default_value.lower() == "true" if uniform.default_value else False
-                var: ctk.BooleanVar = ctk.BooleanVar(value=val)
+                val_bool: bool = uniform.default_value.lower() == "true" if uniform.default_value else False
+                var: ctk.BooleanVar = ctk.BooleanVar(value=val_bool)
                 chk: ctk.CTkCheckBox = ctk.CTkCheckBox(card, text="", variable=var)
                 chk.pack(pady=(0, 15), padx=15, anchor="w")
 
-                def checkbox_callback(var=var, u=uniform) -> None:
-                    u.default_value = str(var.get())
+                def make_checkbox_callback(v: ctk.BooleanVar, u: Shader):
+                    def checkbox_callback(*args) -> None:
+                        u.default_value = str(v.get())
 
-                var.trace_add("write", lambda *args: checkbox_callback())
+                    return checkbox_callback
+
+                var.trace_add("write", make_checkbox_callback(var, uniform))
 
     # Refresh apply buttons
     def refresh_buttons() -> None:
-        for card_frame, shader_obj in shader_buttons:
-            apply_btn: ctk.CTkButton = card_frame.winfo_children()[-1]  # type: ignore
+        for card_frame, shader_obj, apply_btn in shader_buttons:
             if sprite._shclass.name == shader_obj.name:
                 apply_btn.configure(state="disabled")
             else:
@@ -788,7 +821,7 @@ def mod_picker() -> None:
         if sprite._shclass.name == shader_obj.name:
             apply_btn.configure(state="disabled")
 
-        shader_buttons.append((card_frame, shader_obj))
+        shader_buttons.append((card_frame, shader_obj, apply_btn))
 
     search_var.trace_add("write", filter_shaders)
 
@@ -832,6 +865,7 @@ def mod_picker() -> None:
     )
     set_btn.pack(side="right", padx=(5, 0))
 
+    search_entry.after(100, filter_shaders)
     search_entry.focus()
     mod_window.wait_window()
 
@@ -859,25 +893,24 @@ while running:
                 else:
                     run_event.set()  # resume normal execution
                     emu_timer.resume()
-                log.info(f"{'Paused' if paused else 'Resumed'}")
+                _log.info(f"{'Paused' if paused else 'Resumed'}")
             elif event.key == pygame.K_F10:
                 if paused:
                     run_event.set()
                     run_event.clear()
-                    log.info("Single step executed")
+                    _log.info("Single step executed")
             elif event.key == pygame.K_F5:
                 show_debug = not show_debug
                 debug_overlay.prev_lines = None  # Force refresh
-                log.info(f"Debug {'ON' if show_debug else 'OFF'}")
+                _log.info(f"Debug {'ON' if show_debug else 'OFF'}")
             elif event.key == pygame.K_F6 and show_debug:
                 debug_mode_index += 1
             elif event.key == pygame.K_r:
-                log.info("Resetting emulator")
                 nes_emu.Reset()
                 frame_count = 0
                 emu_timer.reset()
             elif event.key == pygame.K_m:
-                log.info("Opening shader picker")
+                _log.info("Opening shader picker")
                 run_event.clear()  # pause\ the main thread
                 emu_timer.pause()
                 mod_picker()
@@ -914,60 +947,60 @@ while running:
 # Cleanup
 try:
     debug_overlay.destroy()
-    log.info("Debug overlay: Shutting down")
+    _log.info("Debug overlay: Shutting down")
 except Exception:
     pass
 
 try:
     sprite.destroy()
-    log.info("Sprite: Shutting down")
+    _log.info("Sprite: Shutting down")
 except Exception:
     pass
 
 r: bool = cpu_monitor.stop()
 if r:
-    log.info("CPU monitor stopped")
+    _log.info("CPU monitor stopped")
 else:
-    log.warning("CPU monitor failed to stop")
-    log.warning("Enter force state")
+    _log.warning("CPU monitor failed to stop")
+    _log.warning("Enter force state")
     try:
         cpu_monitor.force_stop()
-        log.info("CPU monitor force stopped: success")
+        _log.info("CPU monitor force stopped: success")
     except SystemError:
-        log.error("CPU monitor failed to force stop")
+        _log.error("CPU monitor failed to force stop")
     except Exception:
         pass
 
 presence.close()
-log.info("Discord presence: Shutting down")
+_log.info("Discord presence: Shutting down")
 
 _clone_list: List[threading.Thread] = _thread_list.copy()
 retry: int = 0
 
 while _thread_list and retry < 4:
     for thread in _thread_list:
-        log.info(f"Joining thread: {thread.name}")
+        _log.info(f"Joining thread: {thread.name}")
         if thread.is_alive():
             thread.join(timeout=2.0)
         else:
-            log.info(f"Thread {thread.name} is not start")
+            _log.info(f"Thread {thread.name} is not start")
             _clone_list.remove(thread)
             # skip to next thread
             continue
 
         if thread.is_alive():
-            log.error(f"Thread {thread.name} did not stop cleanly")
+            _log.error(f"Thread {thread.name} did not stop cleanly")
         else:
-            log.info(f"Thread {thread.name} stopped cleanly")
+            _log.info(f"Thread {thread.name} stopped cleanly")
             _clone_list.remove(thread)
     _thread_list = _clone_list.copy()
     retry += 1
 
 if not _thread_list:
-    log.info("All threads joined")
+    _log.info("All threads joined")
 else:
-    log.warning("Some threads did not join")
-    log.warning("Enter force state")
+    _log.warning("Some threads did not join")
+    _log.warning("Enter force state")
 
     remaining = _thread_list.copy()
 
@@ -978,13 +1011,13 @@ else:
             result = thread_exception(thread, InterruptedError, "Force stopping thread")
 
             if isinstance(result, Success):
-                log.info(f'Success force stopping thread "{thread.name}" ({thread.ident})')
+                _log.info(f'Success force stopping thread "{thread.name}" ({thread.ident})')
                 next_round.remove(thread)
 
             elif isinstance(result, Failure):
                 exc = result.failure()
                 if isinstance(exc, SystemError):
-                    log.error(f"Thread {thread.name} failed to force stop ({exc})")
+                    _log.error(f"Thread {thread.name} failed to force stop ({exc})")
                 else:
                     # match old behavior: silently ignore other exceptions
                     pass
@@ -992,8 +1025,8 @@ else:
         remaining = next_round
 
 pygame.quit()
-log.info("Pygame: Shutting down")
+_log.info("Pygame: Shutting down")
 
-log.info("PyNES Emulator: Shutdown complete")
+_log.info("PyNES Emulator: Shutdown complete")
 
 sys.exit(0)
