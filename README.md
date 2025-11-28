@@ -23,13 +23,6 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 3. Accuracy not 100% yet.
 4. Mapping is supported. (have some buggy on mapper 3)
 
-## Development Status
-
-This emulator is a work in progress. Many features are incomplete or missing,
-and bugs are likely present. Please refer to the "Current Status" section below for more details on what is currently implemented and what is planned for future development.
-
-Some code may be messy or not well-optimized as this is a learning project. Contributions are welcome!
-
 ## Performance
 
 The emulator is still under development, and performance is not yet optimized. Expect some slowdowns, especially on less powerful machines, and file size.
@@ -40,13 +33,13 @@ The emulator is still under development, and performance is not yet optimized. E
 - **PPU Emulation**: Basic PPU functionality for rendering graphics, sprites, and backgrounds. (WIP)
 - **APU Emulation**: Basic sound emulation (WIP).
 - **Input Emulation**: Keyboard support. (You need to hold it until frame is rendered, idk why but it work that way)
-- **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), I can support all of them but I recommended to use Xbox controller).
+- **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), but untesting).
 - **ROM Loading**: Supports `.nes` ROM files.
 - **Debugging**: Basic FPS and CPU register display. (WIP for more advanced debugging tools)
 - **Discord Rich Presence**: Support for displaying current game activity on Discord.
 - **Mapper Support**: support only 3 mappers and 1 buggy mapper.
 - **Cross-Platform Support**: Ensure compatibility across Windows, macOS, and Linux. (WIP, you can test this build now)
-- **Fun Settings**: Various fun settings like color filters and screen effects. (not take effects at accurate, just for fun and cool)
+- **Fun Settings**: Various fun settings like color filters and screen effects. (not take effects at accurate, just for fun and cool as same times)
 
 ## Fun Settings
 
@@ -58,12 +51,18 @@ The emulator is still under development, and performance is not yet optimized. E
 - **Complete PPU Features**: Complete implementation of PPU core.
 - **Complete APU Emulation**: Full sound channel support and audio effects.
 - **Save States**: Implement save and load state functionality.
-- **GUI Enhancements**: Improve the user interface for better usability and aesthetics.
 - **Advanced Debugging Tools**: Add features like breakpoints, memory inspection, and step-by-step execution.
 - **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
 - **Multiplayer Support**: Implement support for multiple controllers for two-player games.
 - **Documentation**: Improve documentation for users and developers.
-- **Add Cython, Rust or Any" components**: Move more performance-critical parts to Cython or Rust or Any for better performance and lower cpu use.
+- **Add "Cython, Rust or Any" components**: Move more performance-critical parts to Cython, Rust or Any for better performance and lower cpu use.
+
+## Development Note
+
+This emulator is a work in progress. Many features are incomplete or missing,
+and bugs are likely present.
+
+Some code may be messy or not well-optimized as this is a learning project. Contributions are welcome!
 
 ### Mapper Support
 
@@ -111,17 +110,17 @@ If you want to use a ready-made executable:
    Create a virtual environment:
 
    ```bash
-   python -m venv env
+   python -m venv .env
    ```
 
    Activate the virtual environment:
 
    ```bash
    # windows:
-   .\env\Scripts\activate
+   .\.env\Scripts\activate
 
    # macOS / Linux:
-   source env/bin/activate
+   source .env/bin/activate
    ```
 
 4. Build the extensions (Cython and Rust components):
@@ -151,7 +150,7 @@ If you want to use a ready-made executable:
 8. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
 > Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.\
-> Advance Tip For Developer: You can pass the `--eum_debug` after `--debug` FLAG to enable eumulator tracelogger in debug mode.
+> Advance Tip For Developer: You can pass the `--eum_debug` after `--debug` FLAG to enable eumulator tracelogger to console and run slower in debug mode.
 
 ## Controls
 
@@ -177,7 +176,7 @@ If you want to use a ready-made executable:
 | Quit                        | ESC      | N/A                           |
 | Screenshot                  | F12      | N/A                           |
 
-> ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly. It is recommended to use an Xbox controller for the best compatibility.
+> ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly.
 
 ## Contributing
 
