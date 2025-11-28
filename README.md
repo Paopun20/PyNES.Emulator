@@ -63,7 +63,7 @@ The emulator is still under development, and performance is not yet optimized. E
 - **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
 - **Multiplayer Support**: Implement support for multiple controllers for two-player games.
 - **Documentation**: Improve documentation for users and developers.
-- **Add lCython, Rust or Any" components**: Move more performance-critical parts to Cython or Rust or Any for better performance and lower cpu use.
+- **Add Cython, Rust or Any" components**: Move more performance-critical parts to Cython or Rust or Any for better performance and lower cpu use.
 
 ### Mapper Support
 
