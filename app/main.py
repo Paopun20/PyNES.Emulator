@@ -6,7 +6,7 @@ import threading
 from resources import icon_path, shader_path, font_path
 from pathlib import Path
 from types import FrameType, TracebackType
-from typing import Optional, Any, Tuple, List, Dict, Callable, TypeVar, ParamSpec, Deque
+from typing import Optional, Any, Tuple, List, Dict, Callable
 from collections import deque
 from returns.result import Result, Success, Failure
 from numpy.typing import NDArray
@@ -540,7 +540,7 @@ class DebugState:
             os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else ".", exist_ok=True)
 
             with open(filename, "wb") as f:
-                f.write(bytes(self.emu.RAM[:0x800]))  # Only dump 2KB NES RAM
+                f.write(self.emu.RAM[:].tobytes())  # Only dump NES RAM
             _log.info(f"Memory dumped to {filename}")
             return True
         except Exception as e:
@@ -704,38 +704,15 @@ def render_frame(frame: NDArray[np.uint8]) -> None:
         _log.error(f"Frame render error: {e}")
 
 
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-def timerTest(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator to time a function with proper type annotations."""
-
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        test = Timer()
-        test.start()
-        result = func(*args, **kwargs)
-        test.stop()
-        _log.info("Elapsed time: %.6f seconds", test.get_elapsed_time())
-        return result
-
-    return wrapper
-
-
 # subthread to run emulator cycles
 def subpro() -> None:
-    global running
+    global running, run_event
     while running:
         if not run_event.is_set():
             run_event.wait()
 
         try:
-
-            @timerTest
-            def test() -> None:
-                nes_emu.step_Frame()
-
-            test()
+            nes_emu.step_Frame()
         except EmulatorError as e:
             if debug_mode:
                 raise
@@ -797,9 +774,11 @@ def _show_error_dialog(parent: ctk.CTkToplevel, message: str) -> None:
 
     parent.wait_window()
 
+
 def _on_closing(root, window):
     window.destroy()
     root.destroy()
+
 
 def mod_picker() -> None:
     ctk_root: CTk = CTk()
@@ -820,8 +799,8 @@ def mod_picker() -> None:
     mod_window.grab_set()
     mod_window.resizable(True, True)
     mod_window.minsize(500, 400)
-    
-    #Use lambda to prevent immediate execution
+
+    # Use lambda to prevent immediate execution
     mod_window.protocol("WM_DELETE_WINDOW", lambda: _on_closing(ctk_root, mod_window))
     mod_window.transient(ctk_root)
 
@@ -829,7 +808,7 @@ def mod_picker() -> None:
     if not shader_path.exists():
         _log.error("Shaders directory not found")
         _show_error_dialog(mod_window, "Shaders directory not found")
-        ctk_root.destroy()  #Clean up root window
+        ctk_root.destroy()  # Clean up root window
         return
 
     shader_files: List[Path] = [f for f in shader_path.glob("*.py") if f.name != "__init__.py"]
@@ -860,7 +839,7 @@ def mod_picker() -> None:
 
     if not shader_list:
         _show_error_dialog(mod_window, "No shaders available")
-        ctk_root.destroy()  #Clean up root window
+        ctk_root.destroy()  # Clean up root window
         return
 
     # UI HEADER
@@ -931,10 +910,15 @@ def mod_picker() -> None:
 
     # Filter shaders
     def filter_shaders(*_: str) -> None:
-        query: str = search_var.get().lower()
+        query: str = search_var.get().lower().strip()
+
         for card_frame, shader_obj, _ in shader_buttons:
-            shader_text: str = f"{shader_obj.name} {shader_obj.artist} {shader_obj.description}".lower()
-            if query in shader_text:
+            # Create search text including all relevant fields
+            shader_text: str = f"{shader_obj.name} {shader_obj.artist} {shader_obj.description or ''}".lower()
+
+            # Show card if query is empty (show all) or query is found in text
+            if not query or query in shader_text:
+                # Re-pack the frame with the same options used initially
                 card_frame.pack(pady=5, padx=5, fill="x")
             else:
                 card_frame.pack_forget()
@@ -947,8 +931,8 @@ def mod_picker() -> None:
         win.grab_set()
         win.resizable(True, True)
         win.minsize(500, 400)
-        
-        #Use lambda to prevent immediate execution
+
+        # Use lambda to prevent immediate execution
         win.protocol("WM_DELETE_WINDOW", win.destroy)
         win.transient(mod_window)
 
@@ -1053,7 +1037,7 @@ def mod_picker() -> None:
         )
         apply_btn.pack(pady=(0, 10), padx=15, anchor="e")
 
-        #Check if sprite._shclass exists before accessing
+        # Check if sprite._shclass exists before accessing
         if sprite._shclass and sprite._shclass.name == shader_obj.name:
             apply_btn.configure(state="disabled")
 
@@ -1108,9 +1092,10 @@ def mod_picker() -> None:
     search_entry.after(100, filter_shaders)
     search_entry.focus()
     mod_window.wait_window()
-    
-    #Clean up root window when done
+
+    # Clean up root window when done
     ctk_root.destroy()
+
 
 oldT: str = ""
 maxfps: int = cfg["general"]["fps"]
