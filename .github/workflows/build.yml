@@ -165,9 +165,13 @@ jobs:
         run: |
           mkdir -p upload
           cp dist/${{ matrix.os == 'windows-latest' && 'pynes.exe' || 'pynes' }} upload/ 2>/dev/null || true
+
           cp app/icon.ico upload/ 2>/dev/null || true
+          cp app/config.toml upload/ 2>/dev/null || true
+
           cp -r assets/* upload/ 2>/dev/null || true
           cp -r roms/* upload/ 2>/dev/null || true
+
           cp LICENSE.md upload/ 2>/dev/null || true
 
       - name: Prepare Zip Name
