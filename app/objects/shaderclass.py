@@ -5,7 +5,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from string import Template
 
-__doc_template__ = Template("""
+__doc_template__: Final[Template] = Template("""
 ${name}${shader_type}
 
 # Description
