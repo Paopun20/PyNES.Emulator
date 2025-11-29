@@ -104,9 +104,7 @@ def _NESPaletteToRGB(color_idx: int) -> int:
     """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
     return nes_palette[color_idx & 0x3F]
 
-@final
 class EmulatorError(Exception):
-    @final
     def __init__(self, exception: Exception):
         self.original: Final[Exception] = exception
         self.exception: Final[Type[Exception]] = type(exception)
@@ -209,13 +207,11 @@ class PPUPendingWrites:
     value: int
     remaining_ppu_cycles: int
 
-@final
 class Emulator:
     """
     Main NES Emulator class
     """
 
-    @final
     def __init__(self) -> None:
         # CPU initialization
         self.cartridge: Cartridge = Cartridge.EmptyCartridge()

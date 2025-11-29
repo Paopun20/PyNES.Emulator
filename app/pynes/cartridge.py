@@ -1,11 +1,12 @@
 import numpy as np
 from numpy.typing import NDArray
-from typing import Final, Optional, Tuple
+from typing import Final, Optional, Tuple, final
 from logger import log
 from returns.result import Result, Success, Failure
 from typing_extensions import deprecated
 
 
+@final
 class Cartridge:
     HEADER_SIZE: Final[int] = 0x10
     TRAINER_SIZE: Final[int] = 0x200  # 512 bytes
