@@ -11,13 +11,14 @@ from pynes.apu import APU
 from pynes.cartridge import Cartridge
 from pynes.controller import Controller
 from pynes.mapper import Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004
-from pynes.helper.memoize import memoize
+from util.memoize import memoize
 from pynes.util.OpCodes import OpCodes
 from pynes.util.Bype import Bype as CByte, Sign as CSign
 from logger import log as _logger
 from enum import Enum
 
 import numpy as np
+from pynes.classes.NESPalette import ntsc as NESPalette
 
 
 # Template
@@ -29,75 +30,7 @@ TEMPLATE: Final[Template] = Template(
 
 OpCodeClass: Final[OpCodes] = OpCodes()  # can more one
 
-nes_palette: Final[NDArray[np.uint8]] = np.array(
-    [
-        (84, 84, 84),
-        (0, 30, 116),
-        (8, 16, 144),
-        (48, 0, 136),
-        (68, 0, 100),
-        (92, 0, 48),
-        (84, 4, 0),
-        (60, 24, 0),
-        (32, 42, 0),
-        (8, 58, 0),
-        (0, 64, 0),
-        (0, 60, 0),
-        (0, 50, 60),
-        (0, 0, 0),
-        (0, 0, 0),
-        (0, 0, 0),
-        (152, 150, 152),
-        (8, 76, 196),
-        (48, 50, 236),
-        (92, 30, 228),
-        (136, 20, 176),
-        (160, 20, 100),
-        (152, 34, 32),
-        (120, 60, 0),
-        (84, 90, 0),
-        (40, 114, 0),
-        (8, 124, 0),
-        (0, 118, 40),
-        (0, 102, 120),
-        (0, 0, 0),
-        (0, 0, 0),
-        (0, 0, 0),
-        (236, 238, 236),
-        (76, 154, 236),
-        (120, 124, 236),
-        (176, 98, 236),
-        (228, 84, 236),
-        (236, 88, 180),
-        (236, 106, 100),
-        (212, 136, 32),
-        (160, 170, 0),
-        (116, 196, 0),
-        (76, 208, 32),
-        (56, 204, 108),
-        (56, 180, 204),
-        (60, 60, 60),
-        (0, 0, 0),
-        (0, 0, 0),
-        (236, 238, 236),
-        (168, 204, 236),
-        (188, 188, 236),
-        (212, 178, 236),
-        (236, 174, 236),
-        (236, 174, 212),
-        (236, 180, 176),
-        (228, 196, 144),
-        (204, 210, 120),
-        (180, 222, 120),
-        (168, 226, 144),
-        (152, 226, 180),
-        (160, 214, 228),
-        (160, 162, 160),
-        (0, 0, 0),
-        (0, 0, 0),
-    ],
-    dtype=np.uint8,
-)
+nes_palette: Final[NDArray[np.uint8]] = NESPalette.copy()
 
 @memoize(maxsize=64, policy="lru")
 def _NESPaletteToRGB(color_idx: int) -> int:
@@ -216,7 +149,7 @@ class Emulator:
         # CPU initialization
         self.cartridge: Cartridge = Cartridge.EmptyCartridge()
         self.mapper: Optional[Mapper] = None
-        self._events: Dict[str, List[Callable[..., Any]]] = {}
+        self._events: Dict[str, deque[Callable[..., Any]]] = {}
         self.apu: APU = APU(sample_rate=44100, buffer_size=1024)
         self.RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
         self.PRGROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
@@ -234,7 +167,7 @@ class Emulator:
         self.Architrcture: Architrcture = Architrcture()
         self._cycles_extra: int = 0
         self._base_addr: int = 0
-        self._bg_opaque_line: List[int] = []
+        self._bg_opaque_line: deque[int] = deque()
         self.ppu_bus_latch: int = 0
 
         self.flag: Flags = Flags()
@@ -263,7 +196,7 @@ class Emulator:
         self.AddressLatch = False
         self.PPUDataBuffer: int = 0
         self.FrameBuffer: np.ndarray = np.zeros((240, 256, 3), dtype=np.uint8)
-        self._ppu_pending_writes: List[PPUPendingWrites] = []
+        self._ppu_pending_writes: deque[PPUPendingWrites] = deque()
         # debugger
         self.fps: float = 0
         self.frame_count: int = 0
@@ -306,7 +239,7 @@ class Emulator:
                 raise EmulatorError(ValueError("Callback cannot be None"))
             if callable(warp):
                 if event_name not in self._events:
-                    self._events[event_name] = []
+                    self._events[event_name] = deque()
                 self._events[event_name].append(warp)
                 return warp
             else:
@@ -350,16 +283,11 @@ class Emulator:
             else:  # APU registers ($4000-$4015)
                 val = self.apu.read_register(addr & 0xFF)
 
-        # Unmapped area ($4018-$7FFF)
+        # Unmapped memory ($4018-$FFFF)
         elif addr < 0x8000:
-            if self.Architrcture.page_boundary_crossed:
-                self._emit("onDummyRead", addr)
-                val = (addr >> 8) & 0xFF
-            elif self.Architrcture.page_boundary_crossed_just_happened:
-                self.Architrcture.page_boundary_crossed_just_happened = False
-                val = self.dataBus
-            else:
-                val = self._cpu_open_bus_value()
+            # Open bus behavior: return last value on data bus
+            # with decay after ~0.9 seconds
+            val = self._cpu_open_bus_value()
 
         # ROM ($8000-$FFFF)
         else:
@@ -426,12 +354,16 @@ class Emulator:
 
     def _cpu_open_bus_value(self) -> int:
         """Return current CPU open-bus value with decay before 1 second passes."""
+        # Decay after ~16,666 CPU cycles (~1 second at 1.79MHz)
+        return self.dataBus # Return immediately because it is slow code.
+    
         # Simulate bus decay: after ~0.9 seconds, the value decays to 0
         # Real NES capacitors discharge the bus, but we simplify this
-        if time.time() - getattr(self, "cpu_bus_latch_time", 0) > 0.9:
-            self.dataBus = 0
-            self.Architrcture.cpu_bus_latch_time = time.time()
-        return self.dataBus
+        
+        # if time.time() - getattr(self, "cpu_bus_latch_time", 0) > 0.9:
+        #     self.dataBus = 0
+        #     self.Architrcture.cpu_bus_latch_time = time.time()
+        # return self.dataBus
 
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers with NMI suppression."""
@@ -754,14 +686,11 @@ class Emulator:
 
         # Only add extra cycle if page boundary is crossed
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
-            # Dummy read from the BASE address (not final address)
-            # Set flag so dummy read doesn't update data bus to new high byte
-            self.Architrcture.page_boundary_crossed = True
-            _ = self.Read(base_addr)
-            self.Architrcture.page_boundary_crossed = False
-            # Mark that we just did a page boundary crossing, so next unmapped read returns open bus
-            self.Architrcture.page_boundary_crossed_just_happened = True
-            self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
+            # Preserve high byte in data bus (simulate bus capacitance)
+            saved_data_bus = self.dataBus  # should be == high
+            _ = self.Read(base_addr)      # dummy read
+            self.dataBus = saved_data_bus  # restore, don’t update with new value
+            self._cycles_extra += 1
 
     def Push(self, Value: int) -> None:
         """Push byte onto stack."""
@@ -1137,6 +1066,7 @@ class Emulator:
     def Emulate_CPU(self) -> None:
         # Reset instruction mode at the start of each cycle
         self.Architrcture.current_instruction_mode = CurrentInstructionMode.Undefined
+        self._cycles_extra = 0 # reset
 
         # If an interrupt (NMI) was requested, handle it before fetching
         # the next Architrcture.OpCode. This ensures NMI fires between instructions and

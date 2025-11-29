@@ -1,0 +1,14 @@
+[general]
+fps = 60
+scale = 3
+vsync = true
+
+[keyboard]
+A = "Z"
+B = "X"
+START = "ENTER"
+SELECT = "LSHIFT"
+ARROW_UP = "UP"
+ARROW_DOWN = "DOWN"
+ARROW_LEFT = "LEFT"
+ARROW_RIGHT = "RIGHT"

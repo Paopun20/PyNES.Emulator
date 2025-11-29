@@ -1,17 +1,13 @@
+#!/usr/bin/env python3
 import os
-
-if os.environ.get("PYGAME_HIDE_SUPPORT_PROMPT") is None:
-    os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
-
 import sys
 import importlib.util
 import threading
-
 from resources import icon_path, shader_path, font_path
-
 from pathlib import Path
 from types import FrameType, TracebackType
-from typing import Optional, Any, Tuple, List, Dict, Callable, TypeVar, ParamSpec
+from typing import Optional, Any, Tuple, List, Dict, Callable, TypeVar, ParamSpec, Deque
+from collections import deque
 from returns.result import Result, Success, Failure
 from numpy.typing import NDArray
 
@@ -24,10 +20,12 @@ import pygame
 import psutil
 import moderngl
 import platform
+import yappi
 
 from util.clip import Clip as PyClip
 from util.timer import Timer
-# from util.network import Network
+from util.config import config as cfg
+
 from rich.traceback import install
 
 from __version__ import __version_string__ as __version__
@@ -36,7 +34,7 @@ from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
 from objects.RenderSprite import RenderSprite
 from objects.shaderclass import Shader, ShaderUniformEnum
-from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE
+from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE, GL_SWAP_CONTROL
 from api.discord import Presence
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError
@@ -46,6 +44,10 @@ from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
 from helper.hasGIL import hasGIL
 
+# Platform detection
+IS_WINDOWS = platform.system() == "Windows"
+IS_LINUX = platform.system() == "Linux"
+IS_MAC = platform.system() == "Darwin"
 
 install(console=console)  # make coooooooooooooooooool error output
 
@@ -61,14 +63,22 @@ sys.setswitchinterval(1e-5)
 
 process: psutil.Process = psutil.Process(os.getpid())
 
+# PLATFORM-SAFE PRIORITY ADJUSTMENT
 try:
-    process.nice(psutil.HIGH_PRIORITY_CLASS)
-    try:
-        process.ionice(psutil.IOPRIO_HIGH, 0)
-    except psutil.AccessDenied, AttributeError:
-        pass
-except psutil.AccessDenied as e:
-    _log.error(f"Failed to set process priority: {e}")
+    if IS_WINDOWS:
+        process.nice(psutil.HIGH_PRIORITY_CLASS)
+    else:
+        process.nice(10)  # Favorable priority on Unix-like systems
+    _log.info("Process priority set successfully")
+except (psutil.AccessDenied, AttributeError) as e:
+    _log.warning(f"Could not set process priority: {e}")
+
+try:
+    if IS_LINUX:
+        process.ionice(psutil.IOPRIO_CLASS_RT, 0)
+        _log.info("I/O priority set for Linux")
+except (psutil.AccessDenied, AttributeError) as e:
+    _log.warning(f"Could not set I/O priority: {e}")
 
 if "--realdebug" in sys.argv and debug_mode:
 
@@ -100,9 +110,9 @@ presence.connect()
 
 NES_WIDTH: int = 256
 NES_HEIGHT: int = 240
-SCALE: int = 3
+SCALE: int = cfg["general"]["scale"]
 
-_thread_list: List[threading.Thread] = []
+_thread_list: deque[threading.Thread] = deque()
 
 
 class CoreThread:
@@ -144,13 +154,26 @@ except Exception as e:
 screen: pygame.Surface = pygame.display.set_mode(
     (NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE
 )
+
+try:
+    pygame.display.gl_set_attribute(GL_SWAP_CONTROL, int(cfg["general"]["vsync"]))
+except AttributeError:
+    pass
+
 pygame.display.set_caption("PyNES Emulator")
 if icon_surface:
     pygame.display.set_icon(icon_surface)
 
-hwnd: int = pygame.display.get_wm_info()["window"]
-pyWindow: pyWindowColorMode = pyWindowColorMode(hwnd)
-pyWindow.dark_mode = True
+# PLATFORM-SAFE WINDOW HANDLING
+hwnd: Optional[int] = None
+pyWindow: Optional[pyWindowColorMode] = None
+if IS_WINDOWS:
+    try:
+        hwnd = pygame.display.get_wm_info()["window"]
+        pyWindow = pyWindowColorMode(hwnd)
+        pyWindow.dark_mode = True
+    except Exception as e:
+        _log.warning(f"Failed to set dark mode: {e}")
 
 _log.info("Starting ModernGL")
 ctx: moderngl.Context = moderngl.create_context()
@@ -273,10 +296,14 @@ class DebugOverlay:
     def destroy(self) -> None:
         if self.texture:
             self.texture.release()
-        self.vao.release()
-        self.vbo.release()
-        self.ibo.release()
-        self.program.release()
+        if hasattr(self, "vao"):
+            self.vao.release()
+        if hasattr(self, "vbo"):
+            self.vbo.release()
+        if hasattr(self, "ibo"):
+            self.ibo.release()
+        if hasattr(self, "program"):
+            self.program.release()
 
 
 _log.info("Starting sprite renderer")
@@ -323,8 +350,7 @@ while not nes_path:
             sys.exit(0)
 
     file_path = filedialog.askopenfilename(
-        title="Select a NES file",
-        filetypes=[("NES file", "*.nes"), ("All files", "*.*")]
+        title="Select a NES file", filetypes=[("NES file", "*.nes"), ("All files", "*.*")]
     )
     if not file_path:
         messagebox.showerror("Error", "No NES file selected")
@@ -384,6 +410,146 @@ ppu_clock: int = 5_369_317
 all_clock: int = cpu_clock + ppu_clock
 
 debug_mode_index: int = 0
+_is_yappi_enabled: bool = False
+
+
+class DebugState:
+    def __init__(self, emulator: Emulator):
+        self.emu = emulator
+        self.memory_view_start = 0x0000
+        self.disasm_start = 0x8000
+        self.log_lines = deque(maxlen=50)
+
+        # Common opcode mappings (simplified for debugging)
+        self.opcode_to_mnemonic = {
+            0xA9: "LDA", 0xA5: "LDA", 0xB5: "LDA", 0xAD: "LDA", 0xBD: "LDA", 0xB9: "LDA", 0xA1: "LDA", 0xB1: "LDA",
+            0x85: "STA", 0x95: "STA", 0x8D: "STA", 0x9D: "STA", 0x99: "STA", 0x81: "STA", 0x91: "STA",
+            0xA2: "LDX", 0xA6: "LDX", 0xB6: "LDX", 0xAE: "LDX", 0xBE: "LDX",
+            0x86: "STX", 0x96: "STX", 0x8E: "STX",
+            0xA0: "LDY", 0xA4: "LDY", 0xB4: "LDY", 0xAC: "LDY", 0xBC: "LDY",
+            0x84: "STY", 0x94: "STY", 0x8C: "STY",
+            0x4C: "JMP", 0x6C: "JMP",
+            0x20: "JSR",
+            0x60: "RTS",
+            0x40: "RTI",
+            0xEA: "NOP",
+            0x00: "BRK",
+        }
+
+    def get_memory_dump(self, start: int = 0x0000, size: int = 256) -> List[str]:
+        """Generate hex dump of NES memory"""
+        lines = []
+
+        # NES RAM is only 2KB (0x0000-0x07FF)
+        start = max(0, min(start, 0x07FF))
+        end = min(start + size, 0x0800)
+
+        for i in range(0, end - start, 16):
+            addr = start + i
+            hex_vals = []
+            ascii_vals = []
+            for j in range(16):
+                if addr + j < end:
+                    try:
+                        val = self.emu.RAM[addr + j]
+                        hex_vals.append(f"{val:02X}")
+                        if 32 <= val <= 126:
+                            chr_str: str = chr(val)
+                            chr_is_printable: bool = chr_str.isprintable()
+                            if chr_is_printable:
+                                ascii_vals.append(chr_str)
+                            else:
+                                ascii_vals.append("?")
+                        else:
+                            ascii_vals.append(".")
+                    except IndexError:
+                        hex_vals.append("??")
+                        ascii_vals.append("?")
+                else:
+                    hex_vals.append("  ")
+                    ascii_vals.append(" ")
+
+            lines.append(
+                f"${addr:04X} | " + " ".join(hex_vals[:8]) + "  " + " ".join(hex_vals[8:]) + " | " + "".join(ascii_vals)
+            )
+        return lines
+
+    def get_disassembly(self, start: int = 0x8000, lines: int = 20) -> List[str]:
+        """Disassemble instructions around current PC"""
+        result = []
+        pc = self.emu.Architrcture.ProgramCounter
+
+        # Clamp to cartridge ROM range (0x8000-0xFFFF)
+        start = max(0x8000, min(start, 0xFFFF))
+        addr = start
+
+        while len(result) < lines and addr <= 0xFFFF:
+            try:
+                opcode = self.emu.cartridge.get_byte(addr)
+                mnemonic = self.opcode_to_mnemonic.get(opcode, "???")
+                bytes_str = f"{opcode:02X}"
+                operand_str = ""
+
+                # Determine operand size and format
+                if mnemonic in ["JMP", "JSR"] and opcode in [0x4C, 0x20]:
+                    # Absolute addressing (3 bytes)
+                    if addr + 2 <= 0xFFFF or True:
+                        low = self.emu.cartridge.get_byte(addr + 1)
+                        high = self.emu.cartridge.get_byte(addr + 2)
+                        operand = (high << 8) | low
+                        bytes_str += f" {low:02X} {high:02X}"
+                        operand_str = f"${operand:04X}"
+                    else:
+                        operand_str = "??"
+                    addr += 3
+                elif mnemonic.startswith("LDA") or mnemonic.startswith("STA"):
+                    # Various addressing modes - simplify to immediate/zero page
+                    if addr + 1 <= 0xFFFF:
+                        operand = self.emu.cartridge.get_byte(addr + 1)
+                        bytes_str += f" {operand:02X}"
+                        if opcode == 0xA9:  # Immediate
+                            operand_str = f"#{operand:02X}"
+                        else:  # Zero page or other
+                            operand_str = f"${operand:02X}"
+                    else:
+                        operand_str = "??"
+                    addr += 2
+                else:
+                    # Implicit/accumulator addressing (1 byte)
+                    addr += 1
+
+                marker = (
+                    "->"
+                    if addr - (3 if mnemonic in ["JMP", "JSR"] else 2 if mnemonic.startswith(("LDA", "STA")) else 1)
+                    == pc
+                    else "  "
+                )
+                result.append(
+                    f"${addr - (3 if mnemonic in ['JMP', 'JSR'] else 2 if mnemonic.startswith(('LDA', 'STA')) else 1):04X} {marker} {bytes_str:<8} {mnemonic:<5} {operand_str}"
+                )
+
+            except Exception as e:
+                result.append(f"${addr:04X} ?? ?? ??")
+                addr += 1
+        return result
+
+    def dump_memory(self, filename: str) -> bool:
+        """Dump entire NES memory to file"""
+        try:
+            # Create parent directories if needed
+            os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else ".", exist_ok=True)
+
+            with open(filename, "wb") as f:
+                f.write(bytes(self.emu.RAM[:0x800]))  # Only dump 2KB NES RAM
+            _log.info(f"Memory dumped to {filename}")
+            return True
+        except Exception as e:
+            _log.error(f"Memory dump failed: {e}")
+            return False
+
+
+# Initialize debug state
+debug_state = DebugState(nes_emu)
 
 
 def draw_debug_overlay() -> None:
@@ -391,7 +557,12 @@ def draw_debug_overlay() -> None:
     if not show_debug:
         return
 
-    debug_info: List[str] = [f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})"]
+    debug_info: List[str] = [
+        f"PyNES Emulator {__version__} [Debug Menu] (Menu Index: {debug_mode_index})",
+        f"Platform: {platform.system()} {platform.release()} ({platform.machine()}) | Python {platform.python_version()}",
+        "",
+    ]
+
     id_mapper: List[str] = ["NROM", "MMC1", "UNROM", "CNROM", "MMC3"]
 
     GIL_status: str = {
@@ -404,17 +575,17 @@ def draw_debug_overlay() -> None:
         case 0:
             debug_info += [
                 f"NES File: {Path(nes_path).name}",
-                f"ROM Header: {nes_emu.cartridge.HeaderedROM[:0x10]}",
-                f"Mapper ID: {nes_emu.cartridge.MapperID} ({id_mapper[nes_emu.cartridge.MapperID]})",
+                "ROM Header: [" + ", ".join(f"0x{h:02X}" for h in nes_emu.cartridge.HeaderedROM[:0x10]) + "]",
+                f"Mapper ID: {nes_emu.cartridge.MapperID} ({id_mapper[nes_emu.cartridge.MapperID] if nes_emu.cartridge.MapperID < len(id_mapper) else 'Unknown'})",
                 f"Mirroring Mode: {'Vertical' if nes_emu.cartridge.MirroringMode else 'Horizontal'}",
                 f"PRG ROM Size: {len(nes_emu.cartridge.PRGROM)} bytes | CHR ROM Size: {len(nes_emu.cartridge.CHRROM)} bytes",
                 "",
                 f"EMU runtime: {emu_timer.get_elapsed_time():.4f}s",
-                f"IRL estimate: {((emu_timer.get_elapsed_time()) * (1 / all_clock)):.8f}s",
-                f"CPU Halted: {nes_emu.Architrcture.Halted} ({'CLASHED, WHAT THE F*CK, I DO WRONG' if nes_emu.Architrcture.Halted else 'Not clashed yay!'})",
+                f"IRL estimate: {(emu_timer.get_elapsed_time() * 1789773 / 1000000):.4f}s",
+                f"CPU Halted: {nes_emu.Architrcture.Halted} ({'CLASHED!' if nes_emu.Architrcture.Halted else 'Running'})",
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
-                f"PC: ${nes_emu.Architrcture.ProgramCounter:04X} ({nes_emu.Architrcture.ProgramCounter}) | Cycles: {nes_emu.cycles}",
+                f"PC: ${nes_emu.Architrcture.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
                 f"A: ${nes_emu.Architrcture.A:02X} X: ${nes_emu.Architrcture.X:02X} Y: ${nes_emu.Architrcture.Y:02X}",
                 f"Current Instruction Mode: {nes_emu.Architrcture.current_instruction_mode}",
                 f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
@@ -425,8 +596,12 @@ def draw_debug_overlay() -> None:
                 f"{'Z' if nes_emu.flag.Zero else '-'}"
                 f"{'C' if nes_emu.flag.Carry else '-'}"
                 f"{'U' if nes_emu.flag.Unused else '-'}",
-                f"Latest Log: {nes_emu.tracelog[-1]}",
             ]
+            if nes_emu.tracelog:
+                debug_info.append(f"Latest Log: {nes_emu.tracelog[-1]}")
+            else:
+                debug_info.append("No trace log entries")
+
         case 1:
             # Get CPU percentages without blocking (instant)
             thread_cpu_percent: Dict[int, float] = cpu_monitor.get_cpu_percents()
@@ -451,32 +626,62 @@ def draw_debug_overlay() -> None:
                         f"  Thread {thread.name} (ID: {thread.ident}): {thread_cpu_percent[thread.ident]:.2f}% CPU"
                     )
 
-            # Prepare graph data
-            cpu_data: List[float] = []
-            max_data: int = 20
-            cpum: List[Dict[int, float]] = cpu_monitor.get_graph()
-
-            for index_cpu in cpum:
-                for k, v in index_cpu.items():
-                    if len(cpu_data) >= max_data:
-                        cpu_data.pop(0)
-                    cpu_data.append(v)
+            # Add thread count
+            debug_info.append("")
+            debug_info.append(f"Total Threads: {threading.active_count()}")
 
         case 2:
             debug_info += [
                 f"Python {platform.python_version()}",
                 f"Platform: {platform.system()} {platform.release()} ({platform.machine()})",
                 f"PyGame Community Edition {pygame.__version__}",
-                f"ModernGL Version: {moderngl.__version__}",  # type: ignore
+                f"ModernGL Version: {moderngl.__version__}",
                 f"CustomTkinter Version: {ctk.__version__}",
                 f"Numpy Version: {np.__version__}",
-                # f"Your IP: {Network.get_public_ip().unwrap()}", # as joke
                 "",
                 f"GIL Status: {GIL_status}",
             ]
 
+        case 3:
+            if _is_yappi_enabled:
+                tstats = yappi.get_thread_stats()
+                func_stats: yappi.YFuncStats = yappi.get_func_stats(
+                    filter_callback=lambda x: "site-packages" not in x.module
+                )
+                for tstat in tstats:
+                    debug_info.append(f"Thread {tstat.name} (ID: {tstat.tid}): Total Time={tstat.ttot:.4f}s")
+
+                debug_info.append("")
+                debug_info.append("Top 10 Functions (by total time):")
+                top_funcs = func_stats.sort(sort_type="ttot", sort_order="desc")[:10]
+                for i, func_stat in enumerate(top_funcs, 1):
+                    debug_info.append(
+                        f"  {i}. {func_stat.full_name}: {func_stat.ttot:.4f}s ({func_stat.tsub:.4f}s own)"
+                    )
+            else:
+                debug_info.append("Yappi Profiler: OFF (Press F9 to enable)")
+                debug_info.append("Note: Enabling profiler significantly reduces emulation speed")
+
+        case 4:  # Memory Viewer
+            debug_info += [
+                "NES MEMORY DUMP (2KB RAM)",
+                f"Viewing: ${debug_state.memory_view_start:04X} - ${min(debug_state.memory_view_start + 255, 0x7FF):04X}",
+                "Controls: F1=Prev page | F2=Next page | F3=Save memory dump",
+                "",
+            ]
+            debug_info += debug_state.get_memory_dump(debug_state.memory_view_start, 256)
+
+        case 5:  # Disassembly
+            debug_info += [
+                "CPU DISASSEMBLY (ROM)",
+                f"Current PC: ${nes_emu.Architrcture.ProgramCounter:04X}",
+                "Controls: F1=Prev page | F2=Next page",
+                "",
+            ]
+            debug_info += debug_state.get_disassembly(debug_state.disasm_start, 25)
+
         case _:
-            debug_mode_index = 0
+            debug_mode_index = debug_mode_index % 6  # Ensure valid index
             draw_debug_overlay()
             return
 
@@ -502,8 +707,10 @@ def render_frame(frame: NDArray[np.uint8]) -> None:
 P = ParamSpec("P")
 R = TypeVar("R")
 
+
 def timerTest(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator to time a function with proper type annotations."""
+
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         test = Timer()
         test.start()
@@ -511,7 +718,9 @@ def timerTest(func: Callable[P, R]) -> Callable[P, R]:
         test.stop()
         _log.info("Elapsed time: %.6f seconds", test.get_elapsed_time())
         return result
+
     return wrapper
+
 
 # subthread to run emulator cycles
 def subpro() -> None:
@@ -521,9 +730,11 @@ def subpro() -> None:
             run_event.wait()
 
         try:
+
             @timerTest
             def test() -> None:
                 nes_emu.step_Frame()
+
             test()
         except EmulatorError as e:
             if debug_mode:
@@ -540,6 +751,7 @@ def tracelogger() -> None:
     @nes_emu.on("tracelogger")
     def _(nes_line: str) -> None:
         _log.debug(nes_line)
+        debug_state.log_lines.append(nes_line)
 
 
 if debug_mode and "--emu_debug" in sys.argv:
@@ -585,13 +797,17 @@ def _show_error_dialog(parent: ctk.CTkToplevel, message: str) -> None:
 
     parent.wait_window()
 
+def _on_closing(root, window):
+    window.destroy()
+    root.destroy()
 
 def mod_picker() -> None:
     ctk_root: CTk = CTk()
     ctk_root.withdraw()
 
     try:
-        ctk_root.iconbitmap(str(icon_path))  # type: ignore
+        if IS_WINDOWS:
+            ctk_root.iconbitmap(str(icon_path))
     except Exception:
         pass
 
@@ -604,13 +820,16 @@ def mod_picker() -> None:
     mod_window.grab_set()
     mod_window.resizable(True, True)
     mod_window.minsize(500, 400)
-    mod_window.protocol("WM_DELETE_WINDOW", mod_window.destroy)
+    
+    #Use lambda to prevent immediate execution
+    mod_window.protocol("WM_DELETE_WINDOW", lambda: _on_closing(ctk_root, mod_window))
     mod_window.transient(ctk_root)
 
     # Load shaders
     if not shader_path.exists():
         _log.error("Shaders directory not found")
         _show_error_dialog(mod_window, "Shaders directory not found")
+        ctk_root.destroy()  #Clean up root window
         return
 
     shader_files: List[Path] = [f for f in shader_path.glob("*.py") if f.name != "__init__.py"]
@@ -641,6 +860,7 @@ def mod_picker() -> None:
 
     if not shader_list:
         _show_error_dialog(mod_window, "No shaders available")
+        ctk_root.destroy()  #Clean up root window
         return
 
     # UI HEADER
@@ -727,6 +947,8 @@ def mod_picker() -> None:
         win.grab_set()
         win.resizable(True, True)
         win.minsize(500, 400)
+        
+        #Use lambda to prevent immediate execution
         win.protocol("WM_DELETE_WINDOW", win.destroy)
         win.transient(mod_window)
 
@@ -757,12 +979,12 @@ def mod_picker() -> None:
                 slider.set(val)
                 slider.pack(pady=(0, 15), padx=15, fill="x")
 
-                def make_slider_callback(u: Shader, lbl: ctk.CTkLabel, is_int: bool):
+                def make_slider_callback(u, lbl, is_int):
                     def slider_callback(v: float) -> None:
                         if is_int:
                             v = int(round(v))
                         u.default_value = str(v)
-                        lbl.configure(text=str(v))
+                        lbl.configure(text=f"{v:.3f}" if not is_int else str(v))
 
                     return slider_callback
 
@@ -779,7 +1001,7 @@ def mod_picker() -> None:
                 chk: ctk.CTkCheckBox = ctk.CTkCheckBox(card, text="", variable=var)
                 chk.pack(pady=(0, 15), padx=15, anchor="w")
 
-                def make_checkbox_callback(v: ctk.BooleanVar, u: Shader):
+                def make_checkbox_callback(v, u):
                     def checkbox_callback(*args) -> None:
                         u.default_value = str(v.get())
 
@@ -790,7 +1012,7 @@ def mod_picker() -> None:
     # Refresh apply buttons
     def refresh_buttons() -> None:
         for card_frame, shader_obj, apply_btn in shader_buttons:
-            if sprite._shclass.name == shader_obj.name:
+            if sprite._shclass and sprite._shclass.name == shader_obj.name:
                 apply_btn.configure(state="disabled")
             else:
                 apply_btn.configure(state="normal")
@@ -798,7 +1020,7 @@ def mod_picker() -> None:
     # Create shader cards
     for _, shader_obj in shader_list:
         card_frame: ctk.CTkFrame = ctk.CTkFrame(scroll_frame, corner_radius=10)
-        card_frame.pack(pady=5, padx=5, fill="x")
+        # Don't pack here - will be packed in filter_shaders
 
         name_label: ctk.CTkLabel = ctk.CTkLabel(
             card_frame, text=shader_obj.name.replace("_", " "), font=ctk.CTkFont(size=14, weight="bold"), anchor="w"
@@ -831,10 +1053,15 @@ def mod_picker() -> None:
         )
         apply_btn.pack(pady=(0, 10), padx=15, anchor="e")
 
-        if sprite._shclass.name == shader_obj.name:
+        #Check if sprite._shclass exists before accessing
+        if sprite._shclass and sprite._shclass.name == shader_obj.name:
             apply_btn.configure(state="disabled")
 
         shader_buttons.append((card_frame, shader_obj, apply_btn))
+
+    # Now pack all cards and apply filter
+    for card_frame, _, _ in shader_buttons:
+        card_frame.pack(pady=5, padx=5, fill="x")
 
     search_var.trace_add("write", filter_shaders)
 
@@ -856,7 +1083,7 @@ def mod_picker() -> None:
     close_btn: ctk.CTkButton = ctk.CTkButton(
         bottom_frame,
         text="Close",
-        command=mod_window.destroy,
+        command=lambda: _on_closing(ctk_root, mod_window),
         fg_color="transparent",
         hover_color="gray20",
         border_width=2,
@@ -881,8 +1108,12 @@ def mod_picker() -> None:
     search_entry.after(100, filter_shaders)
     search_entry.focus()
     mod_window.wait_window()
+    
+    #Clean up root window when done
+    ctk_root.destroy()
 
-oldT = ""
+oldT: str = ""
+maxfps: int = cfg["general"]["fps"]
 
 while running:
     events: List[pygame.event.Event] = pygame.event.get()
@@ -913,25 +1144,70 @@ while running:
                     run_event.set()
                     run_event.clear()
                     _log.info("Single step executed")
+
             elif event.key == pygame.K_F5:
                 show_debug = not show_debug
                 debug_overlay.prev_lines = None  # Force refresh
                 _log.info(f"Debug {'ON' if show_debug else 'OFF'}")
+
             elif event.key == pygame.K_F6 and show_debug:
-                debug_mode_index += 1
+                debug_mode_index = (debug_mode_index - 1) % 6
+            elif event.key == pygame.K_F7 and show_debug:
+                debug_mode_index = (debug_mode_index + 1) % 6
+
+            elif event.key == pygame.K_F9 and show_debug:
+                _is_yappi_enabled = not _is_yappi_enabled
+                if _is_yappi_enabled:
+                    yappi.start()
+                    _log.info("Yappi profiler started")
+                else:
+                    yappi.stop()
+                    yappi.clear_stats()
+                    _log.info("Yappi profiler stopped")
+
             elif event.key == pygame.K_r:
                 nes_emu.Reset()
                 frame_count = 0
                 emu_timer.reset()
+                _log.info("Emulator reset")
             elif event.key == pygame.K_m:
                 _log.info("Opening shader picker")
-                run_event.clear()  # pause\ the main thread
+                run_event.clear()  # pause the main thread
                 emu_timer.pause()
                 mod_picker()
                 emu_timer.resume()
                 run_event.set()  # resume normal execution
             elif event.key == pygame.K_F12:
-                PyClip.copy(sprite.export())
+                try:
+                    sprite.export()
+                    PyClip.copy(sprite.export())
+                    _log.info("Frame copied to clipboard")
+                except Exception as e:
+                    _log.error(f"Clipboard copy failed: {e}")
+
+            elif show_debug:
+                if debug_mode_index == 4:  # Memory viewer
+                    if event.key == pygame.K_F1:
+                        debug_state.memory_view_start = max(0, debug_state.memory_view_start - 0x100)
+                    elif event.key == pygame.K_F2:
+                        debug_state.memory_view_start = min(0x700, debug_state.memory_view_start + 0x100)
+                    elif event.key == pygame.K_F3:
+                        dump_path = filedialog.asksaveasfilename(
+                            defaultextension=".bin",
+                            filetypes=[("Binary files", "*.bin"), ("All files", "*.*")],
+                            title="Save Memory Dump",
+                        )
+                        if dump_path:
+                            if debug_state.dump_memory(dump_path):
+                                messagebox.showinfo("Success", f"Memory dumped to:\n{dump_path}")
+                            else:
+                                messagebox.showerror("Error", "Memory dump failed")
+
+                elif debug_mode_index == 5:  # Disassembly
+                    if event.key == pygame.K_F1:
+                        debug_state.disasm_start = max(0x8000, debug_state.disasm_start - 0x30)
+                    elif event.key == pygame.K_F2:
+                        debug_state.disasm_start = min(0xFFD0, debug_state.disasm_start + 0x30)
 
     if frame_ready:
         with frame_lock:
@@ -940,7 +1216,7 @@ while running:
             frame_ready = False
 
     try:
-        sprite.set_uniform("u_time", frame_ui / 60.0)
+        sprite.set_uniform("u_time", frame_ui / maxfps)
     except Exception:
         pass
 
@@ -954,87 +1230,109 @@ while running:
         oldT = title
 
     frame_ui += 1
-    clock.tick(60)
+    clock.tick(maxfps)
 
-# Cleanup
-try:
-    debug_overlay.destroy()
-    _log.info("Debug overlay: Shutting down")
-except Exception:
-    pass
 
-try:
-    sprite.destroy()
-    _log.info("Sprite: Shutting down")
-except Exception:
-    pass
+def platform_safe_cleanup() -> None:
+    """Platform-aware resource cleanup"""
+    _log.info("Starting cleanup")
 
-r: bool = cpu_monitor.stop()
-if r:
-    _log.info("CPU monitor stopped")
-else:
-    _log.warning("CPU monitor failed to stop")
-    _log.warning("Enter force state")
+    # Release OpenGL resources
     try:
-        cpu_monitor.force_stop()
-        _log.info("CPU monitor force stopped: success")
-    except SystemError:
-        _log.error("CPU monitor failed to force stop")
-    except Exception:
-        pass
+        debug_overlay.destroy()
+        _log.info("Debug overlay destroyed")
+    except Exception as e:
+        _log.error(f"Debug overlay cleanup failed: {e}")
 
-presence.close()
-_log.info("Discord presence: Shutting down")
+    try:
+        sprite.destroy()
+        _log.info("Render sprite destroyed")
+    except Exception as e:
+        _log.error(f"Sprite cleanup failed: {e}")
 
-_clone_list: List[threading.Thread] = _thread_list.copy()
-retry: int = 0
+    # Stop monitors
+    try:
+        cpu_monitor.stop()
+        _log.info("CPU monitor stopped")
+    except Exception as e:
+        _log.error(f"CPU monitor stop failed: {e}")
 
-while _thread_list and retry < 4:
-    for thread in _thread_list:
-        _log.info(f"Joining thread: {thread.name}")
-        if thread.is_alive():
-            thread.join(timeout=2.0)
-        else:
-            _log.info(f"Thread {thread.name} is not start")
-            _clone_list.remove(thread)
-            # skip to next thread
-            continue
+    if hasattr(gpu_monitor, "shutdown"):
+        try:
+            gpu_monitor.shutdown()
+            _log.info("GPU monitor shutdown")
+        except Exception as e:
+            _log.error(f"GPU monitor shutdown failed: {e}")
 
-        if thread.is_alive():
-            _log.error(f"Thread {thread.name} did not stop cleanly")
-        else:
-            _log.info(f"Thread {thread.name} stopped cleanly")
-            _clone_list.remove(thread)
-    _thread_list = _clone_list.copy()
-    retry += 1
+    # Close Discord presence
+    try:
+        presence.close()
+        _log.info("Discord presence closed")
+    except Exception as e:
+        _log.error(f"Discord presence close failed: {e}")
 
-if not _thread_list:
-    _log.info("All threads joined")
-else:
-    _log.warning("Some threads did not join")
-    _log.warning("Enter force state")
+    # Platform-specific window cleanup
+    if IS_WINDOWS and hwnd:
+        try:
+            import ctypes
 
-    remaining = _thread_list.copy()
+            ctypes.windll.user32.DestroyWindow(hwnd)
+            _log.info("Windows handle destroyed")
+        except Exception as e:
+            _log.warning(f"Window destruction failed: {e}")
+
+
+platform_safe_cleanup()
+
+
+# Thread shutdown
+def shutdown_threads() -> None:
+    global _thread_list
+    threads = deque(_thread_list)
+    max_retry = 4
+    retry = 0
+
+    # Graceful join
+    while threads and retry < max_retry:
+        for _ in range(len(threads)):
+            thread = threads.popleft()
+            _log.info(f"Joining thread: {thread.name}")
+            if thread.is_alive():
+                thread.join(timeout=2.0)
+                if thread.is_alive():
+                    _log.error(f"Thread {thread.name} did not stop cleanly")
+                    threads.append(thread)
+                else:
+                    _log.info(f"Thread {thread.name} stopped cleanly")
+            else:
+                _log.info(f"Thread {thread.name} is not started")
+        retry += 1
+
+    if not threads:
+        _log.info("All threads joined")
+        return
+
+    # Force stop remaining threads
+    _log.warning("Some threads did not join, entering force stop")
+    remaining = threads
 
     while remaining:
-        next_round = remaining.copy()
+        for _ in range(len(remaining)):
+            thread = remaining.popleft()
+            exc_result = thread_exception(thread, InterruptedError)
 
-        for thread in remaining:
-            result = thread_exception(thread, InterruptedError)
-
-            if isinstance(result, Success):
+            if isinstance(exc_result, Success):
                 _log.info(f'Success force stopping thread "{thread.name}" ({thread.ident})')
-                next_round.remove(thread)
-
-            elif isinstance(result, Failure):
-                exc = result.failure()
+            elif isinstance(exc_result, Failure):
+                exc = exc_result.failure()
                 if isinstance(exc, SystemError):
                     _log.error(f"Thread {thread.name} failed to force stop ({exc})")
+                    remaining.append(thread)
                 else:
-                    # match old behavior: silently ignore other exceptions
-                    pass
+                    remaining.append(thread)
 
-        remaining = next_round
+
+shutdown_threads()
 
 pygame.quit()
 _log.info("Pygame: Shutting down")

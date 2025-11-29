@@ -1,6 +1,7 @@
 import pygame
 from typing import Final
 from logger import log as _log
+from util.config import config as cfg
 
 
 class Control(object):
@@ -39,10 +40,38 @@ class Control(object):
         pygame.init()
         pygame.joystick.init()
 
+        # สร้าง KEY_MAPPING จาก config
+        self.KEY_MAPPING: dict[int, str] = self._build_key_mapping()
+        self.GAMEPAD_BUTTON_MAP: dict[int, str] = {
+            0: "A",
+            1: "B",
+            6: "Select",
+            7: "Start",
+        }
+
         self.state = {k: False for k in self.NES_KEYS}
         self._prev_state = self.state.copy()
         self.joysticks = {}
         self.init_all_joysticks()
+
+    def _build_key_mapping(self) -> dict[int, str]:
+        """Map pygame key constants from config"""
+        mapping = {}
+        cfg_map = cfg["keyboard"]
+        for nes_key in ["A", "B", "START", "SELECT", "ARROW_UP", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT"]:
+            py_key_name = cfg_map.get(nes_key, nes_key).lower()
+            try:
+                if py_key_name.lower() == "enter":
+                    py_key_name = "RETURN"
+                py_key_name = py_key_name.lower() if len(py_key_name) == 1 else py_key_name.upper()
+                py_key = getattr(pygame, f"K_{py_key_name}")
+            except AttributeError:
+                _log.warning(f"Invalid key '{py_key_name}' in config for {nes_key}")
+                continue
+            # map NES key names to internal state keys (normalize)
+            state_key = nes_key.capitalize() if nes_key not in ["A", "B"] else nes_key
+            mapping[py_key] = state_key
+        return mapping
 
     def init_all_joysticks(self) -> None:
         """Initialize all connected joysticks"""
@@ -50,7 +79,7 @@ class Control(object):
         for i in range(pygame.joystick.get_count()):
             try:
                 js = pygame.joystick.Joystick(i)
-                js.init()
+                # js.init()
                 js_id = js.get_instance_id() if hasattr(js, "get_instance_id") else i
                 self.joysticks[js_id] = js
                 _log.info(f"Joystick {js_id} initialized")

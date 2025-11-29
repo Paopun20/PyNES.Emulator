@@ -42,3 +42,4 @@ setuptools-rust==1.12.0
 typing-extensions==4.15.0
 uv==0.9.10
 wheel==0.45.1
+yappi==1.7.3

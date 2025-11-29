@@ -27,9 +27,6 @@ GPUtil # GPU monitoring (supports both NVIDIA and AMD GPUs)
 # Windows specific
 pywin32;platform_system=="Windows" # Windows API
 
-# type checking
-mypy # types-requests # for mypy to check requests library
-
 # ui tkinter
 customtkinter
 
@@ -47,3 +44,6 @@ pillow
 
 # build exe tool
 pyinstaller
+
+# yappi
+yappi

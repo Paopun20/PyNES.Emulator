@@ -124,7 +124,7 @@ class Cartridge:
         return result.map(attach_file)
 
     @property
-    @deprecated("Use .PRGROM instead of .ROM; this property will be removed. (?)")
+    @deprecated("Use .PRGROM instead of .ROM")
     def ROM(self: "Cartridge") -> np.ndarray:
         log.warning("Accessing .ROM is deprecated. Use .PRGROM instead.")
         return self.PRGROM

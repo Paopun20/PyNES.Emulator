@@ -55,7 +55,7 @@ The emulator is still under development, and performance is not yet optimized. E
 - **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
 - **Multiplayer Support**: Implement support for multiple controllers for two-player games.
 - **Documentation**: Improve documentation for users and developers.
-- **Add "Cython, Rust or Any" components**: Move more performance-critical parts to Cython, Rust or Any for better performance and lower cpu use.
+<!-- - **Add "Cython, Rust or Any" components**: Move more performance-critical parts to Cython, Rust or Any for better performance and lower cpu use. -->
 
 ## Development Note
 
@@ -66,12 +66,12 @@ Some code may be messy or not well-optimized as this is a learning project. Cont
 
 ### Mapper Support
 
-| Status | Mapper ID | Mapper Name | Notes | Problem |
-|--------|-----------|-------------|-------| ------- |
-| ✅     | 000       | NROM        | No bank switching | Nope |
-| ✅     | 001       | MMC1        | PRG/CHR bank switching, simple IRQ | Nope |
-| ✅     | 002       | UxROM       | PRG bank switching | Nope |
-| ✅     | 003       | CNROM       | CHR bank switching | Nope |
+| Status | Mapper ID | Mapper Name | Notes                                  | Problem  |
+| ------ | --------- | ----------- | -------------------------------------- | -------- |
+| ✅     | 000       | NROM        | No bank switching                      | Nope     |
+| ✅     | 001       | MMC1        | PRG/CHR bank switching, simple IRQ     | Nope     |
+| ✅     | 002       | UxROM       | PRG bank switching                     | Nope     |
+| ✅     | 003       | CNROM       | CHR bank switching                     | Nope     |
 | ⚠️     | 004       | MMC3        | Advanced bank switching + scanline IRQ | MMC3 IRQ |
 
 ## Compatibility
@@ -98,7 +98,7 @@ If you want to use a ready-made executable:
 
 ### Run emulator from source code (for developers)
 
-1. Ensure you have Python 3.14 or higher installed.
+1. Ensure you have Python 3.13 or higher installed.
 2. Clone this repository.
 
    ```bash
@@ -132,22 +132,24 @@ If you want to use a ready-made executable:
 5. Install the required dependencies using requirements.txt (best to use uv):
 
    using pip
+
    ```bash
    pip install -r requirements.txt
    ```
 
    using uv
+
    ```bash
    uv pip install -r requirements.txt
    ```
 
-7. Start the emulator with:
+6. Start the emulator with:
 
    ```bash
    python app/main.py
    ```
 
-8. When prompted by the emulator, choose a `.nes` ROM file to load and play.
+7. When prompted by the emulator, choose a `.nes` ROM file to load and play.
 
 > Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.\
 > Advance Tip For Developer: You can pass the `--eum_debug` after `--debug` FLAG to enable eumulator tracelogger to console and run slower in debug mode.
@@ -165,18 +167,19 @@ If you want to use a ready-made executable:
 | Select     | Right Shift | Back (6)        | Share / Back       | Minus (-)             |
 | Start      | Enter       | Start (7)       | Options / Start    | Plus (+)              |
 
-| Emulator Controls           | Keyboard | Xbox / PS / Switch Controller |
-| --------------------------- | -------- | ----------------------------- |
-| Pause                       | P        | N/A                           |
-| Debug Overlay               | F5       | N/A                           |
-| Next Mode (`Debug Overlay`) | F6       | N/A                           |
-| Step Cycle On Pause         | F10      | N/A                           |
-| Shader Picker               | M        | N/A                           |
-| Reset                       | R        | N/A                           |
-| Quit                        | ESC      | N/A                           |
-| Screenshot                  | F12      | N/A                           |
+| Emulator Controls              | Keyboard | Xbox / PS / Switch Controller |
+| ------------------------------ | -------- | ----------------------------- |
+| Pause                          | P        | N/A                           |
+| Debug Overlay                  | F5       | N/A                           |
+| Next Mode (`In Debug Overlay`) | F7       | N/A                           |
+| Back Mode (`In Debug Overlay`) | F6       | N/A                           |
+| Step Cycle On Pause            | F10      | N/A                           |
+| Shader Picker                  | M        | N/A                           |
+| Reset                          | R        | N/A                           |
+| Quit                           | ESC      | N/A                           |
+| Screenshot                     | F12      | N/A                           |
 
-> ⚠️ Note: Some controllers may require additional configuration or drivers to work correctly.
+> Note: Some controllers may require additional configuration or drivers to work correctly.
 
 ## Contributing
 
