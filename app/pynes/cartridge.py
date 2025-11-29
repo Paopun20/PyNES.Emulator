@@ -3,13 +3,14 @@ from numpy.typing import NDArray
 from typing import Final, Optional, Tuple
 from logger import log
 from returns.result import Result, Success, Failure
+from typing_extensions import deprecated
 
 
 class Cartridge:
     HEADER_SIZE: Final[int] = 0x10
     TRAINER_SIZE: Final[int] = 0x200  # 512 bytes
 
-    def __init__(self) -> None:
+    def __init__(self: "Cartridge") -> None:
         self.file: str = ""
         self.HeaderedROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
         self.PRGROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
@@ -18,7 +19,7 @@ class Cartridge:
         self.MapperID: int = 0
         self.MirroringMode: int = 0
 
-    def __repr__(self) -> str:
+    def __repr__(self: "Cartridge") -> str:
         return (
             f"<Cartridge file={self.file!r} "
             f"PRG={len(self.PRGROM)} bytes "
@@ -29,7 +30,7 @@ class Cartridge:
         )
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> Result["Cartridge", str]:
+    def from_bytes(cls: type["Cartridge"], data: bytes) -> Result["Cartridge", str]:
         """Load and validate cartridge from bytes."""
         if not isinstance(data, (bytes, bytearray)):
             return Failure(f"Expected bytes or bytearray, got {type(data).__name__}")
@@ -90,7 +91,7 @@ class Cartridge:
         return Success(obj)
 
     @classmethod
-    def is_valid_file(cls, filepath: str) -> Tuple[bool, Optional[str]]:
+    def is_valid_file(cls: type["Cartridge"], filepath: str) -> Tuple[bool, Optional[str]]:
         """Check if a file is a valid NES ROM."""
         try:
             with open(filepath, "rb") as f:
@@ -105,7 +106,7 @@ class Cartridge:
             return False, result.failure()
 
     @classmethod
-    def from_file(cls, filepath: str) -> Result["Cartridge", str]:
+    def from_file(cls: type["Cartridge"], filepath: str) -> Result["Cartridge", str]:
         """Load a cartridge from file path."""
         try:
             with open(filepath, "rb") as f:
@@ -114,13 +115,25 @@ class Cartridge:
             return Failure(f"Failed to read file {filepath}: {e}")
 
         result = cls.from_bytes(data)
-        return result.map(lambda cart: (setattr(cart, "file", filepath)) or cart)
+
+        def attach_file(cart: Cartridge) -> Cartridge:
+            cart.file = filepath
+            return cart
+
+        return result.map(attach_file)
 
     @property
-    def ROM(self) -> NDArray[np.uint8]:
-        """Alias for PRGROM, with warning."""
-        try:
-            log.warning("Accessing .ROM is deprecated. Use .PRGROM instead.")
-        except Exception:
-            pass
+    @deprecated("Use .PRGROM instead of .ROM; this property will be removed. (?)")
+    def ROM(self: "Cartridge") -> np.ndarray:
+        log.warning("Accessing .ROM is deprecated. Use .PRGROM instead.")
         return self.PRGROM
+
+    @classmethod
+    def EmptyCartridge(cls: type["Cartridge"]) -> "Cartridge":
+        cart: Cartridge = cls()
+        cart.PRGROM = np.zeros(0, dtype=np.uint8)
+        cart.CHRROM = np.zeros(0, dtype=np.uint8)
+        cart.Trainer = np.zeros(0, dtype=np.uint8)
+        cart.MapperID = 0
+        cart.MirroringMode = 0
+        return cart

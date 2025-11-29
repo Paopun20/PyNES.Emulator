@@ -11,11 +11,11 @@ from resources import icon_path, shader_path, font_path
 
 from pathlib import Path
 from types import FrameType, TracebackType
-from typing import Optional, Any, Tuple, List, Dict, Union, Callable
+from typing import Optional, Any, Tuple, List, Dict, Callable, TypeVar, ParamSpec
 from returns.result import Result, Success, Failure
 from numpy.typing import NDArray
 
-from tkinter import Tk, messagebox
+from tkinter import TclError, Tk, messagebox
 import customtkinter as ctk
 from customtkinter import filedialog, CTk
 
@@ -62,21 +62,11 @@ sys.setswitchinterval(1e-5)
 process: psutil.Process = psutil.Process(os.getpid())
 
 try:
-    if platform.system() == "Windows":
-        process.nice(psutil.HIGH_PRIORITY_CLASS)
-        try:
-            process.ionice(psutil.IOPRIO_HIGH, 0)
-        except psutil.AccessDenied:
-            pass
-    elif platform.system() == "Linux":
-        try:
-            process.nice(psutil.HIGH_PRIORITY_CLASS)
-        except psutil.AccessDenied:
-            pass
-        try:
-            process.ionice(psutil.IOPRIO_HIGH, 0)
-        except (AttributeError, psutil.AccessDenied):
-            pass
+    process.nice(psutil.HIGH_PRIORITY_CLASS)
+    try:
+        process.ionice(psutil.IOPRIO_HIGH, 0)
+    except psutil.AccessDenied, AttributeError:
+        pass
 except psutil.AccessDenied as e:
     _log.error(f"Failed to set process priority: {e}")
 
@@ -313,40 +303,46 @@ root: Tk = Tk()
 root.withdraw()
 try:
     root.iconbitmap(str(icon_path))
-except Exception:
+except TclError:
     pass
 
-# ROM Load
-while True:
-    if pygame.event.get(pygame.QUIT):
-        pygame.quit()
-        sys.exit(0)
+nes_path: Path = None
 
-    nes_path: str = filedialog.askopenfilename(
-        title="Select a NES file", filetypes=[("NES file", "*.nes"), ("All files", "*.*")]
-    )
-    if nes_path:
-        if Path(nes_path).suffix != ".nes":
-            messagebox.showerror("Error", "Invalid file type, please select a NES file")
-            continue
-        if not Path(nes_path).exists():
-            messagebox.showinfo("???", "What, how should this be possible?")
-            continue
-        if Path(nes_path).is_file():
-            break
-
-        if (_temp := Cartridge.is_valid_file(nes_path)) and _temp[0] == True:
-            break
-        else:
-            messagebox.showerror("Error", _temp[1])
-            continue
+if len(sys.argv) > 1:
+    arg_path = Path(sys.argv[1]).resolve()
+    if arg_path.suffix == ".nes" and Cartridge.is_valid_file(arg_path)[0]:
+        nes_path = arg_path
     else:
-        if pygame.event.get(pygame.QUIT):
+        messagebox.showerror("Error", f"Invalid NES file: {arg_path}")
+
+# If no valid argument, ask user
+while not nes_path:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit(0)
-        else:
-            messagebox.showerror("Error", "No NES file selected, please select a NES file")
+
+    file_path = filedialog.askopenfilename(
+        title="Select a NES file",
+        filetypes=[("NES file", "*.nes"), ("All files", "*.*")]
+    )
+    if not file_path:
+        messagebox.showerror("Error", "No NES file selected")
         continue
+
+    file_path = Path(file_path).resolve()
+    if file_path.suffix != ".nes":
+        messagebox.showerror("Error", "Invalid file type, please select a NES file")
+        continue
+    if not file_path.exists() or not file_path.is_file():
+        messagebox.showinfo("Error", "File does not exist or is not a valid file")
+        continue
+
+    valid, msg = Cartridge.is_valid_file(file_path)
+    if valid:
+        nes_path = file_path
+    else:
+        messagebox.showerror("Error", msg)
 
 result: Result[Cartridge, str] = Cartridge.from_file(nes_path)
 if isinstance(result, Failure):
@@ -503,6 +499,20 @@ def render_frame(frame: NDArray[np.uint8]) -> None:
         _log.error(f"Frame render error: {e}")
 
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
+def timerTest(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator to time a function with proper type annotations."""
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        test = Timer()
+        test.start()
+        result = func(*args, **kwargs)
+        test.stop()
+        _log.info("Elapsed time: %.6f seconds", test.get_elapsed_time())
+        return result
+    return wrapper
+
 # subthread to run emulator cycles
 def subpro() -> None:
     global running
@@ -511,7 +521,10 @@ def subpro() -> None:
             run_event.wait()
 
         try:
-            nes_emu.step_Cycle()
+            @timerTest
+            def test() -> None:
+                nes_emu.step_Frame()
+            test()
         except EmulatorError as e:
             if debug_mode:
                 raise
@@ -869,6 +882,7 @@ def mod_picker() -> None:
     search_entry.focus()
     mod_window.wait_window()
 
+oldT = ""
 
 while running:
     events: List[pygame.event.Event] = pygame.event.get()
@@ -933,13 +947,11 @@ while running:
     render_frame(last_render)
 
     # title update
-    title: str = "PyNES Emulator"
-    if paused:
-        if running:
-            title += " [PAUSED]"
-        else:
-            title += " [SHUTTING DOWN]"
-    pygame.display.set_caption(title)
+    title = "PyNES Emulator" + (" [PAUSED]" if paused and running else " [SHUTTING DOWN]" if paused else "")
+
+    if title != oldT:
+        pygame.display.set_caption(title)
+        oldT = title
 
     frame_ui += 1
     clock.tick(60)
@@ -1008,7 +1020,7 @@ else:
         next_round = remaining.copy()
 
         for thread in remaining:
-            result = thread_exception(thread, InterruptedError, "Force stopping thread")
+            result = thread_exception(thread, InterruptedError)
 
             if isinstance(result, Success):
                 _log.info(f'Success force stopping thread "{thread.name}" ({thread.ident})')

@@ -1,6 +1,14 @@
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TypedDict
 
-list_OpCode = {
+
+class OpCode(TypedDict):
+    opcode: str
+    type: List[str]
+    bytes: int
+    cycles: int
+
+
+list_OpCode: Dict[int, OpCode] = {
     0x00: {"opcode": "BRK", "type": ["implied"], "bytes": 1, "cycles": 7},
     0x01: {"opcode": "ORA", "type": ["indexed_indirect"], "bytes": 2, "cycles": 6},
     0x02: {"opcode": "KIL", "type": ["illegal"], "bytes": 1, "cycles": 2},
@@ -262,18 +270,18 @@ list_OpCode = {
 
 class OpCodes:
     """Enhanced 6502 OpCode lookup table with complete instruction information."""
-    
+
     @staticmethod
     def GetEntry(opcode: int) -> Dict[str, Any]:
         """
         Get complete opcode entry.
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
-            
+
         Returns:
             Dictionary with opcode, type, bytes, and cycles
-            
+
         Raises:
             ValueError: If opcode is out of valid range
         """
@@ -285,10 +293,10 @@ class OpCodes:
     def GetName(opcode: int) -> str:
         """
         Get the mnemonic name of an opcode.
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
-            
+
         Returns:
             Mnemonic string (e.g., "LDA", "STA")
         """
@@ -298,37 +306,37 @@ class OpCodes:
     def GetType(opcode: int) -> List[str]:
         """
         Get the type/addressing mode list for an opcode.
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
-            
+
         Returns:
             List of type strings (may include "illegal")
         """
         return OpCodes.GetEntry(opcode)["type"]
-    
+
     @staticmethod
     def GetBytes(opcode: int) -> int:
         """
         Get instruction size in bytes.
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
-            
+
         Returns:
             Instruction size (1-3 bytes)
         """
         return OpCodes.GetEntry(opcode)["bytes"]
-    
+
     @staticmethod
     def GetCycles(opcode: int) -> int:
         """
         Get base cycle count for instruction.
         Note: Actual cycles may vary due to page boundary crossings.
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
-            
+
         Returns:
             Base cycle count
         """
@@ -338,10 +346,10 @@ class OpCodes:
     def IsIllegal(opcode: int) -> bool:
         """
         Check if an opcode is illegal/undocumented.
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
-            
+
         Returns:
             True if opcode is illegal/undocumented
         """
@@ -351,10 +359,10 @@ class OpCodes:
     def GetAddressingMode(opcode: int) -> str:
         """
         Get the primary addressing mode (excludes 'illegal' tag).
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
-            
+
         Returns:
             Addressing mode string
         """
@@ -365,14 +373,14 @@ class OpCodes:
     def FindOpcodes(mnemonic: str, addressing_mode: Optional[str] = None) -> List[int]:
         """
         Find all opcodes matching a mnemonic and optional addressing mode.
-        
+
         Args:
             mnemonic: Instruction mnemonic (e.g., "LDA", "STA")
             addressing_mode: Optional addressing mode filter
-            
+
         Returns:
             List of matching opcode values
-            
+
         Examples:
             >>> OpCodes.FindOpcodes("LDA", "immediate")
             [0xA9]
@@ -381,24 +389,24 @@ class OpCodes:
         """
         results = []
         mnemonic_upper = mnemonic.upper()
-        
+
         for opcode, data in list_OpCode.items():
             if data["opcode"] == mnemonic_upper:
                 if addressing_mode is None:
                     results.append(opcode)
                 elif addressing_mode in data["type"]:
                     results.append(opcode)
-        
+
         return sorted(results)
-    
+
     @staticmethod
     def GetAllMnemonics(include_illegal: bool = False) -> List[str]:
         """
         Get list of all unique mnemonics.
-        
+
         Args:
             include_illegal: If True, include illegal opcodes
-            
+
         Returns:
             Sorted list of unique mnemonics
         """
@@ -407,39 +415,41 @@ class OpCodes:
             is_illegal = "illegal" in data["type"]
             if include_illegal or not is_illegal:
                 mnemonics.add(data["opcode"])
-        
+
         return sorted(mnemonics)
-    
+
     @staticmethod
     def GetInstructionInfo(opcode: int) -> str:
         """
         Get formatted instruction information string.
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
-            
+
         Returns:
             Formatted string with complete instruction info
         """
         entry = OpCodes.GetEntry(opcode)
         mode = OpCodes.GetAddressingMode(opcode)
         illegal = " (ILLEGAL)" if OpCodes.IsIllegal(opcode) else ""
-        
-        return (f"0x{opcode:02X}: {entry['opcode']} [{mode}] - "
-                f"{entry['bytes']} byte(s), {entry['cycles']} cycle(s){illegal}")
-    
+
+        return (
+            f"0x{opcode:02X}: {entry['opcode']} [{mode}] - "
+            f"{entry['bytes']} byte(s), {entry['cycles']} cycle(s){illegal}"
+        )
+
     @staticmethod
-    def DisassembleBytes(opcode: int, operand_bytes: List[int] = None) -> str:
+    def DisassembleBytes(opcode: int, operand_bytes: Optional[List[int]] = None) -> str:
         """
         Disassemble an instruction with its operand bytes.
-        
+
         Args:
             opcode: Opcode value (0x00-0xFF)
             operand_bytes: List of operand bytes (if any)
-            
+
         Returns:
             Disassembled instruction string
-            
+
         Examples:
             >>> OpCodes.DisassembleBytes(0xA9, [0x42])
             'LDA #$42'
@@ -450,7 +460,7 @@ class OpCodes:
         mnemonic = entry["opcode"]
         mode = OpCodes.GetAddressingMode(opcode)
         operand_bytes = operand_bytes or []
-        
+
         # Format based on addressing mode
         if mode == "implied" or mode == "accumulator":
             return mnemonic

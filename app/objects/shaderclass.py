@@ -27,6 +27,7 @@ ${functions}
 
 class ShaderType(Enum):
     """Type of shader program"""
+
     VERTEX = "vertex"
     FRAGMENT = "fragment"
     GEOMETRY = "geometry"
@@ -36,6 +37,7 @@ class ShaderType(Enum):
 
 class ShaderUniformEnum(Enum):
     """GLSL uniform types"""
+
     FLOAT = "float"
     INT = "int"
     UINT = "uint"
@@ -70,6 +72,7 @@ class ShaderUniformEnum(Enum):
 
 class ShaderQualifier(Enum):
     """GLSL variable qualifiers"""
+
     UNIFORM = "uniform"
     ATTRIBUTE = "attribute"
     VARYING = "varying"
@@ -81,6 +84,7 @@ class ShaderQualifier(Enum):
 @dataclass
 class ShaderVariable:
     """Represents a shader variable (uniform, attribute, varying)"""
+
     name: str
     type: ShaderUniformEnum
     qualifier: ShaderQualifier
@@ -100,6 +104,7 @@ class ShaderVariable:
 @dataclass
 class ShaderFunction:
     """Represents a function defined in shader code"""
+
     name: str
     return_type: str
     parameters: List[str] = field(default_factory=list)
@@ -113,6 +118,7 @@ class ShaderFunction:
 @dataclass
 class ShaderValidationError:
     """Represents a validation error in shader code"""
+
     line: int
     message: str
     severity: str = "error"  # error, warning, info
@@ -123,83 +129,79 @@ class ShaderValidationError:
 
 class ShaderValidator:
     """Validates GLSL shader code"""
-    
+
     @staticmethod
     def validate(code: str, shader_type: ShaderType) -> List[ShaderValidationError]:
         errors = []
-        lines = code.split('\n')
-        
+        lines = code.split("\n")
+
         # Check for main function
-        if not re.search(r'\bvoid\s+main\s*\(', code):
-            errors.append(ShaderValidationError(
-                line=0,
-                message="Missing main() function",
-                severity="error"
-            ))
-        
+        if not re.search(r"\bvoid\s+main\s*\(", code):
+            errors.append(ShaderValidationError(line=0, message="Missing main() function", severity="error"))
+
         # Check for balanced braces
-        brace_count = code.count('{') - code.count('}')
+        brace_count = code.count("{") - code.count("}")
         if brace_count != 0:
-            errors.append(ShaderValidationError(
-                line=0,
-                message=f"Unbalanced braces (difference: {brace_count})",
-                severity="error"
-            ))
-        
+            errors.append(
+                ShaderValidationError(
+                    line=0, message=f"Unbalanced braces (difference: {brace_count})", severity="error"
+                )
+            )
+
         # Check for balanced parentheses
-        paren_count = code.count('(') - code.count(')')
+        paren_count = code.count("(") - code.count(")")
         if paren_count != 0:
-            errors.append(ShaderValidationError(
-                line=0,
-                message=f"Unbalanced parentheses (difference: {paren_count})",
-                severity="error"
-            ))
-        
+            errors.append(
+                ShaderValidationError(
+                    line=0, message=f"Unbalanced parentheses (difference: {paren_count})", severity="error"
+                )
+            )
+
         # Check for deprecated functions/variables
         deprecated_gl = {
-            'gl_FragColor': 'Use out variables instead',
-            'gl_FragData': 'Use out variables instead',
-            'texture2D': 'Use texture() instead',
-            'texture3D': 'Use texture() instead',
-            'textureCube': 'Use texture() instead',
+            "gl_FragColor": "Use out variables instead",
+            "gl_FragData": "Use out variables instead",
+            "texture2D": "Use texture() instead",
+            "texture3D": "Use texture() instead",
+            "textureCube": "Use texture() instead",
         }
-        
+
         for i, line in enumerate(lines, 1):
             for deprecated, suggestion in deprecated_gl.items():
-                if deprecated in line and not line.strip().startswith('//'):
-                    errors.append(ShaderValidationError(
-                        line=i,
-                        message=f"Deprecated: '{deprecated}'. {suggestion}",
-                        severity="warning"
-                    ))
-        
+                if deprecated in line and not line.strip().startswith("//"):
+                    errors.append(
+                        ShaderValidationError(
+                            line=i, message=f"Deprecated: '{deprecated}'. {suggestion}", severity="warning"
+                        )
+                    )
+
         # Check for common mistakes
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
-            if stripped and not stripped.startswith('//'):
+            if stripped and not stripped.startswith("//"):
                 # Check for assignment in conditionals
-                if re.search(r'if\s*\([^)]*=[^=]', stripped):
-                    errors.append(ShaderValidationError(
-                        line=i,
-                        message="Possible assignment instead of comparison in conditional",
-                        severity="warning"
-                    ))
-                
+                if re.search(r"if\s*\([^)]*=[^=]", stripped):
+                    errors.append(
+                        ShaderValidationError(
+                            line=i,
+                            message="Possible assignment instead of comparison in conditional",
+                            severity="warning",
+                        )
+                    )
+
                 # Check for semicolon after control structures
-                if re.search(r'(if|for|while)\s*\([^)]*\)\s*;', stripped):
-                    errors.append(ShaderValidationError(
-                        line=i,
-                        message="Semicolon after control structure",
-                        severity="warning"
-                    ))
-        
+                if re.search(r"(if|for|while)\s*\([^)]*\)\s*;", stripped):
+                    errors.append(
+                        ShaderValidationError(line=i, message="Semicolon after control structure", severity="warning")
+                    )
+
         return errors
 
 
 class Shader:
     """
     Wraps a Python class docstring as shader code. Usable as a decorator.
-    
+
     Enhanced features:
     - Automatic shader type detection
     - Comprehensive uniform, attribute, and varying parsing
@@ -215,14 +217,14 @@ class Shader:
         artist: Optional[str] = "Unknown",
         shader_type: Optional[ShaderType] = ShaderType.FRAGMENT,
         validate: bool = True,
-        strip_comments: bool = True
+        strip_comments: bool = True,
     ):
         self._description: Final[str] = description or ""
         self._artist: Final[str] = artist or "Unknown"
         self._shader_type: Optional[ShaderType] = shader_type
         self._validate_code: Final[bool] = validate
         self._strip_comments: Final[bool] = strip_comments
-        
+
         self._name: str = ""
         self._code: str = ""
         self._original_code: str = ""
@@ -243,21 +245,21 @@ class Shader:
         self._name = cls.__name__
         self._original_code = textwrap.dedent(cls.__doc__).strip()
         self._cls = cls
-        
+
         # Parse preprocessor directives
         self._preprocessor_defines = self._parse_defines(self._original_code)
-        
+
         # Clean code
         code = self._original_code
         if self._strip_comments:
             code = self._remove_comments(code)
         code = self._normalize_whitespace(code)
         self._code = code
-        
+
         # Detect shader type if not specified
         if self._shader_type is None:
             self._shader_type = self._detect_shader_type(code)
-        
+
         # Parse shader components
         self._uniforms = self._parse_variables(code, ShaderQualifier.UNIFORM)
         self._attributes = self._parse_variables(code, ShaderQualifier.ATTRIBUTE)
@@ -265,11 +267,11 @@ class Shader:
         self._varyings = self._parse_variables(code, ShaderQualifier.VARYING)
         self._varyings.extend(self._parse_variables(code, ShaderQualifier.OUT))
         self._functions = self._parse_functions(code)
-        
+
         # Validate if requested
         if self._validate_code:
             self._validation_errors = ShaderValidator.validate(code, self._shader_type)
-        
+
         # Generate documentation
         self._doc = self._generate_documentation()
         self.__doc__ = self._doc
@@ -282,10 +284,10 @@ class Shader:
         i = 0
         in_string = False
         string_char = None
-        
+
         while i < len(code):
             # Handle string literals
-            if code[i] in ('"', "'") and (i == 0 or code[i-1] != '\\'):
+            if code[i] in ('"', "'") and (i == 0 or code[i - 1] != "\\"):
                 if not in_string:
                     in_string = True
                     string_char = code[i]
@@ -295,35 +297,35 @@ class Shader:
                 result.append(code[i])
                 i += 1
                 continue
-            
+
             if in_string:
                 result.append(code[i])
                 i += 1
                 continue
-            
+
             # Handle multi-line comments
-            if i < len(code) - 1 and code[i:i+2] == '/*':
-                end = code.find('*/', i + 2)
+            if i < len(code) - 1 and code[i : i + 2] == "/*":
+                end = code.find("*/", i + 2)
                 if end != -1:
                     i = end + 2
                 else:
                     i = len(code)
                 continue
-            
+
             # Handle single-line comments
-            if i < len(code) - 1 and code[i:i+2] == '//':
-                end = code.find('\n', i)
+            if i < len(code) - 1 and code[i : i + 2] == "//":
+                end = code.find("\n", i)
                 if end != -1:
-                    result.append('\n')
+                    result.append("\n")
                     i = end + 1
                 else:
                     i = len(code)
                 continue
-            
+
             result.append(code[i])
             i += 1
-        
-        return ''.join(result)
+
+        return "".join(result)
 
     def _normalize_whitespace(self, code: str) -> str:
         """Normalize whitespace in code"""
@@ -343,122 +345,128 @@ class Shader:
     def _detect_shader_type(self, code: str) -> ShaderType:
         """Detect shader type from code content"""
         code_lower = code.lower()
-        
+
         # Check for shader-specific outputs/variables (assignment only)
-        if re.search(r'gl_position\s*=', code_lower):
+        if re.search(r"gl_position\s*=", code_lower):
             return ShaderType.VERTEX
-        if re.search(r'(gl_fragcolor|gl_fragdata)\s*(\[|=)', code_lower):
+        if re.search(r"(gl_fragcolor|gl_fragdata)\s*(\[|=)", code_lower):
             return ShaderType.FRAGMENT
-        if 'emitvertex' in code_lower and 'endprimitive' in code_lower:
+        if "emitvertex" in code_lower and "endprimitive" in code_lower:
             return ShaderType.GEOMETRY
-        
+
         # Check for shader-specific keywords
-        if re.search(r'\blayout\s*\(.*local_size', code_lower):
+        if re.search(r"\blayout\s*\(.*local_size", code_lower):
             return ShaderType.COMPUTE
-        
+
         return ShaderType.UNKNOWN
 
-    def _parse_variables(
-        self,
-        code: str,
-        qualifier: ShaderQualifier
-    ) -> List[ShaderVariable]:
+    def _parse_variables(self, code: str, qualifier: ShaderQualifier) -> List[ShaderVariable]:
         """Parse shader variables with given qualifier"""
         variables: List[ShaderVariable] = []
-        
+
         # Remove newlines to handle multi-line declarations
-        normalized_code = re.sub(r'\s+', ' ', code)
-        
+        normalized_code = re.sub(r"\s+", " ", code)
+
         # Pattern matches: qualifier type name[array_size]; or qualifier type name;
-        pattern = re.compile(
-            rf"\b{qualifier.value}\s+(\w+)\s+(\w+)(?:\[(\d+)\])?\s*;"
-        )
-        
+        pattern = re.compile(rf"\b{qualifier.value}\s+(\w+)\s+(\w+)(?:\[(\d+)\])?\s*;")
+
         for match in pattern.finditer(normalized_code):
             type_str, name, array_size = match.groups()
             try:
                 type_enum = ShaderUniformEnum(type_str)
             except ValueError:
                 continue
-            
+
             # Find line number in original code
             pos = match.start()
-            line_number = code[:pos].count('\n') + 1
-            
-            variables.append(ShaderVariable(
-                name=name,
-                type=type_enum,
-                qualifier=qualifier,
-                array_size=int(array_size) if array_size else None,
-                line_number=line_number
-            ))
-        
+            line_number = code[:pos].count("\n") + 1
+
+            variables.append(
+                ShaderVariable(
+                    name=name,
+                    type=type_enum,
+                    qualifier=qualifier,
+                    array_size=int(array_size) if array_size else None,
+                    line_number=line_number,
+                )
+            )
+
         return variables
 
     def _parse_functions(self, code: str) -> List[ShaderFunction]:
         """Parse function signatures from shader code"""
         functions: List[ShaderFunction] = []
-        
+
         # Reserved keywords that should not be treated as functions
         reserved = {
-            'if', 'for', 'while', 'switch', 'return', 'break', 'continue',
-            'do', 'else', 'case', 'default', 'struct', 'const', 'uniform',
-            'attribute', 'varying', 'in', 'out', 'inout'
+            "if",
+            "for",
+            "while",
+            "switch",
+            "return",
+            "break",
+            "continue",
+            "do",
+            "else",
+            "case",
+            "default",
+            "struct",
+            "const",
+            "uniform",
+            "attribute",
+            "varying",
+            "in",
+            "out",
+            "inout",
         }
-        
+
         # Pattern matches function declarations (more strict)
         # Must have return type followed by identifier, params, and opening brace or semicolon
-        pattern = re.compile(
-            r"\b([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*\(([^)]*)\)\s*(\{|;)",
-            re.MULTILINE
-        )
-        
+        pattern = re.compile(r"\b([a-zA-Z_]\w*)\s+([a-zA-Z_]\w*)\s*\(([^)]*)\)\s*(\{|;)", re.MULTILINE)
+
         for match in pattern.finditer(code):
             return_type, name, params_str, bracket = match.groups()
-            
+
             # Skip reserved keywords and built-in types
             if name in reserved or return_type in reserved:
                 continue
-            
+
             # Skip if return type looks like a keyword or qualifier
-            if return_type in ('if', 'for', 'while', 'switch'):
+            if return_type in ("if", "for", "while", "switch"):
                 continue
-            
+
             # Only include functions with opening brace (actual implementations)
             # or forward declarations
-            if bracket not in ('{', ';'):
+            if bracket not in ("{", ";"):
                 continue
-            
+
             # Parse parameters
             params = []
             if params_str.strip():
-                for param in params_str.split(','):
+                for param in params_str.split(","):
                     param = param.strip()
-                    if param and param != 'void':
+                    if param and param != "void":
                         params.append(param)
-            
+
             # Find line number
             pos = match.start()
-            line_number = code[:pos].count('\n') + 1
-            
-            functions.append(ShaderFunction(
-                name=name,
-                return_type=return_type,
-                parameters=params,
-                line_number=line_number
-            ))
-        
+            line_number = code[:pos].count("\n") + 1
+
+            functions.append(
+                ShaderFunction(name=name, return_type=return_type, parameters=params, line_number=line_number)
+            )
+
         return functions
 
     def _generate_documentation(self) -> str:
         """Generate comprehensive documentation"""
         shader_type_str = f" ({self._shader_type.value})" if self._shader_type != ShaderType.UNKNOWN else ""
-        
+
         uniform_list = "\n".join(str(u) for u in self._uniforms) or "(none)"
         attribute_list = "\n".join(str(a) for a in self._attributes) or "(none)"
         varying_list = "\n".join(str(v) for v in self._varyings) or "(none)"
-        function_list = "\n".join(str(f) for f in self._functions if f.name != 'main') or "(none)"
-        
+        function_list = "\n".join(str(f) for f in self._functions if f.name != "main") or "(none)"
+
         doc = __doc_template__.substitute(
             name=self._name,
             shader_type=shader_type_str,
@@ -466,14 +474,14 @@ class Shader:
             uniforms=uniform_list,
             attributes=attribute_list,
             varyings=varying_list,
-            functions=function_list
+            functions=function_list,
         ).strip()
-        
+
         # Add validation errors if any
         if self._validation_errors:
             doc += "\n\n# Validation Issues\n"
             doc += "\n".join(str(e) for e in self._validation_errors)
-        
+
         return doc
 
     @property
@@ -487,7 +495,7 @@ class Shader:
     @property
     def artist(self) -> str:
         return self._artist
-    
+
     @property
     def description(self) -> str:
         return self._description

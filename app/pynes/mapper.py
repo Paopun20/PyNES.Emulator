@@ -15,6 +15,7 @@ def mask8(value: int) -> int:
     """Mask to 8-bit value"""
     return int(value) & 0xFF
 
+
 def clamp_bank_index(bank: int, num_banks: int) -> int:
     """Clamp bank index to valid range with proper wrapping"""
     if num_banks <= 0:
@@ -272,11 +273,8 @@ class Mapper001(Mapper):
 
     def reset(self) -> None:
         self.control = 0x0C
-        self.chr_bank_0 = 0
-        self.chr_bank_1 = 0
-        self.prg_bank = 0
+        self.chr_bank_0 = self.chr_bank_1 = self.prg_bank = self.write_count = 0
         self.shift_register = 0x10
-        self.write_count = 0
         self._update_banks()
 
 
@@ -380,7 +378,7 @@ class Mapper003(Mapper):
 
 
 # Mapper 004 (MMC3)
-class Mapper004:
+class Mapper004(Mapper):
     """MMC3 (Mapper 004):
     - Supports 8 x 1KB CHR banks and 4 x 8KB PRG banks
     - Bank select register at $8000/$8001
@@ -397,6 +395,10 @@ class Mapper004:
         has_prg_ram: bool = True,
         open_bus: Optional[int] = 0,
     ) -> None:
+        prg_chunks = max(1, len(prg_rom) // 0x4000)
+        chr_chunks = max(1, len(chr_rom) // 0x2000)
+        super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
+
         self.prg_rom = prg_rom
         self.prg_size = len(self.prg_rom)
         self.chr_rom = chr_rom if len(chr_rom) > 0 else np.zeros(0x2000, dtype=np.uint8)
@@ -442,7 +444,7 @@ class Mapper004:
 
         # Calculate number of banks
         num_prg_banks_8kb = max(1, self.prg_size // 0x2000)
-        
+
         # For CHR: use actual size if we have CHR ROM, otherwise use CHR RAM size
         if self.chr_size > 0:
             num_chr_1kb = max(1, self.chr_size // 0x400)
@@ -520,7 +522,7 @@ class Mapper004:
             bank_index = ((addr - 0x8000) >> 13) & 0x03  # which 8KB bank (0..3)
             offset = addr & 0x1FFF
             bank_base = int(self.prg_banks[bank_index])
-            
+
             # Bounds check
             prg_addr = (bank_base + offset) % self.prg_size
             return int(self.prg_rom[prg_addr])
@@ -540,39 +542,38 @@ class Mapper004:
         # MMC3 registers ($8000-$FFFF)
         # Use addr & 0xE001 to decode registers
         reg = addr & 0xE001
-        
+
         if reg == 0x8000:
             # Bank select (even addresses)
             self.bank_select = value
             self._update_banks()
-            
+
         elif reg == 0x8001:
             # Bank data (odd addresses)
             idx = int(self.bank_select & 0x07)
             self.bank_registers[idx] = value
             self._update_banks()
-            
+
         elif reg == 0xA000:
             # Mirroring control
             self.mirror_mode = value & 0x01
-            
+
         elif reg == 0xA001:
             # PRG RAM protect (not implemented)
             pass
-            
+
         elif reg == 0xC000:
             # IRQ latch
             self.irq_reload = value
-            
+
         elif reg == 0xC001:
             # IRQ reload - clears counter immediately
             self.irq_counter = 0
-            
+
         elif reg == 0xE000:
             # IRQ disable
-            self.irq_enabled = False
-            self.irq_pending = False
-            
+            self.irq_enabled = self.irq_pending = False
+
         elif reg == 0xE001:
             # IRQ enable
             self.irq_enabled = True
@@ -585,7 +586,7 @@ class Mapper004:
             bank_index = (addr >> 10) & 0x07
             offset = addr & 0x3FF
             bank_base = int(self.chr_banks[bank_index])
-            
+
             # Read from CHR ROM or CHR RAM
             if self.chr_size > 0:
                 chr_addr = bank_base + offset
@@ -596,7 +597,7 @@ class Mapper004:
             elif self.chr_ram is not None:
                 chr_addr = (bank_base + offset) & 0x1FFF
                 return int(self.chr_ram[chr_addr])
-            
+
         return self.open_bus
 
     def ppu_write(self, addr: int, value: int) -> None:
@@ -625,7 +626,7 @@ class Mapper004:
             # A12 is high - check for filtered rising edge
             if (not self.a12_was_high) and (self.a12_low_count >= 3):
                 self._clock_irq_counter()
-            
+
             # Reset for next cycle
             self.a12_low_count = 0
             self.a12_was_high = True
@@ -650,12 +651,8 @@ class Mapper004:
         self.chr_banks[:] = 0
         self.prg_banks[:] = 0
         self.mirror_mode = int(self.mirroring)
-        self.irq_counter = 0
-        self.irq_reload = 0
-        self.irq_enabled = False
-        self.irq_pending = False
-        self.a12_was_high = False
-        self.a12_low_count = 0
+        self.irq_counter = self.irq_reload = self.a12_low_count = 0
+        self.irq_enabled = self.irq_pending = self.a12_was_high = False
         self._update_banks()
 
     def get_mirroring(self) -> int:

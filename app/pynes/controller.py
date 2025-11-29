@@ -11,7 +11,11 @@ class Controller:
 
     def latch(self) -> None:
         """Latch current button states into shift register."""
-        self.shift_register = sum((1 << i) for i, b in enumerate(["A","B","Select","Start","Up","Down","Left","Right"]) if self.buttons.get(b, False))
+        self.shift_register = sum(
+            (1 << i)
+            for i, b in enumerate(["A", "B", "Select", "Start", "Up", "Down", "Left", "Right"])
+            if self.buttons.get(b, False)
+        )
 
     def read(self) -> int:
         """Read one bit from the shift register."""
@@ -20,8 +24,7 @@ class Controller:
             return self.shift_register & 1
 
         bit = self.shift_register & 1
-        self.shift_register >>= 1
-        self.shift_register |= 0x80  # Set high bit to 1 after 8 reads
+        self.shift_register = (self.shift_register >> 1) | 0x80
         return bit
 
     def write(self, val: int) -> None:

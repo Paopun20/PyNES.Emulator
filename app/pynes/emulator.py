@@ -99,6 +99,10 @@ nes_palette: Final[NDArray[np.uint8]] = np.array(
     dtype=np.uint8,
 )
 
+@memoize(maxsize=64, policy="lru")
+def _NESPaletteToRGB(color_idx: int) -> int:
+    """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
+    return nes_palette[color_idx & 0x3F]
 
 @final
 class EmulatorError(Exception):
@@ -214,9 +218,9 @@ class Emulator:
     @final
     def __init__(self) -> None:
         # CPU initialization
-        self.cartridge: Cartridge = None
+        self.cartridge: Cartridge = Cartridge.EmptyCartridge()
         self.mapper: Optional[Mapper] = None
-        self._events: Dict[str, List[Callable[..., None]]] = {}
+        self._events: Dict[str, List[Callable[..., Any]]] = {}
         self.apu: APU = APU(sample_rate=44100, buffer_size=1024)
         self.RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
         self.PRGROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
@@ -326,7 +330,7 @@ class Emulator:
 
         for callback in callbacks:
             if not callable(callback):
-                raise ValueError(f"Callback {callback} is not Callable")
+                raise EmulatorError(ValueError(f"Callback {callback} is not Callable"))
             callback(*args, **kwargs)
 
     def Read(self, Address: int) -> int:
@@ -2371,7 +2375,7 @@ class Emulator:
 
         for x in range(256):
             if clip_left and x < 8:
-                self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
+                self.FrameBuffer[self.Scanline, x] = _NESPaletteToRGB(backdrop_color)
                 if hasattr(self, '_bg_opaque_line'):
                     self._bg_opaque_line[x] = False
                 continue
@@ -2420,7 +2424,7 @@ class Emulator:
 
             if color_idx == 0:
                 # Transparent - use backdrop
-                self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(backdrop_color)
+                self.FrameBuffer[self.Scanline, x] = _NESPaletteToRGB(backdrop_color)
                 if hasattr(self, '_bg_opaque_line'):
                     self._bg_opaque_line[x] = False
                 continue
@@ -2440,7 +2444,7 @@ class Emulator:
             palette_addr = (palette_idx * 4 + color_idx) & 0x1F
             color = int(self.PaletteRAM[palette_addr])
 
-            self.FrameBuffer[self.Scanline, x] = self.NESPaletteToRGB(color)
+            self.FrameBuffer[self.Scanline, x] = _NESPaletteToRGB(color)
             if hasattr(self, '_bg_opaque_line'):
                 self._bg_opaque_line[x] = True
 
@@ -2515,7 +2519,7 @@ class Emulator:
                 palette_base = 0x10 + (sprite_palette << 2)
                 palette_addr = (palette_base + color_idx) & 0x1F
                 color = self.PaletteRAM[palette_addr]
-                rgb = self.NESPaletteToRGB(color & 0x3F)
+                rgb = _NESPaletteToRGB(color & 0x3F)
 
                 # Sprite 0 hit detection
                 if i == 0 and (self.PPUMASK & 0x18) == 0x18:
@@ -2577,12 +2581,6 @@ class Emulator:
 
         # Store evaluated sprites for this scanline
         # self._sprites_line = sprites
-
-    @memoize(maxsize=64)
-    def NESPaletteToRGB(self, color_idx: int) -> int:
-        """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
-
-        return nes_palette[color_idx & 0x3F]
 
     # DMA helpers
     def _perform_oam_dma(self, page: int) -> None:

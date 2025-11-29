@@ -4,11 +4,7 @@ from typing import Type
 from returns.result import Result, Success, Failure
 
 
-def thread_exception(
-    thread: threading.Thread,
-    exctype: Type[BaseException],
-    message: str
-) -> Result[bool, Exception]:
+def thread_exception(thread: threading.Thread, exctype: Type[BaseException]) -> Result[bool, Exception]:
     """Raises an exception in the context of the given thread, returning Result."""
     if not thread.is_alive():
         return Failure(RuntimeError("Thread is not alive"))
@@ -18,9 +14,7 @@ def thread_exception(
         return Failure(RuntimeError("Thread has no valid ident"))
 
     try:
-        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
-            ctypes.c_long(tid), ctypes.py_object(exctype)
-        )
+        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(tid), ctypes.py_object(exctype))
     except Exception as e:
         return Failure(e)
 
