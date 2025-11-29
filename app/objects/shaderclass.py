@@ -3,26 +3,6 @@ import textwrap
 from typing import Type, Final, Optional, List, Dict, Set
 from enum import Enum
 from dataclasses import dataclass, field
-from string import Template
-
-__doc_template__: Final[Template] = Template("""
-${name}${shader_type}
-
-# Description
-${description}
-
-# Uniforms
-${uniforms}
-
-# Attributes
-${attributes}
-
-# Varyings
-${varyings}
-
-# Functions
-${functions}
-""")
 
 
 class ShaderType(Enum):
@@ -235,10 +215,9 @@ class Shader:
         self._preprocessor_defines: Dict[str, str] = {}
         self._validation_errors: List[ShaderValidationError] = []
         self._cls: Optional[Type] = None
-        self._doc: str = ""
         self.__doc__: str = ""
 
-    def __call__(self, cls: Type) -> Shader:
+    def __call__(self, cls: Type) -> "Shader":
         if not cls.__doc__:
             raise ValueError("Shader class must have a docstring containing shader code")
 
@@ -271,10 +250,6 @@ class Shader:
         # Validate if requested
         if self._validate_code:
             self._validation_errors = ShaderValidator.validate(code, self._shader_type)
-
-        # Generate documentation
-        self._doc = self._generate_documentation()
-        self.__doc__ = self._doc
 
         return self
 
@@ -457,32 +432,6 @@ class Shader:
             )
 
         return functions
-
-    def _generate_documentation(self) -> str:
-        """Generate comprehensive documentation"""
-        shader_type_str = f" ({self._shader_type.value})" if self._shader_type != ShaderType.UNKNOWN else ""
-
-        uniform_list = "\n".join(str(u) for u in self._uniforms) or "(none)"
-        attribute_list = "\n".join(str(a) for a in self._attributes) or "(none)"
-        varying_list = "\n".join(str(v) for v in self._varyings) or "(none)"
-        function_list = "\n".join(str(f) for f in self._functions if f.name != "main") or "(none)"
-
-        doc = __doc_template__.substitute(
-            name=self._name,
-            shader_type=shader_type_str,
-            description=self._description or "(no description)",
-            uniforms=uniform_list,
-            attributes=attribute_list,
-            varyings=varying_list,
-            functions=function_list,
-        ).strip()
-
-        # Add validation errors if any
-        if self._validation_errors:
-            doc += "\n\n# Validation Issues\n"
-            doc += "\n".join(str(e) for e in self._validation_errors)
-
-        return doc
 
     @property
     def name(self) -> str:
