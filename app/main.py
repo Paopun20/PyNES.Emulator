@@ -273,7 +273,7 @@ class DebugOverlay:
             return
         self.prev_lines = tuple(text_lines)
 
-        tex_h: int = len(text_lines) * 20 + 10
+        tex_h: int = len(text_lines) * (5 * SCALE) + 10
         tex_w: int = self.screen_w
 
         surf: pygame.Surface = self.render_text_to_surface(text_lines, tex_w, tex_h)
