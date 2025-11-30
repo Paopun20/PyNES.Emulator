@@ -62,9 +62,9 @@ if sys.version_info < (3, 13):
 _log.info("Starting PyNES Emulator")
 _log.info(f"load config: {cfg}")
 
-sys.set_int_max_str_digits(10_000_000)
-sys.setrecursionlimit(10_000)
-sys.setswitchinterval(1e-5)
+# sys.set_int_max_str_digits(10_000_000)
+# sys.setrecursionlimit(10_000)
+# sys.setswitchinterval(1e-5)
 
 process: psutil.Process = psutil.Process(os.getpid())
 
@@ -265,7 +265,7 @@ class DebugOverlay:
         y_pos: int = int(1.5 * SCALE)
         for line in text_lines:
             surf.blit(font.render(line, True, (255, 255, 255)), (int(1.5 * SCALE), y_pos))
-            y_pos += 5 * SCALE
+            y_pos += int(5 * SCALE)
         return surf
 
     def update(self, text_lines: List[str]) -> None:

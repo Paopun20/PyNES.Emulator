@@ -151,7 +151,6 @@ class RenderSprite:
             # log.warning(f"Uniform {name} not found in shader, ignoring.")
             return
 
-        # Fixed: Check for actual types instead of type aliases
         if isinstance(value, (float, int, np.ndarray)):
             self.program[name] = value
         else:
