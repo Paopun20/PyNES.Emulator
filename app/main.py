@@ -262,10 +262,10 @@ class DebugOverlay:
     def render_text_to_surface(self, text_lines: List[str], width: int, height: int) -> pygame.Surface:
         surf: pygame.Surface = pygame.Surface((width, height), pygame.SRCALPHA)
         surf.fill((0, 0, 0, 180))
-        y_pos: int = 5
+        y_pos: int = int(1.5 * SCALE)
         for line in text_lines:
-            surf.blit(font.render(line, True, (255, 255, 255)), (5, y_pos))
-            y_pos += 20
+            surf.blit(font.render(line, True, (255, 255, 255)), (int(1.5 * SCALE), y_pos))
+            y_pos += 5 * SCALE
         return surf
 
     def update(self, text_lines: List[str]) -> None:
