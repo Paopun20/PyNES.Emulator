@@ -150,7 +150,7 @@ _log.info(f"Starting pygame community edition {pygame.__version__}")
 pygame.init()
 pygame.font.init()
 
-font: pygame.font.Font = pygame.font.Font(font_path, 15)
+font: pygame.font.Font = pygame.font.Font(font_path, 5 * SCALE)
 
 try:
     icon_surface: Optional[pygame.Surface] = pygame.image.load(icon_path)
