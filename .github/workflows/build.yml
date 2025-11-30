@@ -180,7 +180,7 @@ jobs:
             cp dist/pynes upload/ 2>/dev/null || true
           fi
           
-          cp app/icon.ico upload/ 2>/dev/null || true
+          cp icon.ico upload/ 2>/dev/null || true
           cp config.toml upload/ 2>/dev/null || true
           
           if [ -d "assets" ]; then
