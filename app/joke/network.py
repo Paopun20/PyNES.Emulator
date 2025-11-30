@@ -1,3 +1,5 @@
+# this a joke file i make lol, and this unuse
+
 import socket
 import urllib.request
 from typing import List, Union

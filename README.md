@@ -21,7 +21,6 @@ Not suitable for speedrunning at this time—please wait for future updates befo
 1. No lag frames like on real NES hardware.
 2. Code run is still very slow.
 3. Accuracy not 100% yet.
-4. Mapping is supported. (have some buggy on mapper 3)
 
 ## Performance
 
@@ -43,7 +42,7 @@ The emulator is still under development, and performance is not yet optimized. E
 
 ## Fun Settings
 
-- **Shader Mod**: Apply custom shaders to the display for various visual effects. (but you can make your own shader)
+- **Shader Mod**: Apply GLSL-like visual effects (e.g., scanlines, bloom, monochrome). [You can write your own shaders!]
 
 ## Planned Features
 
@@ -64,130 +63,135 @@ and bugs are likely present.
 
 Some code may be messy or not well-optimized as this is a learning project. Contributions are welcome!
 
+---
+
 ### Mapper Support
 
-| Status | Mapper ID | Mapper Name | Notes                                  | Problem  |
-| ------ | --------- | ----------- | -------------------------------------- | -------- |
-| ✅     | 000       | NROM        | No bank switching                      | Nope     |
-| ✅     | 001       | MMC1        | PRG/CHR bank switching, simple IRQ     | Nope     |
-| ✅     | 002       | UxROM       | PRG bank switching                     | Nope     |
-| ✅     | 003       | CNROM       | CHR bank switching                     | Nope     |
-| ⚠️     | 004       | MMC3        | Advanced bank switching + scanline IRQ | MMC3 IRQ |
+| Status | ID  | Name  | Notes                         | Known Issues |
+| ------ | --- | ----- | ----------------------------- | ------------ |
+| ✅     | 0   | NROM  | Fixed PRG/CHR                 | —            |
+| ✅     | 1   | MMC1  | PRG/CHR bank switching + IRQ  | —            |
+| ✅     | 2   | UxROM | PRG bank switch (8KB @ $E000) | —            |
+| ✅     | 3   | CNROM | CHR bank switch (8KB)         | —            |
+| ⚠️     | 4   | MMC3  | PRG/CHR bank + scanline IRQ   | IRQ          |
+
+---
 
 ## Compatibility
 
-- **Operating Systems**:
-  - Windows: Fully supported.
-  - macOS: Untesting.
-  - Linux: Untesting.
+| OS      | Status   |
+| ------- | -------- |
+| Windows | Tested   |
+| macOS   | Untested |
+| Linux   | Untested |
+
+---
 
 ## Installation
 
 ## Running the Emulator
 
-### Run emulator from pre-built executable (recommended and easiest way)
+### Recommended: Pre-built Executable
 
 If you want to use a ready-made executable:
 
-1. Go to the "[Actions](https://github.com/Paopun20/PyNES.Emulator/actions)" tab on this repository's GitHub page.
-2. Find and select the "[Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)" workflow.
-3. Download the most recent artifact for your operating system (Windows (recommended)) (Linux, and macOS is available but not test).
-4. Unzip the downloaded file.
-5. Run the executable inside.
-6. When the emulator starts, select a `.nes` ROM file when prompted.
+1. Go to the **[Actions tab](https://github.com/Paopun20/PyNES.Emulator/actions)**.
+2. Click the latest **[Build PyNES Emulator](https://github.com/Paopun20/PyNES.Emulator/actions/workflows/build.yml)** workflow.
+3. Download the artifact for your OS (Windows recommended).
+4. Extract and run the `.exe` (or binary).
+5. Select a `.nes` ROM when prompted.
 
-### Run emulator from source code (for developers)
+---
 
-1. Ensure you have Python 3.13 or higher installed.
-2. Clone this repository.
+### For Developers: From Source
 
-   ```bash
-   git clone https://github.com/Paopun20/PyNES.Emulator.git && cd PyNES.Emulator
-   ```
+#### Prerequisites
 
-3. Create and activate a virtual environment (optional but recommended):
+- Python **3.13+**
+- `git`, `pip` (or [`uv`](https://docs.astral.sh/uv/)), and a C compiler (for Cython)
 
-   Create a virtual environment:
+#### Steps
 
-   ```bash
-   python -m venv .env
-   ```
+##### clone this
 
-   Activate the virtual environment:
+```bash
+git clone https://github.com/Paopun20/PyNES.Emulator.git
+cd PyNES.Emulator
+```
 
-   ```bash
-   # windows:
-   .\.env\Scripts\activate
+#### make virtual environment
 
-   # macOS / Linux:
-   source .env/bin/activate
-   ```
+```bash
+python -m venv .venv
 
-4. Build the extensions (Cython and Rust components):
+# Windows:
+.venv\Scripts\activate
 
-   ```bash
-   python setup.py build_ext --inplace
-   ```
+# macOS/Linux:
+source .venv/bin/activate
+```
 
-5. Install the required dependencies using requirements.txt (best to use uv):
+#### build extensions
 
-   using pip
+```bash
+python setup.py build_ext --inplace
+```
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+#### Install dependencies
 
-   using uv
+```bash
+# Install dependencies
+pip install -r requirements.txt
+# or (faster):
+uv pip install -r requirements.txt
+```
 
-   ```bash
-   uv pip install -r requirements.txt
-   ```
+#### Run
 
-6. Start the emulator with:
-
-   ```bash
-   python app/main.py
-   ```
-
-7. When prompted by the emulator, choose a `.nes` ROM file to load and play.
+```bash
+python app/main.py
+```
 
 > Tip: You can pass the `--debug` flag when running `main.py` to enable debug logging, but DON'T USE `--realdebug` FLAG, IT WILL SPAM LOG FILE WITH TOO MUCH DATA.\
 > Advance Tip For Developer: You can pass the `--eum_debug` after `--debug` FLAG to enable eumulator tracelogger to console and run slower in debug mode.
 
 ## Controls
 
-| NES Button | Keyboard    | Xbox Controller | PS4/PS5 Controller | Switch Pro Controller |
-| ---------- | ----------- | --------------- | ------------------ | --------------------- |
-| Up         | ↑           | D-Pad Up        | D-Pad Up           | D-Pad Up              |
-| Down       | ↓           | D-Pad Down      | D-Pad Down         | D-Pad Down            |
-| Left       | ←           | D-Pad Left      | D-Pad Left         | D-Pad Left            |
-| Right      | →           | D-Pad Right     | D-Pad Right        | D-Pad Right           |
-| A          | X           | B (physical A)  | Cross (✕)          | B                     |
-| B          | Z           | A (physical B)  | Circle (○)         | A                     |
-| Select     | Right Shift | Back (6)        | Share / Back       | Minus (-)             |
-| Start      | Enter       | Start (7)       | Options / Start    | Plus (+)              |
+### NES Input Mapping
 
-| Emulator Controls              | Keyboard | Xbox / PS / Switch Controller |
-| ------------------------------ | -------- | ----------------------------- |
-| Pause                          | P        | N/A                           |
-| Debug Overlay                  | F5       | N/A                           |
-| Next Mode (`In Debug Overlay`) | F7       | N/A                           |
-| Back Mode (`In Debug Overlay`) | F6       | N/A                           |
-| Step Cycle On Pause            | F10      | N/A                           |
-| Shader Picker                  | M        | N/A                           |
-| Reset                          | R        | N/A                           |
-| Quit                           | ESC      | N/A                           |
-| Screenshot                     | F12      | N/A                           |
+| NES    | Keyboard | Xbox        | PS4/PS5      | Switch Pro  |
+| ------ | -------- | ----------- | ------------ | ----------- |
+| Up     | ↑        | D-Pad ↑     | D-Pad ↑      | D-Pad ↑     |
+| Down   | ↓        | D-Pad ↓     | D-Pad ↓      | D-Pad ↓     |
+| Left   | ←        | D-Pad ←     | D-Pad ←      | D-Pad ←     |
+| Right  | →        | D-Pad →     | D-Pad →      | D-Pad →     |
+| A      | `X`      | `B`         | `✕` (Cross)  | `B`         |
+| B      | `Z`      | `A`         | `○` (Circle) | `A`         |
+| Select | `RShift` | `View` (#6) | `Share`      | `−` (Minus) |
+| Start  | `Enter`  | `Menu` (#7) | `Options`    | `+` (Plus)  |
+
+### Emulator Shortcuts
+
+| Action                    | Key       | Controller |
+| ------------------------- | --------- | ---------- |
+| Pause                     | `P`       | —          |
+| Toggle Debug Overlay      | `F5`      | —          |
+| Cycle Debug Index (↔)     | `F6`/`F7` | —          |
+| Step 1 CPU Cycle (paused) | `F10`     | —          |
+| Shader Picker             | `M`       | —          |
+| Reset Console             | `R`       | —          |
+| Quit                      | `ESC`     | —          |
+| Save Screenshot           | `F12`     | —          |
 
 > Note: Some controllers may require additional configuration or drivers to work correctly.
 
 ## Contributing
 
-Pls see [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this project.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidelines.
 
 ## Security
 
-For information on how to report security vulnerabilities, please refer to our [Security Policy](SECURITY.md).
+Found a vulnerability? Please follow our [Security Policy](SECURITY.md).
 
 ## License
 

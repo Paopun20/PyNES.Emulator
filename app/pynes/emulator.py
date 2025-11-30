@@ -7,6 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 from string import Template
 from typing import Dict, List, Final, Callable, Any, Optional, Type, final
+from typing_extensions import deprecated
 from numpy.typing import NDArray
 from pynes.apu import APU
 from pynes.cartridge import Cartridge
@@ -1043,6 +1044,7 @@ class Emulator:
         if not self.Architrcture.Halted:
             self._step()
 
+    @deprecated("Use step_Cycle() instead")
     def step_Frame(self) -> None:
         while not self.FrameComplete:
             self.step_Cycle()

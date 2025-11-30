@@ -1284,9 +1284,9 @@ platform_safe_cleanup()
 # Thread shutdown
 def shutdown_threads() -> None:
     global _thread_list
-    threads = deque(_thread_list)
-    max_retry = 4
-    retry = 0
+    threads: deque[threading.Thread] = deque(_thread_list)
+    max_retry: int = 4
+    retry: int = 0
 
     # Graceful join
     while threads and retry < max_retry:
@@ -1294,7 +1294,7 @@ def shutdown_threads() -> None:
             thread = threads.popleft()
             _log.info(f"Joining thread: {thread.name}")
             if thread.is_alive():
-                thread.join(timeout=5.0)
+                thread.join(timeout=5)
                 if thread.is_alive():
                     _log.error(f"Thread {thread.name} did not stop cleanly")
                     threads.append(thread)
