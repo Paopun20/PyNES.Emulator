@@ -1,9 +1,9 @@
 import pygame
 from typing import Final
 from logger import log as _log
-from util.config import config as cfg
+from util.config import load_config
 
-
+cfg = load_config()
 class Control(object):
     NES_KEYS: Final[list[str]] = [
         "A",

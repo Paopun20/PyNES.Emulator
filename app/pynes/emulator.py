@@ -21,7 +21,7 @@ from logger import log as _logger
 from enum import Enum
 
 import numpy as np
-from pynes.classes.NESPalette import (ntsc as ntsc_pel, pal as pal_pel)
+from pynes.classes.NESPalette import ntsc as ntsc_pel, pal as pal_pel
 
 # Template
 TEMPLATE: Final[Template] = Template(
@@ -45,7 +45,7 @@ class EmulatorError(Exception):
 class Flags:
     Carry: bool = False
     Zero: bool = False
-    InterruptDisable: bool = False
+    InterruptDisable: bool = True
     Decimal: bool = False
     Break: bool = False
     Unused: bool = False
@@ -1195,8 +1195,8 @@ class Emulator:
                 self.Architrcture.ProgramCounter = (high << 8) | low
                 return self.endExecute()
 
-            case 0x40 | 0x60:  # RTI (0x40), RTS (0x60)
-                if self.Architrcture.OpCode == 0x40:  # RTI
+            case 0x40 | 0x60 as sub_opcode:  # RTI (0x40), RTS (0x60)
+                if sub_opcode == 0x40:  # RTI
                     self.SetProcessorStatus(self.Pop())
                     low = self.Pop()
                     high = self.Pop()
@@ -1208,8 +1208,8 @@ class Emulator:
                     self.Architrcture.ProgramCounter &= 0xFFFF
                 return self.endExecute()
 
-            case 0x4C | 0x6C:  # JMP Absolute (0x4C), JMP Indirect (0x6C)
-                if self.Architrcture.OpCode == 0x4C:  # JMP Absolute
+            case 0x4C | 0x6C as sub_opcode:  # JMP Absolute (0x4C), JMP Indirect (0x6C)
+                if sub_opcode == 0x4C:  # JMP Absolute
                     low = self.Read(self.Architrcture.ProgramCounter)
                     self.Architrcture.ProgramCounter += 1
                     high = self.Read(self.Architrcture.ProgramCounter)
@@ -1225,115 +1225,115 @@ class Emulator:
                 return self.endExecute()
 
             # BRANCH INSTRUCTIONS
-            case 0x10 | 0x30 | 0x50 | 0x70 | 0x90 | 0xB0 | 0xD0 | 0xF0:
-                if self.Architrcture.OpCode == 0x10:
+            case 0x10 | 0x30 | 0x50 | 0x70 | 0x90 | 0xB0 | 0xD0 | 0xF0 as sub_opcode:
+                if sub_opcode == 0x10:
                     self.Branch(not self.flag.Negative)
-                elif self.Architrcture.OpCode == 0x30:
+                elif sub_opcode == 0x30:
                     self.Branch(self.flag.Negative)
-                elif self.Architrcture.OpCode == 0x50:
+                elif sub_opcode == 0x50:
                     self.Branch(not self.flag.Overflow)
-                elif self.Architrcture.OpCode == 0x70:
+                elif sub_opcode == 0x70:
                     self.Branch(self.flag.Overflow)
-                elif self.Architrcture.OpCode == 0x90:
+                elif sub_opcode == 0x90:
                     self.Branch(not self.flag.Carry)
-                elif self.Architrcture.OpCode == 0xB0:
+                elif sub_opcode == 0xB0:
                     self.Branch(self.flag.Carry)
-                elif self.Architrcture.OpCode == 0xD0:
+                elif sub_opcode == 0xD0:
                     self.Branch(not self.flag.Zero)
-                elif self.Architrcture.OpCode == 0xF0:
+                elif sub_opcode == 0xF0:
                     self.Branch(self.flag.Zero)
                 return self.endExecute()
 
             # LOAD INSTRUCTIONS - LDA
-            case 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1:
-                if self.Architrcture.OpCode == 0xA9:  # LDA Immediate
+            case 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 as sub_opcode:
+                if sub_opcode == 0xA9:  # LDA Immediate
                     self.Architrcture.A = self.Read(self.Architrcture.ProgramCounter)
                     self.Architrcture.ProgramCounter += 1
-                elif self.Architrcture.OpCode == 0xA5:  # LDA Zero Page
+                elif sub_opcode == 0xA5:  # LDA Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Architrcture.A = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xB5:  # LDA Zero Page,X
+                elif sub_opcode == 0xB5:  # LDA Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Architrcture.A = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xAD:  # LDA Absolute
+                elif sub_opcode == 0xAD:  # LDA Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Architrcture.A = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xBD:  # LDA Absolute,X
+                elif sub_opcode == 0xBD:  # LDA Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Architrcture.A = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xB9:  # LDA Absolute,Y
+                elif sub_opcode == 0xB9:  # LDA Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     self.Architrcture.A = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xA1:  # LDA (Indirect,X)
+                elif sub_opcode == 0xA1:  # LDA (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     self.Architrcture.A = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xB1:  # LDA (Indirect),Y
+                elif sub_opcode == 0xB1:  # LDA (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     self.Architrcture.A = self.Read(self.addressBus)
                 self.UpdateZeroNegativeFlags(self.Architrcture.A)
                 return self.endExecute()
 
             # LOAD INSTRUCTIONS - LDX
-            case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE:
-                if self.Architrcture.OpCode == 0xA2:  # LDX Immediate
+            case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE as sub_opcode:
+                if sub_opcode == 0xA2:  # LDX Immediate
                     self.Architrcture.X = self.Read(self.Architrcture.ProgramCounter)
                     self.Architrcture.ProgramCounter += 1
-                elif self.Architrcture.OpCode == 0xA6:  # LDX Zero Page
+                elif sub_opcode == 0xA6:  # LDX Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Architrcture.X = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xB6:  # LDX Zero Page,Y
+                elif sub_opcode == 0xB6:  # LDX Zero Page,Y
                     self.ReadOperands_ZeroPage_YIndexed()
                     self.Architrcture.X = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xAE:  # LDX Absolute
+                elif sub_opcode == 0xAE:  # LDX Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Architrcture.X = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xBE:  # LDX Absolute,Y
+                elif sub_opcode == 0xBE:  # LDX Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     self.Architrcture.X = self.Read(self.addressBus)
                 self.UpdateZeroNegativeFlags(self.Architrcture.X)
                 return self.endExecute()
 
             # LOAD INSTRUCTIONS - LDY
-            case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC:
-                if self.Architrcture.OpCode == 0xA0:  # LDY Immediate
+            case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC as sub_opcode:
+                if sub_opcode == 0xA0:  # LDY Immediate
                     self.Architrcture.Y = self.Read(self.Architrcture.ProgramCounter)
                     self.Architrcture.ProgramCounter += 1
-                elif self.Architrcture.OpCode == 0xA4:  # LDY Zero Page
+                elif sub_opcode == 0xA4:  # LDY Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Architrcture.Y = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xB4:  # LDY Zero Page,X
+                elif sub_opcode == 0xB4:  # LDY Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Architrcture.Y = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xAC:  # LDY Absolute
+                elif sub_opcode == 0xAC:  # LDY Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Architrcture.Y = self.Read(self.addressBus)
-                elif self.Architrcture.OpCode == 0xBC:  # LDY Absolute,X
+                elif sub_opcode == 0xBC:  # LDY Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Architrcture.Y = self.Read(self.addressBus)
                 self.UpdateZeroNegativeFlags(self.Architrcture.Y)
                 return self.endExecute()
 
             # STORE INSTRUCTIONS - STA
-            case 0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91:
-                if self.Architrcture.OpCode == 0x85:  # STA Zero Page
+            case 0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 as sub_opcode:
+                if sub_opcode == 0x85:  # STA Zero Page
                     self.ReadOperands_ZeroPage()
                     self.Write(self.addressBus, self.Architrcture.A)
-                elif self.Architrcture.OpCode == 0x95:  # STA Zero Page,X
+                elif sub_opcode == 0x95:  # STA Zero Page,X
                     self.ReadOperands_ZeroPage_XIndexed()
                     self.Write(self.addressBus, self.Architrcture.A)
-                elif self.Architrcture.OpCode == 0x8D:  # STA Absolute
+                elif sub_opcode == 0x8D:  # STA Absolute
                     self.ReadOperands_AbsoluteAddressed()
                     self.Write(self.addressBus, self.Architrcture.A)
-                elif self.Architrcture.OpCode == 0x9D:  # STA Absolute,X
+                elif sub_opcode == 0x9D:  # STA Absolute,X
                     self.ReadOperands_AbsoluteAddressed_XIndexed()
                     self.Write(self.addressBus, self.Architrcture.A)
-                elif self.Architrcture.OpCode == 0x99:  # STA Absolute,Y
+                elif sub_opcode == 0x99:  # STA Absolute,Y
                     self.ReadOperands_AbsoluteAddressed_YIndexed()
                     self.Write(self.addressBus, self.Architrcture.A)
-                elif self.Architrcture.OpCode == 0x81:  # STA (Indirect,X)
+                elif sub_opcode == 0x81:  # STA (Indirect,X)
                     self.ReadOperands_IndirectAddressed_XIndexed()
                     self.Write(self.addressBus, self.Architrcture.A)
-                elif self.Architrcture.OpCode == 0x91:  # STA (Indirect),Y
+                elif sub_opcode == 0x91:  # STA (Indirect),Y
                     self.ReadOperands_IndirectAddressed_YIndexed()
                     self.Write(self.addressBus, self.Architrcture.A)
                 return self.endExecute()

@@ -24,7 +24,7 @@ import yappi
 
 from util.clip import Clip as PyClip
 from util.timer import Timer
-from util.config import config as cfg
+from util.config import load_config
 
 from rich.traceback import install
 
@@ -43,7 +43,10 @@ from logger import log as _log, debug_mode, console
 from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
 from helper.hasGIL import hasGIL
-from objects.exception import ExitException, PynesError
+from objects.exception import ExitException
+
+# load
+cfg = load_config()
 
 # Platform detection
 IS_WINDOWS = platform.system() == "Windows"
@@ -57,6 +60,7 @@ if sys.version_info < (3, 13):
     raise RuntimeError("Python 3.13 or higher is required to run PyNES.")
 
 _log.info("Starting PyNES Emulator")
+_log.info(f"load config: {cfg}")
 
 sys.set_int_max_str_digits(10_000_000)
 sys.setrecursionlimit(10_000)
@@ -105,9 +109,11 @@ if "--realdebug" in sys.argv and debug_mode:
     threading.setprofile_all_threads(threadProfile)
     threading.settrace_all_threads(threadProfile)
 
-_log.info("Starting Discord presence")
 presence: Presence = Presence(1429842237432266752, update_interval=1)
-presence.connect()
+
+if cfg["discord"]["enable"] == True:
+    _log.info("Starting Discord presence")
+    presence.connect()
 
 NES_WIDTH: int = 256
 NES_HEIGHT: int = 240
@@ -330,7 +336,7 @@ else:
 root: Tk = Tk()
 root.withdraw()
 try:
-    root.iconbitmap(str(icon_path))
+    root.iconbitmap(icon_path)
 except TclError:
     pass
 
@@ -376,13 +382,14 @@ if isinstance(result, Failure):
     messagebox.showerror("Error", result.failure())
     sys.exit(1)
 
-presence.update(
-    status_display_type=StatusDisplayType.DETAILS,
-    activity_type=ActivityType.PLAYING,
-    name="PyNES Emulator",
-    details=f"Play NES Game | PyNES.Emulator Version: {__version__}",
-    state=f"Playing {Path(nes_path).name}",
-)
+if cfg["discord"]["enable"] == True:
+    presence.update(
+        status_display_type=StatusDisplayType.DETAILS,
+        activity_type=ActivityType.PLAYING,
+        name="PyNES Emulator",
+        details=f"Play NES Game | PyNES.Emulator Version: {__version__}",
+        state=f"Playing {Path(nes_path).name}",
+    )
 
 nes_emu.cartridge = result.unwrap()
 nes_emu.logging = True
@@ -708,7 +715,6 @@ def render_frame(frame: NDArray[np.uint8]) -> None:
         # _log.debug(f"Problematic frame shape: {frame.shape}, dtype: {frame.dtype}")
 
 
-
 # subthread to run emulator cycles
 def subpro() -> None:
     while running:
@@ -786,7 +792,7 @@ def _show_error_dialog(parent: ctk.CTkToplevel, message: str) -> None:
     parent.wait_window()
 
 
-def _on_closing(root, window):
+def _on_closing(root: CTk, window: ctk.CTkToplevel) -> None:
     window.destroy()
     root.destroy()
 
@@ -797,7 +803,7 @@ def mod_picker() -> None:
 
     try:
         if IS_WINDOWS:
-            ctk_root.iconbitmap(str(icon_path))
+            ctk_root.iconbitmap(icon_path)
     except Exception:
         pass
 
@@ -1103,9 +1109,6 @@ def mod_picker() -> None:
     search_entry.after(100, filter_shaders)
     search_entry.focus()
     mod_window.wait_window()
-
-    # Clean up root window when done
-    ctk_root.destroy()
 
 
 oldT: str = ""

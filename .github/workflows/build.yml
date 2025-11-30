@@ -37,7 +37,7 @@ jobs:
           python-version: ${{ env.python }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.70
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Setup UV
         uses: astral-sh/setup-uv@v7
@@ -50,7 +50,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             libx11-dev \
             libxext-dev \
             libxi-dev \
@@ -138,7 +138,7 @@ jobs:
         run: |
           echo "Preparing macOS Universal2 environment..."
           export MACOSX_DEPLOYMENT_TARGET=11.0
-          echo "ARCHFLAGS=\"-arch x86_64 -arch arm64\"" >> $GITHUB_ENV
+          echo "ARCHFLAGS=-arch x86_64 -arch arm64" >> $GITHUB_ENV
           rustup target add x86_64-apple-darwin
           rustup target add aarch64-apple-darwin
 
@@ -153,25 +153,43 @@ jobs:
         run: |
           echo "build_success=false" >> $GITHUB_OUTPUT
           UPX_DIR="${{ steps.upx.outputs.upx_path }}"
-          uv run pyinstaller pynes.spec --clean --noconfirm ${UPX_DIR:+--upx-dir "$(dirname "$UPX_DIR")"}
-          echo "build_success=true" >> $GITHUB_OUTPUT
+          if uv run pyinstaller pynes.spec --clean --noconfirm ${UPX_DIR:+--upx-dir "$(dirname "$UPX_DIR")"}; then
+            echo "build_success=true" >> $GITHUB_OUTPUT
+            echo "Build completed successfully"
+          else
+            echo "Build failed"
+            exit 1
+          fi
 
       # Verify output
       - name: Verify Output
-        run: test -f dist/${{ matrix.os == 'windows-latest' && 'pynes.exe' || 'pynes' }}
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            test -f dist/pynes.exe
+          else
+            test -f dist/pynes
+          fi
 
       # Prepare upload
       - name: Prepare Upload Directory
         run: |
           mkdir -p upload
-          cp dist/${{ matrix.os == 'windows-latest' && 'pynes.exe' || 'pynes' }} upload/ 2>/dev/null || true
-
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cp dist/pynes.exe upload/ 2>/dev/null || true
+          else
+            cp dist/pynes upload/ 2>/dev/null || true
+          fi
+          
           cp app/icon.ico upload/ 2>/dev/null || true
-          cp app/config.toml upload/ 2>/dev/null || true
-
-          cp -r assets/* upload/ 2>/dev/null || true
-          cp -r roms/* upload/ 2>/dev/null || true
-
+          cp config.toml upload/ 2>/dev/null || true
+          
+          if [ -d "assets" ]; then
+            cp -r assets/* upload/ 2>/dev/null || true
+          fi
+          if [ -d "roms" ]; then
+            cp -r roms/* upload/ 2>/dev/null || true
+          fi
+          
           cp LICENSE.md upload/ 2>/dev/null || true
 
       - name: Prepare Zip Name

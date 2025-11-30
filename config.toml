@@ -3,6 +3,9 @@ fps = 60
 scale = 3
 vsync = true
 
+[discord]
+enable = true
+
 [keyboard]
 A = "Z"
 B = "X"
