@@ -2,6 +2,7 @@ import array
 
 # debugger
 import time  # for fps
+from util.timer import Timer
 from collections import deque
 from dataclasses import dataclass
 from string import Template
@@ -14,12 +15,12 @@ from pynes.mapper import Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Map
 from util.memoize import memoize
 from pynes.util.OpCodes import OpCodes
 from pynes.util.Bype import Bype as CByte, Sign as CSign
+
 from logger import log as _logger
 from enum import Enum
 
 import numpy as np
-from pynes.classes.NESPalette import ntsc as NESPalette
-
+from pynes.classes.NESPalette import (ntsc as ntsc_pel, pal as pal_pel)
 
 # Template
 TEMPLATE: Final[Template] = Template(
@@ -30,12 +31,6 @@ TEMPLATE: Final[Template] = Template(
 
 OpCodeClass: Final[OpCodes] = OpCodes()  # can more one
 
-nes_palette: Final[NDArray[np.uint8]] = NESPalette.copy()
-
-@memoize(maxsize=64, policy="lru")
-def _NESPaletteToRGB(color_idx: int) -> int:
-    """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
-    return nes_palette[color_idx & 0x3F]
 
 class EmulatorError(Exception):
     def __init__(self, exception: Exception):
@@ -89,6 +84,7 @@ class PendingsTask:
     IRQ: bool = False
     BRK: bool = False
 
+
 @final
 class CurrentInstructionMode(Enum):
     """
@@ -122,7 +118,7 @@ class Architrcture:
     current_instruction_mode: CurrentInstructionMode = CurrentInstructionMode.Undefined
     page_boundary_crossed: bool = False
     page_boundary_crossed_just_happened: bool = False
-    cpu_bus_latch_time: float = 0.0
+    Bus_latch_timer: Timer = Timer()
 
 
 @dataclass
@@ -139,6 +135,7 @@ class PPUPendingWrites:
     reg: int
     value: int
     remaining_ppu_cycles: int
+
 
 class Emulator:
     """
@@ -203,7 +200,7 @@ class Emulator:
         self.frame_complete_count: int = 0
         self.last_fps_time: float = time.time()
         # PPU open bus decay timer
-        self.ppu_bus_latch_time: float = time.time()
+        self.ppu_bus_latch_time: Timer = Timer()
         # OAM DMA pending page (execute after instruction completes)
         self._oam_dma_pending_page: int | None = None
         self.oam_dma_page: int = 0
@@ -287,7 +284,9 @@ class Emulator:
         elif addr < 0x8000:
             # Open bus behavior: return last value on data bus
             # with decay after ~0.9 seconds
+            self.Architrcture.Bus_latch_timer.start()
             val = self._cpu_open_bus_value()
+            self.Architrcture.Bus_latch_timer.stop()
 
         # ROM ($8000-$FFFF)
         else:
@@ -295,12 +294,12 @@ class Emulator:
                 val = self.mapper.cpu_read(addr)
             else:
                 val = int(self.PRGROM[addr - 0x8000])
-    
-        if hasattr(self.mapper, 'tick_a12') and addr < 0x2000:
+
+        if hasattr(self.mapper, "tick_a12") and addr < 0x2000:
             # A12 = bit 12 of PPU address
             a12_state = bool(addr & 0x1000)
-            self.mapper.tick_a12(a12_state) # type: ignore
-        
+            self.mapper.tick_a12(a12_state)  # type: ignore
+
         self.dataBus = val
         return val
 
@@ -354,16 +353,14 @@ class Emulator:
 
     def _cpu_open_bus_value(self) -> int:
         """Return current CPU open-bus value with decay before 1 second passes."""
-        # Decay after ~16,666 CPU cycles (~1 second at 1.79MHz)
-        return self.dataBus # Return immediately because it is slow code.
-    
         # Simulate bus decay: after ~0.9 seconds, the value decays to 0
         # Real NES capacitors discharge the bus, but we simplify this
-        
-        # if time.time() - getattr(self, "cpu_bus_latch_time", 0) > 0.9:
-        #     self.dataBus = 0
-        #     self.Architrcture.cpu_bus_latch_time = time.time()
-        # return self.dataBus
+        self.Architrcture.Bus_latch_timer.stop()  # await for read timer
+        if (self.Architrcture.Bus_latch_timer.get_elapsed_time()) / 1000 > 0.9:
+            self.dataBus = 0
+            self.Architrcture.Bus_latch_timer.reset()
+            self.Architrcture.Bus_latch_timer.start()
+        return self.dataBus
 
     def ReadPPURegister(self, addr: int) -> int:
         """Read from PPU registers with NMI suppression."""
@@ -688,7 +685,7 @@ class Emulator:
         if (base_addr & 0xFF00) != (final_addr & 0xFF00):
             # Preserve high byte in data bus (simulate bus capacitance)
             saved_data_bus = self.dataBus  # should be == high
-            _ = self.Read(base_addr)      # dummy read
+            _ = self.Read(base_addr)  # dummy read
             self.dataBus = saved_data_bus  # restore, don’t update with new value
             self._cycles_extra += 1
 
@@ -937,7 +934,11 @@ class Emulator:
                 raise EmulatorError(NotImplementedError(f"Mapper {mapper_id} not supported."))
 
         # Reset CPU
-        self.Architrcture = Architrcture(StackPointer=0xFD)
+        self.Architrcture.Bus_latch_timer.stop()
+        self.Architrcture.Bus_latch_timer.reset()
+        self.Architrcture = Architrcture(
+            StackPointer=0xFD, ProgramCounter=0xFFFC, Bus_latch_timer=self.Architrcture.Bus_latch_timer
+        )
         self.flag = Flags(InterruptDisable=True)
         self.DoTask = DoTask()
         self.IRQ = IRQ()
@@ -967,7 +968,7 @@ class Emulator:
         # debug
         self.frame_complete_count = 0  # reset
 
-        _logger.debug(f"ROM Header: {self.cartridge.HeaderedROM[:0x10]}")
+        _logger.debug(f"ROM Header: [{', '.join(f'{b:02X}' for b in self.cartridge.HeaderedROM[:0x10])}]")
         _logger.debug(f"Reset Vector: ${self.Architrcture.ProgramCounter:04X}")
 
     def Swap(self, cartridge: Cartridge) -> None:
@@ -1066,7 +1067,7 @@ class Emulator:
     def Emulate_CPU(self) -> None:
         # Reset instruction mode at the start of each cycle
         self.Architrcture.current_instruction_mode = CurrentInstructionMode.Undefined
-        self._cycles_extra = 0 # reset
+        self._cycles_extra = 0  # reset
 
         # If an interrupt (NMI) was requested, handle it before fetching
         # the next Architrcture.OpCode. This ensures NMI fires between instructions and
@@ -1082,8 +1083,8 @@ class Emulator:
             self.PendingsTask.IRQ = False
             self.IRQ_RUN()
             return
-        
-        if hasattr(self.mapper, 'irq_pending') and self.mapper.irq_pending:
+
+        if hasattr(self.mapper, "irq_pending") and self.mapper.irq_pending:
             if not self.flag.InterruptDisable:
                 self.mapper.irq_pending = False
                 self.IRQ_RUN()
@@ -2246,9 +2247,9 @@ class Emulator:
         # CHR ROM/RAM ($0000-$1FFF) - use mapper
         if addr < 0x2000:
             # Track A12 for MMC3
-            if hasattr(self.mapper, 'tick_a12'):
+            if hasattr(self.mapper, "tick_a12"):
                 a12_state = bool(addr & 0x1000)
-                self.mapper.tick_a12(a12_state) # type: ignore
+                self.mapper.tick_a12(a12_state)  # type: ignore
 
             # Read through mapper
             if self.mapper:
@@ -2288,6 +2289,12 @@ class Emulator:
             self.PPUSTATUS &= 0x9F  # Clear sprite 0 hit flag
             self.RenderSprites(self.Scanline)
 
+    @memoize(maxsize=64, policy="lru")
+    def _NESPaletteToRGB(self, color_idx: int) -> int:
+        """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
+        tv_system_palette = ntsc_pel if self.cartridge.tv_system == "PAL" else pal_pel
+        return tv_system_palette[color_idx & 0x3F]
+
     def RenderBackground(self) -> None:
         """Render background for current scanline with proper mapper support."""
         if not self.PPUMASK & 0x08:  # Background disabled
@@ -2301,8 +2308,8 @@ class Emulator:
 
         for x in range(256):
             if clip_left and x < 8:
-                self.FrameBuffer[self.Scanline, x] = _NESPaletteToRGB(backdrop_color)
-                if hasattr(self, '_bg_opaque_line'):
+                self.FrameBuffer[self.Scanline, x] = self._NESPaletteToRGB(backdrop_color)
+                if hasattr(self, "_bg_opaque_line"):
                     self._bg_opaque_line[x] = False
                 continue
 
@@ -2333,11 +2340,11 @@ class Emulator:
 
             # **CRITICAL: Read pattern data through mapper**
             # Call tick_a12 for MMC3
-            if hasattr(self.mapper, 'tick_a12'):
+            if hasattr(self.mapper, "tick_a12"):
                 a12_state = bool(tile_addr & 0x1000)
                 self.mapper.tick_a12(a12_state)
 
-            if self.mapper and hasattr(self.mapper, 'ppu_read'):
+            if self.mapper and hasattr(self.mapper, "ppu_read"):
                 plane1 = self.mapper.ppu_read(tile_addr + tile_row)
                 plane2 = self.mapper.ppu_read(tile_addr + tile_row + 8)
             else:
@@ -2350,8 +2357,8 @@ class Emulator:
 
             if color_idx == 0:
                 # Transparent - use backdrop
-                self.FrameBuffer[self.Scanline, x] = _NESPaletteToRGB(backdrop_color)
-                if hasattr(self, '_bg_opaque_line'):
+                self.FrameBuffer[self.Scanline, x] = self._NESPaletteToRGB(backdrop_color)
+                if hasattr(self, "_bg_opaque_line"):
                     self._bg_opaque_line[x] = False
                 continue
 
@@ -2370,8 +2377,8 @@ class Emulator:
             palette_addr = (palette_idx * 4 + color_idx) & 0x1F
             color = int(self.PaletteRAM[palette_addr])
 
-            self.FrameBuffer[self.Scanline, x] = _NESPaletteToRGB(color)
-            if hasattr(self, '_bg_opaque_line'):
+            self.FrameBuffer[self.Scanline, x] = self._NESPaletteToRGB(color)
+            if hasattr(self, "_bg_opaque_line"):
                 self._bg_opaque_line[x] = True
 
     def RenderSprites(self, scanline: int) -> None:
@@ -2445,7 +2452,7 @@ class Emulator:
                 palette_base = 0x10 + (sprite_palette << 2)
                 palette_addr = (palette_base + color_idx) & 0x1F
                 color = self.PaletteRAM[palette_addr]
-                rgb = _NESPaletteToRGB(color & 0x3F)
+                rgb = self._NESPaletteToRGB(color & 0x3F)
 
                 # Sprite 0 hit detection
                 if i == 0 and (self.PPUMASK & 0x18) == 0x18:

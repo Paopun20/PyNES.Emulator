@@ -43,6 +43,7 @@ from logger import log as _log, debug_mode, console
 from helper.thread_exception import thread_exception
 from helper.pyWindowColorMode import pyWindowColorMode
 from helper.hasGIL import hasGIL
+from objects.exception import ExitException, PynesError
 
 # Platform detection
 IS_WINDOWS = platform.system() == "Windows"
@@ -75,7 +76,7 @@ except (psutil.AccessDenied, AttributeError) as e:
 
 try:
     if IS_LINUX:
-        process.ionice(psutil.IOPRIO_CLASS_RT, 0)
+        process.ionice(psutil.HIGH_PRIORITY_CLASS, 0)
         _log.info("I/O priority set for Linux")
 except (psutil.AccessDenied, AttributeError) as e:
     _log.warning(f"Could not set I/O priority: {e}")
@@ -336,8 +337,8 @@ except TclError:
 nes_path: Path = None
 
 if len(sys.argv) > 1:
-    arg_path = Path(sys.argv[1]).resolve()
-    if arg_path.suffix == ".nes" and Cartridge.is_valid_file(arg_path)[0]:
+    arg_path: Path = Path(sys.argv[-1]).resolve()
+    if arg_path.suffix == ".nes" and Cartridge.is_valid_file(str(arg_path))[0]:
         nes_path = arg_path
     else:
         messagebox.showerror("Error", f"Invalid NES file: {arg_path}")
@@ -575,7 +576,8 @@ def draw_debug_overlay() -> None:
         case 0:
             debug_info += [
                 f"NES File: {Path(nes_path).name}",
-                "ROM Header: [" + ", ".join(f"0x{h:02X}" for h in nes_emu.cartridge.HeaderedROM[:0x10]) + "]",
+                f"ROM Header: [{', '.join(f'{b:02X}' for b in nes_emu.cartridge.HeaderedROM[:0x10])}]",
+                f"TV System: {nes_emu.cartridge.tv_system}",
                 f"Mapper ID: {nes_emu.cartridge.MapperID} ({id_mapper[nes_emu.cartridge.MapperID] if nes_emu.cartridge.MapperID < len(id_mapper) else 'Unknown'})",
                 f"Mirroring Mode: {'Vertical' if nes_emu.cartridge.MirroringMode else 'Horizontal'}",
                 f"PRG ROM Size: {len(nes_emu.cartridge.PRGROM)} bytes | CHR ROM Size: {len(nes_emu.cartridge.CHRROM)} bytes",
@@ -700,23 +702,32 @@ def render_frame(frame: NDArray[np.uint8]) -> None:
         sprite.draw()
         draw_debug_overlay()
         pygame.display.flip()
-    except Exception as e:
-        _log.error(f"Frame render error: {e}")
+    except ValueError as e:
+        _log.error(f"Error rendering frame: {e}")
+        # Optionally, log the problematic frame data or dimensions
+        # _log.debug(f"Problematic frame shape: {frame.shape}, dtype: {frame.dtype}")
+
 
 
 # subthread to run emulator cycles
 def subpro() -> None:
-    global running, run_event
     while running:
         if not run_event.is_set():
-            run_event.wait()
+            run_event.wait(5)
+            continue
+
+        if not running:
+            break
 
         try:
-            nes_emu.step_Frame()
+            nes_emu.step_Cycle()
         except EmulatorError as e:
             if debug_mode:
                 raise
             _log.error(f"{e.exception.__name__}: {e.message}")
+            break
+        except ExitException as e:
+            _log.error(f"Emulator exited with exception: {e}")
             break
 
 
@@ -1283,7 +1294,7 @@ def shutdown_threads() -> None:
             thread = threads.popleft()
             _log.info(f"Joining thread: {thread.name}")
             if thread.is_alive():
-                thread.join(timeout=2.0)
+                thread.join(timeout=5.0)
                 if thread.is_alive():
                     _log.error(f"Thread {thread.name} did not stop cleanly")
                     threads.append(thread)
@@ -1304,7 +1315,7 @@ def shutdown_threads() -> None:
     while remaining:
         for _ in range(len(remaining)):
             thread = remaining.popleft()
-            exc_result = thread_exception(thread, InterruptedError)
+            exc_result = thread_exception(thread, ExitException("Force stop"))
 
             if isinstance(exc_result, Success):
                 _log.info(f'Success force stopping thread "{thread.name}" ({thread.ident})')

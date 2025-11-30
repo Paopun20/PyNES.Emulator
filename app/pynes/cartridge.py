@@ -27,8 +27,38 @@ class Cartridge:
             f"CHR={len(self.CHRROM)} bytes "
             f"Trainer={len(self.Trainer)} bytes "
             f"Mapper={self.MapperID} "
-            f"Mirroring={'Vertical' if self.MirroringMode else 'Horizontal'}>"
+            f"Mirroring={'Vertical' if self.MirroringMode else 'Horizontal'} "
+            f"TVSystem={self.tv_system}>"
         )
+
+    def get_tv_system(self) -> str:
+        """
+        Determine if the ROM is NTSC or PAL based on the header.
+
+        Returns:
+            'NTSC', 'PAL', or 'Unknown' based on the TV system flag in the header.
+        """
+        if len(self.HeaderedROM) < 10:
+            return "Unknown"
+
+        # Bit 7 of byte 9 (index 8) indicates TV system
+        tv_system_flag = self.HeaderedROM[8] & 0x80
+
+        if tv_system_flag:
+            return "PAL"
+        else:
+            return "NTSC"
+
+    @property
+    def tv_system(self) -> str:
+        """
+        Property to get the TV system (NTSC/PAL) of the ROM.
+        """
+        if len(self.HeaderedROM) < 10:
+            return "Unknown"
+
+        tv_system_flag = self.HeaderedROM[8] & 0x80
+        return "PAL" if tv_system_flag else "NTSC"
 
     @classmethod
     def from_bytes(cls: type["Cartridge"], data: bytes) -> Result["Cartridge", str]:
