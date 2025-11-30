@@ -1173,7 +1173,10 @@ while running:
                 _log.info("Opening shader picker")
                 run_event.clear()  # pause the main thread
                 emu_timer.pause()
-                mod_picker()
+                try:
+                    mod_picker()
+                except Exception as e:
+                    _log.error(f"mod_picker: {e}")
                 emu_timer.resume()
                 run_event.set()  # resume normal execution
             elif event.key == pygame.K_F12:
