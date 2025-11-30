@@ -109,5 +109,5 @@ exe = EXE(
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=True,
-    icon="app/icon.ico",
+    icon="icon.ico",
 )
