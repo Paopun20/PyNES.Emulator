@@ -1,23 +1,30 @@
 from setuptools import (setup, Extension as CythonExtension)
-# from Cython.Build import cythonize
-from setuptools_rust import RustExtension
+from Cython.Build import cythonize
+# from setuptools_rust import RustExtension
 from pathlib import Path
 from app.__version__ import __version_string__
-# import numpy as np
+import numpy as np
 
 # Obtain the absolute path of the directory containing setup.py
 ROOT_DIR = Path(__file__).parent.resolve()
 
-"""
 cython_ext = cythonize([
     CythonExtension(
-        name="api.discord",
-        sources=["app/pynes/api/discord.pyx"],
-        include_dirs=[np.get_include()],
-        extra_compile_args=["-O3", "-ffast-math", "-march=native"],
-    )
+        "pynes.mapper",
+        sources=["app/pynes/mapper.py"],
+        include_dirs=[np.get_include()]
+    ),
+    CythonExtension(
+        "helper.thread_exception",
+        sources=["app/helper/thread_exception.py"],
+        include_dirs=[np.get_include()]
+    ),
+    CythonExtension(
+        "helper.pyWindowColorMode",
+        sources=["app/helper/pyWindowColorMode.py"],
+        include_dirs=[np.get_include()]
+    ),
 ])
-""" # Old code kept for reference
 
 """
 rust_ext = [
@@ -30,21 +37,14 @@ rust_ext = [
 ]
 """
 
-"""
-list_req = []
-req = ROOT_DIR / "requirements.txt"
-with open(req, "r") as f:
-    list_req = [line.strip() for line in f]
-
 setup(
     name="PyNES",
     version=__version_string__,
     packages=["pynes"],
-    # ext_modules=cython_ext,
+    ext_modules=cython_ext,
     # rust_extensions=rust_ext,
     # install_requires=list_req,
-    # include_package_data=True,
+    include_package_data=True,
     package_dir={'pynes': 'app/pynes'},
     zip_safe=False,
 )
-"""

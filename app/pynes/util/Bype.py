@@ -1,10 +1,7 @@
-from collections.abc import Callable
 from typing import (
-    Any,
     Generic,
     Optional,
     SupportsFloat,
-    SupportsIndex,
     SupportsInt,
     Tuple,
     Type,
@@ -16,7 +13,6 @@ from typing import (
     Dict,
 )
 from enum import Enum
-from numbers import Integral
 
 
 class Sign(Enum):

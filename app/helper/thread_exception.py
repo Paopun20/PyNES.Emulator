@@ -1,7 +1,8 @@
 import ctypes
 import threading
 from typing import Optional
-from returns.result import Result, Success, Failure
+
+from returns.result import Failure, Result, Success
 
 def thread_exception(thread: threading.Thread, exception: BaseException) -> Result[bool, Exception]:
     """

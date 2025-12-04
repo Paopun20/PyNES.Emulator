@@ -51,6 +51,10 @@ class Mapper:
     def reset(self) -> None:
         pass
 
+    def get_mirroring(self) -> int:
+        """Get current nametable mirroring mode (0=vertical, 1=horizontal, 2=one-screen lower, 3=one-screen upper)"""
+        raise NotImplementedError
+
 
 # Mapper 000 (NROM)
 class Mapper000(Mapper):
@@ -102,6 +106,9 @@ class Mapper000(Mapper):
     def reset(self) -> None:
         # Nothing to reset for NROM
         return None
+
+    def get_mirroring(self) -> int:
+        return self.mirroring
 
 
 # Mapper 001 (MMC1)
@@ -277,6 +284,9 @@ class Mapper001(Mapper):
         self.shift_register = 0x10
         self._update_banks()
 
+    def get_mirroring(self) -> int:
+        return self.mirroring
+
 
 # Mapper 002 (UxROM)
 class Mapper002(Mapper):
@@ -329,6 +339,9 @@ class Mapper002(Mapper):
     def reset(self) -> None:
         self.prg_bank = 0
 
+    def get_mirroring(self) -> int:
+        return self.mirroring
+
 
 # Mapper 003 (CNROM)
 class Mapper003(Mapper):
@@ -375,6 +388,9 @@ class Mapper003(Mapper):
 
     def reset(self) -> None:
         self.chr_bank = 0
+
+    def get_mirroring(self) -> int:
+        return self.mirroring
 
 
 # Mapper 004 (MMC3)

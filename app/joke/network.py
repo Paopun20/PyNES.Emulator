@@ -1,4 +1,4 @@
-# this a joke file i make lol, and this unuse
+# this a joke file i make lol, and this is unuse
 
 import socket
 import urllib.request

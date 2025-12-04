@@ -1,26 +1,41 @@
 import numpy as np
 from numpy.typing import NDArray
-from typing import Final, Optional, Tuple, final
+from typing import Final, Optional, Tuple, Union, final
 from logger import log
+from pathlib import Path
 from returns.result import Result, Success, Failure
 from typing_extensions import deprecated
 
 
 @final
 class Cartridge:
-    HEADER_SIZE: Final[int] = 0x10
+    """
+    Represents an NES cartridge loaded from an iNES ROM file.
+    
+    This class handles parsing the iNES file format, extracting the PRG ROM,
+    CHR ROM, trainer data, and header information including mapper ID and
+    mirroring mode.
+    """
+    
+    HEADER_SIZE: Final[int] = 0x10  # 16 bytes
     TRAINER_SIZE: Final[int] = 0x200  # 512 bytes
 
-    def __init__(self: "Cartridge") -> None:
+    def __init__(self) -> None:
+        """
+        Initialize an empty cartridge with default values.
+        """
         self.file: str = ""
         self.HeaderedROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
         self.PRGROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
         self.CHRROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
         self.Trainer: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
         self.MapperID: int = 0
-        self.MirroringMode: int = 0
+        self.MirroringMode: int = 0  # 0=Horizontal, 1=Vertical
 
-    def __repr__(self: "Cartridge") -> str:
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the cartridge.
+        """
         return (
             f"<Cartridge file={self.file!r} "
             f"PRG={len(self.PRGROM)} bytes "
@@ -53,6 +68,9 @@ class Cartridge:
     def tv_system(self) -> str:
         """
         Property to get the TV system (NTSC/PAL) of the ROM.
+        
+        Returns:
+            'NTSC', 'PAL', or 'Unknown' based on the TV system flag in the header.
         """
         if len(self.HeaderedROM) < 10:
             return "Unknown"
@@ -61,8 +79,16 @@ class Cartridge:
         return "PAL" if tv_system_flag else "NTSC"
 
     @classmethod
-    def from_bytes(cls: type["Cartridge"], data: bytes) -> Result["Cartridge", str]:
-        """Load and validate cartridge from bytes."""
+    def from_bytes(cls, data: bytes) -> Result["Cartridge", str]:
+        """
+        Load and validate cartridge from bytes.
+
+        Args:
+            data: Raw bytes of the ROM file
+            
+        Returns:
+            Result containing either a Cartridge instance or an error string.
+        """
         if not isinstance(data, (bytes, bytearray)):
             return Failure(f"Expected bytes or bytearray, got {type(data).__name__}")
 
@@ -75,23 +101,24 @@ class Cartridge:
         obj = cls()
         obj.HeaderedROM = np.frombuffer(data, dtype=np.uint8)
 
-        prg_size = int(data[4]) * 0x4000
-        chr_size = int(data[5]) * 0x2000
+        prg_size = int(data[4]) * 0x4000  # PRG ROM size in 16KB units
+        chr_size = int(data[5]) * 0x2000  # CHR ROM size in 8KB units
         flags6 = int(data[6])
         flags7 = int(data[7])
 
         if flags6 & 0b100 and len(data) < cls.HEADER_SIZE + cls.TRAINER_SIZE:
             return Failure("Trainer flag set but ROM too small for trainer")
 
-        # Mapper ID bits
+        # Extract mapper ID from both flags 6 and 7
         mapper_low = (flags6 >> 4) & 0x0F
         mapper_high = (flags7 >> 4) & 0x0F
         obj.MapperID = (mapper_high << 4) | mapper_low
 
+        # Extract mirroring mode (bit 0 of flags 6)
         obj.MirroringMode = flags6 & 0x01
         offset = cls.HEADER_SIZE
 
-        # Trainer
+        # Extract trainer data if present (bit 2 of flags 6)
         if flags6 & 0b100:
             trainer_end = offset + cls.TRAINER_SIZE
             if trainer_end > len(data):
@@ -99,15 +126,16 @@ class Cartridge:
             obj.Trainer = obj.HeaderedROM[offset:trainer_end].copy()
             offset = trainer_end
 
-        # PRG ROM
+        # Extract PRG ROM
         prg_end = offset + prg_size
         if prg_end > len(data):
             return Failure(f"PRG ROM exceeds file length ({prg_end} > {len(data)})")
         obj.PRGROM = obj.HeaderedROM[offset:prg_end].copy()
         offset = prg_end
 
-        # CHR ROM
+        # Extract CHR ROM
         if chr_size == 0:
+            # Some games have no CHR ROM, so create a default one
             obj.CHRROM = np.zeros(0x2000, dtype=np.uint8)
         else:
             chr_end = offset + chr_size
@@ -115,15 +143,26 @@ class Cartridge:
                 return Failure(f"CHR ROM exceeds file length ({chr_end} > {len(data)})")
             obj.CHRROM = obj.HeaderedROM[offset:chr_end].copy()
 
-        # Extra bytes warning
+        # Log a warning if there are extra bytes beyond expected size
         if len(data) > offset + chr_size:
-            log.warning(f"Extra {len(data) - (offset + chr_size)} bytes at end of ROM ignored")
+            extra_bytes = len(data) - (offset + chr_size)
+            log.warning(f"Extra {extra_bytes} bytes at end of ROM ignored")
 
         return Success(obj)
 
     @classmethod
-    def is_valid_file(cls: type["Cartridge"], filepath: str) -> Tuple[bool, Optional[str]]:
-        """Check if a file is a valid NES ROM."""
+    def is_valid_file(cls, filepath: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if a file is a valid NES ROM.
+
+        Args:
+            filepath: Path to the file to check
+            
+        Returns:
+            A tuple of (is_valid, error_message) where is_valid is a boolean
+            indicating if the file is valid, and error_message is None if valid
+            or contains an error string if invalid.
+        """
         try:
             with open(filepath, "rb") as f:
                 data = f.read()
@@ -137,8 +176,16 @@ class Cartridge:
             return False, result.failure()
 
     @classmethod
-    def from_file(cls: type["Cartridge"], filepath: str) -> Result["Cartridge", str]:
-        """Load a cartridge from file path."""
+    def from_file(cls, filepath: Union[Path, str]) -> Result["Cartridge", str]:
+        """
+        Load a cartridge from file path.
+
+        Args:
+            filepath: Path to the ROM file to load
+            
+        Returns:
+            Result containing either a Cartridge instance or an error string.
+        """
         try:
             with open(filepath, "rb") as f:
                 data = f.read()
@@ -147,21 +194,33 @@ class Cartridge:
 
         result = cls.from_bytes(data)
 
-        def attach_file(cart: Cartridge) -> Cartridge:
-            cart.file = filepath
+        def attach_file(cart: "Cartridge") -> "Cartridge":
+            cart.file = str(filepath)
             return cart
 
         return result.map(attach_file)
 
     @property
     @deprecated("Use .PRGROM instead of .ROM")
-    def ROM(self: "Cartridge") -> np.ndarray:
+    def ROM(self) -> NDArray[np.uint8]:
+        """
+        Deprecated property for accessing PRG ROM.
+        
+        Returns:
+            The PRG ROM data array.
+        """
         log.warning("Accessing .ROM is deprecated. Use .PRGROM instead.")
         return self.PRGROM
 
     @classmethod
-    def EmptyCartridge(cls: type["Cartridge"]) -> "Cartridge":
-        cart: Cartridge = cls()
+    def EmptyCartridge(cls) -> "Cartridge":
+        """
+        Create an empty cartridge with default values.
+
+        Returns:
+            A new Cartridge instance with empty ROM arrays and default settings.
+        """
+        cart = cls()
         cart.PRGROM = np.zeros(0, dtype=np.uint8)
         cart.CHRROM = np.zeros(0, dtype=np.uint8)
         cart.Trainer = np.zeros(0, dtype=np.uint8)

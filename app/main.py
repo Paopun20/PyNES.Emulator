@@ -1,49 +1,48 @@
 #!/usr/bin/env python3
-import os
-import sys
 import importlib.util
-import threading
-from resources import icon_path, shader_path, font_path
-from pathlib import Path
-from types import FrameType, TracebackType
-from typing import Optional, Any, Tuple, List, Dict, Callable
-from collections import deque
-from returns.result import Result, Success, Failure
-from numpy.typing import NDArray
-
-from tkinter import TclError, Tk, messagebox
-import customtkinter as ctk
-from customtkinter import filedialog, CTk
-
-import numpy as np
-import pygame
-import psutil
-import moderngl
+import os
 import platform
+import sys
+import threading
+from collections import deque
+from pathlib import Path
+from tkinter import TclError, Tk, messagebox
+from types import FrameType, TracebackType
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import customtkinter as ctk
+import moderngl
+import numpy as np
+from numpy.dtypes import UByteDType
+import psutil
+import pygame
 import yappi
-
-from util.clip import Clip as PyClip
-from util.timer import Timer
-from util.config import load_config
-
-from rich.traceback import install
-
 from __version__ import __version_string__ as __version__
-from backend.Control import Control
+from api.discord import Presence
 from backend.CPUMonitor import ThreadCPUMonitor
 from backend.GPUMonitor import GPUMonitor
+from customtkinter import CTk, filedialog
+from helper.hasGIL import hasGIL
+from helper.pyWindowColorMode import pyWindowColorMode
+from helper.thread_exception import thread_exception
+from logger import console, debug_mode
+from logger import log as _log
+from numpy.typing import NDArray
+from objects.exception import ExitException
 from objects.RenderSprite import RenderSprite
 from objects.shaderclass import Shader, ShaderUniformEnum
-from pygame.locals import DOUBLEBUF, OPENGL, HWSURFACE, HWPALETTE, GL_SWAP_CONTROL
-from api.discord import Presence
+from pygame.locals import DOUBLEBUF, GL_SWAP_CONTROL, HWPALETTE, HWSURFACE, OPENGL
 from pynes.cartridge import Cartridge
+from backend.Control import Control
+from pynes.controller import Controller
 from pynes.emulator import Emulator, EmulatorError
 from pypresence.types import ActivityType, StatusDisplayType
-from logger import log as _log, debug_mode, console
-from helper.thread_exception import thread_exception
-from helper.pyWindowColorMode import pyWindowColorMode
-from helper.hasGIL import hasGIL
-from objects.exception import ExitException
+from resources import font_path, icon_path, shader_path
+from returns.result import Failure, Result, Success
+from rich.traceback import install
+from util.clip import Clip as PyClip
+from util.config import load_config
+from util.timer import Timer
 
 # load
 cfg = load_config()
@@ -206,7 +205,7 @@ class DebugOverlay:
         uniform vec2 u_resolution;
         uniform vec2 u_offset;
         uniform vec2 u_size;
-        
+
         void main() {
             vec2 pos = in_pos * u_size + u_offset;
             vec2 ndc = (pos / u_resolution) * 2.0 - 1.0;
@@ -221,7 +220,7 @@ class DebugOverlay:
         in vec2 v_uv;
         out vec4 fragColor;
         uniform sampler2D u_texture;
-        
+
         void main() {
             fragColor = texture(u_texture, v_uv);
         }
@@ -323,7 +322,8 @@ clock: pygame.time.Clock = pygame.time.Clock()
 _log.info("Starting emulator")
 nes_emu: Emulator = Emulator()
 _log.info("Starting controller")
-controller: Control = Control()
+controller: Controller = Controller()
+user_input: Control = Control()
 _log.info("Starting CPU monitor")
 cpu_monitor: ThreadCPUMonitor = ThreadCPUMonitor(process, update_interval=1.0)
 cpu_monitor.start()
@@ -430,13 +430,39 @@ class DebugState:
 
         # Common opcode mappings (simplified for debugging)
         self.opcode_to_mnemonic = {
-            0xA9: "LDA", 0xA5: "LDA", 0xB5: "LDA", 0xAD: "LDA", 0xBD: "LDA", 0xB9: "LDA", 0xA1: "LDA", 0xB1: "LDA",
-            0x85: "STA", 0x95: "STA", 0x8D: "STA", 0x9D: "STA", 0x99: "STA", 0x81: "STA", 0x91: "STA",
-            0xA2: "LDX", 0xA6: "LDX", 0xB6: "LDX", 0xAE: "LDX", 0xBE: "LDX",
-            0x86: "STX", 0x96: "STX", 0x8E: "STX",
-            0xA0: "LDY", 0xA4: "LDY", 0xB4: "LDY", 0xAC: "LDY", 0xBC: "LDY",
-            0x84: "STY", 0x94: "STY", 0x8C: "STY",
-            0x4C: "JMP", 0x6C: "JMP",
+            0xA9: "LDA",
+            0xA5: "LDA",
+            0xB5: "LDA",
+            0xAD: "LDA",
+            0xBD: "LDA",
+            0xB9: "LDA",
+            0xA1: "LDA",
+            0xB1: "LDA",
+            0x85: "STA",
+            0x95: "STA",
+            0x8D: "STA",
+            0x9D: "STA",
+            0x99: "STA",
+            0x81: "STA",
+            0x91: "STA",
+            0xA2: "LDX",
+            0xA6: "LDX",
+            0xB6: "LDX",
+            0xAE: "LDX",
+            0xBE: "LDX",
+            0x86: "STX",
+            0x96: "STX",
+            0x8E: "STX",
+            0xA0: "LDY",
+            0xA4: "LDY",
+            0xB4: "LDY",
+            0xAC: "LDY",
+            0xBC: "LDY",
+            0x84: "STY",
+            0x94: "STY",
+            0x8C: "STY",
+            0x4C: "JMP",
+            0x6C: "JMP",
             0x20: "JSR",
             0x60: "RTS",
             0x40: "RTI",
@@ -485,7 +511,7 @@ class DebugState:
     def get_disassembly(self, start: int = 0x8000, lines: int = 20) -> List[str]:
         """Disassemble instructions around current PC"""
         result = []
-        pc = self.emu.Architrcture.ProgramCounter
+        pc = self.emu.Architecture.ProgramCounter
 
         # Clamp to cartridge ROM range (0x8000-0xFFFF)
         start = max(0x8000, min(start, 0xFFFF))
@@ -591,12 +617,12 @@ def draw_debug_overlay() -> None:
                 "",
                 f"EMU runtime: {emu_timer.get_elapsed_time():.4f}s",
                 f"IRL estimate: {(emu_timer.get_elapsed_time() * 1789773 / 1000000):.4f}s",
-                f"CPU Halted: {nes_emu.Architrcture.Halted} ({'CLASHED!' if nes_emu.Architrcture.Halted else 'Running'})",
+                f"CPU Halted: {nes_emu.Architecture.Halted} ({'CLASHED!' if nes_emu.Architecture.Halted else 'Running'})",
                 f"Frame Complete Count: {nes_emu.frame_complete_count}",
                 f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
-                f"PC: ${nes_emu.Architrcture.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
-                f"A: ${nes_emu.Architrcture.A:02X} X: ${nes_emu.Architrcture.X:02X} Y: ${nes_emu.Architrcture.Y:02X}",
-                f"Current Instruction Mode: {nes_emu.Architrcture.current_instruction_mode}",
+                f"PC: ${nes_emu.Architecture.ProgramCounter:04X} | Cycles: {nes_emu.cycles}",
+                f"A: ${nes_emu.Architecture.A:02X} X: ${nes_emu.Architecture.X:02X} Y: ${nes_emu.Architecture.Y:02X}",
+                f"Current Instruction Mode: {nes_emu.Architecture.current_instruction_mode}",
                 f"Flags: {'N' if nes_emu.flag.Negative else '-'}"
                 f"{'V' if nes_emu.flag.Overflow else '-'}"
                 f"{'B' if nes_emu.flag.Break else '-'}"
@@ -683,7 +709,7 @@ def draw_debug_overlay() -> None:
         case 5:  # Disassembly
             debug_info += [
                 "CPU DISASSEMBLY (ROM)",
-                f"Current PC: ${nes_emu.Architrcture.ProgramCounter:04X}",
+                f"Current PC: ${nes_emu.Architecture.ProgramCounter:04X}",
                 "Controls: F1=Prev page | F2=Next page",
                 "",
             ]
@@ -764,7 +790,7 @@ def vm_frame(frame: NDArray[np.uint8]) -> None:
 @nes_emu.on("before_cycle")
 def cycle(_: Any) -> None:
     # feed controller state into emulator
-    nes_emu.Input(1, controller.state)
+    nes_emu.Input(1, user_input.state)
 
 
 ctx.clear()
@@ -1116,7 +1142,7 @@ maxfps: int = cfg["general"]["fps"]
 
 while running:
     events: List[pygame.event.Event] = pygame.event.get()
-    controller.update(events)
+    user_input.update(events)
 
     for event in events:
         if event.type == pygame.QUIT:

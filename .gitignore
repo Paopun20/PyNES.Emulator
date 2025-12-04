@@ -33,4 +33,7 @@ app/rust/*/Cargo.lock
 *.backup
 
 # venv
-.env/*
+.venv/*
+
+# my key don't share
+.env

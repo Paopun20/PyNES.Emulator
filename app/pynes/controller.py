@@ -1,10 +1,12 @@
-from typing import Dict, Literal
+from typing import Dict, Literal, Optional
 
 
 class Controller:
     """Represents an NES controller state and shift register."""
 
-    def __init__(self, buttons: Dict[str, Literal[True, False]]) -> None:
+    def __init__(self, buttons: Optional[Dict[str, Literal[True, False]]]=None) -> None:
+        if buttons is None:
+            buttons = {}
         self.buttons: Dict[str, bool] = buttons  # Current button states
         self.shift_register: int = 0  # 8-bit shift register for reading
         self.strobe: bool = False  # Strobe state for latching buttons
