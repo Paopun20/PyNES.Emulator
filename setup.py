@@ -15,11 +15,6 @@ cython_ext = cythonize([
         include_dirs=[np.get_include()]
     ),
     CythonExtension(
-        "helper.thread_exception",
-        sources=["app/helper/thread_exception.py"],
-        include_dirs=[np.get_include()]
-    ),
-    CythonExtension(
         "helper.pyWindowColorMode",
         sources=["app/helper/pyWindowColorMode.py"],
         include_dirs=[np.get_include()]
