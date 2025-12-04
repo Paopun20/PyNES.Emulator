@@ -14,11 +14,6 @@ cython_ext = cythonize([
         sources=["app/pynes/mapper.py"],
         include_dirs=[np.get_include()]
     ),
-    CythonExtension(
-        "helper.pyWindowColorMode",
-        sources=["app/helper/pyWindowColorMode.py"],
-        include_dirs=[np.get_include()]
-    ),
 ])
 
 """
