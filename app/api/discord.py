@@ -1,9 +1,9 @@
-from pypresence import Presence as DiscordPresence  # type: ignore
-from logger import log as _log
-import time
 import threading
-from typing import Optional, Any
-from types import TracebackType
+import time
+from typing import Any, Optional
+
+from logger import log as _log
+from pypresence import Presence as DiscordPresence  # type: ignore
 
 
 class Presence:

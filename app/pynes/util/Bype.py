@@ -1,4 +1,6 @@
+from enum import Enum
 from typing import (
+    Dict,
     Generic,
     Optional,
     SupportsFloat,
@@ -10,31 +12,31 @@ from typing import (
     cast,
     overload,
     override,
-    Dict,
 )
-from enum import Enum
 
 
 class Sign(Enum):
     """Enumeration for signedness of Bype values."""
+
     UNSIGNED = "unsigned"
     SIGNED = "signed"
 
 
-T = TypeVar('T', bound='Bype')
-B = TypeVar('B', bound='Bype')
+T = TypeVar("T", bound="Bype")
+B = TypeVar("B", bound="Bype")
 
 
 class BypeMeta(type):
     """Metaclass with caching for Bype subclasses."""
-    _cache: Dict[Tuple[int, Sign], Type['Bype']] = {}
+
+    _cache: Dict[Tuple[int, Sign], Type["Bype"]] = {}
 
     @overload
-    def __getitem__(cls, item: int) -> Type['Bype']: ...
+    def __getitem__(cls, item: int) -> Type["Bype"]: ...
     @overload
-    def __getitem__(cls, item: Tuple[int, Sign]) -> Type['Bype']: ...
-    
-    def __getitem__(cls, item: Union[int, Tuple[int, Sign]]) -> Type['Bype']:
+    def __getitem__(cls, item: Tuple[int, Sign]) -> Type["Bype"]: ...
+
+    def __getitem__(cls, item: Union[int, Tuple[int, Sign]]) -> Type["Bype"]:
         """Cached creation of Bype subclasses with specified bit width and signedness."""
         if isinstance(item, tuple):
             if len(item) != 2:
@@ -54,11 +56,7 @@ class BypeMeta(type):
 
         mask = (1 << bits) - 1
         name = f"Bype_{bits}_{sign.name}"
-        namespace = {
-            "bits": bits, 
-            "sign": sign,
-            "mask": mask
-        }
+        namespace = {"bits": bits, "sign": sign, "mask": mask}
         subclass = cast(Type[Bype], type(name, (Bype,), namespace))
         cls._cache[key] = subclass
         return subclass
@@ -66,19 +64,20 @@ class BypeMeta(type):
 
 class Bype(int, Generic[T], metaclass=BypeMeta):
     """Fixed-width integer type that wraps on overflow.
-    
+
     Key features:
     - Inherits from int for seamless interoperability
     - Immutable design with value wrapping semantics
     - Class-level mask caching for efficiency
     - Complete numeric protocol implementation
     - Full type hints with @override markers
-    
+
     Attributes:
         bits: Bit width of this integer type (class attribute)
         sign: Signedness behavior (class attribute)
         mask: Bitmask for wrapping operations (class attribute)
     """
+
     bits: Optional[int] = None
     sign: Sign = Sign.SIGNED
     mask: int = 0
@@ -88,7 +87,7 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
         """Create new Bype instance with wrapped value."""
         if cls.bits is None:
             raise TypeError("Use Bype[N, Sign] to specify bit width and signedness.")
-        
+
         int_value = int(value)
         wrapped = cls._wrap_class(int_value)
         return super().__new__(cls, wrapped)
@@ -151,15 +150,15 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
     @override
     def __neg__(self: B) -> B:
         return self._new(-int(self))
-    
+
     @override
     def __pos__(self: B) -> B:
         return self._new(+int(self))
-    
+
     @override
     def __abs__(self: B) -> B:
         return self._new(abs(int(self)))
-    
+
     @override
     def __invert__(self: B) -> B:
         return self._new(~int(self))
@@ -168,57 +167,57 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
     @override
     def __add__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) + int(other))
-    
+
     @override
     def __radd__(self: B, other: SupportsInt) -> B:
         return self._new(int(other) + int(self))
-    
+
     @override
     def __sub__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) - int(other))
-    
+
     @override
     def __rsub__(self: B, other: SupportsInt) -> B:
         return self._new(int(other) - int(self))
-    
+
     @override
     def __mul__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) * int(other))
-    
+
     @override
     def __rmul__(self: B, other: SupportsInt) -> B:
         return self._new(int(other) * int(self))
-    
+
     @override
     def __floordiv__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) // int(other))
-    
+
     @override
     def __rfloordiv__(self: B, other: SupportsInt) -> B:
         return self._new(int(other) // int(self))
-    
+
     @override
     def __truediv__(self, other: SupportsFloat) -> float:
         return int(self) / float(other)
-    
+
     @override
     def __rtruediv__(self, other: SupportsFloat) -> float:
         return float(other) / int(self)
-    
+
     @override
     def __mod__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) % int(other))
-    
+
     @override
     def __rmod__(self: B, other: SupportsInt) -> B:
         return self._new(int(other) % int(self))
-    
+
     @override
     def __pow__(self: B, other: SupportsInt, modulo: Optional[int] = None) -> B:
         if modulo is None:
             return self._new(pow(int(self), int(other)))
         return self._new(pow(int(self), int(other), modulo))
-    
+
     @override
     def __rpow__(self: B, other: SupportsInt) -> B:
         return self._new(pow(int(other), int(self)))
@@ -229,19 +228,19 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
         if isinstance(other, SupportsInt):
             return int(self) == int(other)
         return NotImplemented
-    
+
     @override
     def __lt__(self, other: SupportsInt) -> bool:
         return int(self) < int(other)
-    
+
     @override
     def __le__(self, other: SupportsInt) -> bool:
         return int(self) <= int(other)
-    
+
     @override
     def __gt__(self, other: SupportsInt) -> bool:
         return int(self) > int(other)
-    
+
     @override
     def __ge__(self, other: SupportsInt) -> bool:
         return int(self) >= int(other)
@@ -250,31 +249,31 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
     @override
     def __and__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) & int(other))
-    
+
     @override
     def __rand__(self: B, other: SupportsInt) -> B:
         return self._new(int(other) & int(self))
-    
+
     @override
     def __or__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) | int(other))
-    
+
     @override
     def __ror__(self: B, other: SupportsInt) -> B:
         return self._new(int(other) | int(self))
-    
+
     @override
     def __xor__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) ^ int(other))
-    
+
     @override
     def __rxor__(self: B, other: SupportsInt) -> B:
         return self._new(int(other) ^ int(self))
-    
+
     @override
     def __lshift__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) << int(other))
-    
+
     @override
     def __rshift__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) >> int(other))
@@ -282,39 +281,39 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
     # In-place operations (return new instances due to immutability)
     def __iadd__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) + int(other))
-    
+
     def __isub__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) - int(other))
-    
+
     def __imul__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) * int(other))
-    
+
     def __ifloordiv__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) // int(other))
-    
+
     def __itruediv__(self: B, other: SupportsFloat) -> B:
         return self._new(int(int(self) / float(other)))
-    
+
     def __imod__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) % int(other))
-    
+
     def __ipow__(self: B, other: SupportsInt, modulo: Optional[int] = None) -> B:
         if modulo is None:
             return self._new(pow(int(self), int(other)))
         return self._new(pow(int(self), int(other), modulo))
-    
+
     def __iand__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) & int(other))
-    
+
     def __ior__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) | int(other))
-    
+
     def __ixor__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) ^ int(other))
-    
+
     def __ilshift__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) << int(other))
-    
+
     def __irshift__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) >> int(other))
 
@@ -322,15 +321,15 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
     @override
     def __round__(self, ndigits: Optional[int] = None) -> int:
         return round(int(self), ndigits)
-    
+
     @override
     def __trunc__(self) -> int:
         return int(self)
-    
+
     @override
     def __floor__(self) -> int:
         return int(self)
-    
+
     @override
     def __ceil__(self) -> int:
         return int(self)

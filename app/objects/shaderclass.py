@@ -1,8 +1,8 @@
 import re
 import textwrap
-from typing import Type, Final, Optional, List, Dict, Set
-from enum import Enum
 from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, Final, List, Optional, Set, Type
 
 
 class ShaderType(Enum):

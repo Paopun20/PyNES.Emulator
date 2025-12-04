@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 
 class OpCode(TypedDict):
@@ -272,7 +272,7 @@ class OpCodes:
     """Enhanced 6502 OpCode lookup table with complete instruction information."""
 
     @staticmethod
-    def GetEntry(opcode: int) -> Dict[str, Any]:
+    def GetEntry(opcode: int) -> Optional[Dict[str, Any]]:
         """
         Get complete opcode entry.
 
@@ -287,7 +287,7 @@ class OpCodes:
         """
         if not (0 <= opcode <= 0xFF):
             raise ValueError(f"Invalid opcode: 0x{opcode:02X} (must be 0x00-0xFF)")
-        return list_OpCode.get(opcode, {"opcode": "UNKNOWN", "type": [], "bytes": 1, "cycles": 0})
+        return list_OpCode.get(opcode, None)
 
     @staticmethod
     def GetName(opcode: int) -> str:

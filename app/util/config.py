@@ -1,7 +1,9 @@
-import tomllib
-from typing import TypedDict
 from copy import deepcopy
+from typing import TypedDict
+
+import tomllib
 from resources import config_file
+
 # from logger import log as _log
 
 
@@ -86,14 +88,14 @@ def load_config() -> Config:
                 _deep_update(_config, data, path="root")
                 # _log.info("Deep update finished")
 
-            except Exception as e:
+            except Exception:
                 # _log.exception(f"Exception during TOML parsing or update: {e}")
                 raise
         else:
             pass
             # _log.warning("Config file NOT FOUND. Using defaults only.")
 
-    except Exception as e:
+    except Exception:
         pass
         # _log.exception(f"Unexpected error in load_config: {e}")
 

@@ -5,9 +5,10 @@
 # - Mapper003 (CNROM)
 # - Mapper004 (MMC3)
 
+from typing import Optional
+
 import numpy as np
 from numpy.typing import NDArray
-from typing import Optional
 
 
 # Utilities

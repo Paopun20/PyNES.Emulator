@@ -1,28 +1,31 @@
-import sys
 import io
 import os
 import subprocess
+import sys
 import tempfile
 import time
+
 import numpy as np
 from PIL import Image
 
 
 class ClipboardError(Exception):
     """Custom exception for clipboard operations."""
+
     pass
+
 
 class Clip:
     # Configuration constants
     TIMEOUT = 10  # seconds for subprocess operations
     MAX_IMAGE_SIZE = 100 * 1024 * 1024  # 100MB max size in bytes
-    SUPPORTED_LINUX_TOOLS = ['xclip', 'xsel']  # Support both xclip and xsel
-    
+    SUPPORTED_LINUX_TOOLS = ["xclip", "xsel"]  # Support both xclip and xsel
+
     @classmethod
     def set_timeout(cls, timeout: int) -> None:
         """Set the timeout for subprocess operations."""
         cls.TIMEOUT = timeout
-    
+
     @classmethod
     def set_max_image_size(cls, size_bytes: int) -> None:
         """Set the maximum allowed image size in bytes."""
@@ -33,14 +36,14 @@ class Clip:
         """
         Copy a NumPy array image to the system clipboard.
         Works on Windows, macOS, and Linux (xclip/xsel required on Linux).
-        
+
         Args:
             arr: NumPy array representing an image. Can be:
                 - uint8: values in [0, 255]
                 - float32/float64: values in [0.0, 1.0]
                 - Shape: (H, W), (H, W, 3), or (H, W, 4)
             background_color: RGB tuple for background when handling transparency (default: white)
-        
+
         Raises:
             ClipboardError: If clipboard operation fails
             ImportError: If required dependencies are missing
@@ -81,17 +84,17 @@ class Clip:
     def _normalize_array(arr: np.ndarray) -> np.ndarray:
         """
         Normalize array to uint8 format suitable for PIL Image.
-        
+
         Args:
             arr: Input array
-            
+
         Returns:
             Normalized uint8 array
         """
         # Validate array
         if arr.size == 0:
             raise ValueError("Array cannot be empty")
-        
+
         # Handle float arrays (assuming range [0.0, 1.0])
         if arr.dtype in (np.float32, np.float64):
             arr = np.clip(arr, 0.0, 1.0)
@@ -106,20 +109,18 @@ class Clip:
     def _copy_windows(img: Image.Image, background_color: tuple = (255, 255, 255)) -> None:
         """
         Copy image to clipboard on Windows.
-        
+
         Args:
             img: PIL Image object
             background_color: RGB tuple for background when handling transparency
-            
+
         Raises:
             ImportError: If pywin32 is not installed
         """
         try:
             import win32clipboard
         except ImportError:
-            raise ImportError(
-                "pywin32 is required on Windows. Install with: pip install pywin32"
-            )
+            raise ImportError("pywin32 is required on Windows. Install with: pip install pywin32")
 
         # Handle transparency by compositing onto background
         if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
@@ -159,7 +160,7 @@ class Clip:
     def _copy_macos(img: Image.Image) -> None:
         """
         Copy image to clipboard on macOS.
-        
+
         Args:
             img: PIL Image object
         """
@@ -172,19 +173,16 @@ class Clip:
         tmp_path = None
         try:
             # Use tempfile for security
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
                 tmp_path = tmp_file.name
                 tmp_file.write(png_data)
 
             # Use osascript to copy to clipboard
             result = subprocess.run(
-                [
-                    "osascript", "-e",
-                    f'set the clipboard to (read (POSIX file "{tmp_path}") as «class PNGf»)'
-                ],
+                ["osascript", "-e", f'set the clipboard to (read (POSIX file "{tmp_path}") as «class PNGf»)'],
                 capture_output=True,
                 text=True,
-                timeout=Clip.TIMEOUT
+                timeout=Clip.TIMEOUT,
             )
 
             if result.returncode != 0:
@@ -201,10 +199,10 @@ class Clip:
     def _copy_linux(img: Image.Image) -> None:
         """
         Copy image to clipboard on Linux using xclip or xsel.
-        
+
         Args:
             img: PIL Image object
-            
+
         Raises:
             RuntimeError: If no suitable clipboard tool is found
         """
@@ -212,17 +210,15 @@ class Clip:
         tool = None
         for available_tool in Clip.SUPPORTED_LINUX_TOOLS:
             try:
-                result = subprocess.run(['which', available_tool], 
-                                      capture_output=True, 
-                                      timeout=2)
+                result = subprocess.run(["which", available_tool], capture_output=True, timeout=2)
                 if result.returncode == 0:
                     tool = available_tool
                     break
             except subprocess.TimeoutExpired:
                 continue
-        
+
         if not tool:
-            tools_list = ', '.join(Clip.SUPPORTED_LINUX_TOOLS)
+            tools_list = ", ".join(Clip.SUPPORTED_LINUX_TOOLS)
             raise RuntimeError(
                 f"No clipboard tool found. Install one of: {tools_list}. "
                 f"Example: sudo apt-get install {' or '.join(Clip.SUPPORTED_LINUX_TOOLS)}"
@@ -236,30 +232,25 @@ class Clip:
         proc = None
 
         # Use the available tool
-        if tool == 'xclip':
+        if tool == "xclip":
             # Use xclip
             proc = subprocess.Popen(
                 ["xclip", "-selection", "clipboard", "-t", "image/png", "-i"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
             )
-        elif tool == 'xsel':
+        elif tool == "xsel":
             # Use xsel
             proc = subprocess.Popen(
                 ["xsel", "--clipboard", "--input"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
             )
-        elif tool == 'wl-copy':
+        elif tool == "wl-copy":
             # Use wl-copy
-            proc = subprocess.Popen(
-                ["wl-copy"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            proc = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else:
             raise ValueError(f"Unsupported clipboard tool: {tool}")
 
@@ -272,6 +263,6 @@ class Clip:
 
         if proc.returncode != 0:
             raise RuntimeError(f"{tool} failed: {stderr.decode()}")
-        
+
         # Small delay to ensure clipboard operation completes
         time.sleep(0.1)

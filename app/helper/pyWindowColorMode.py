@@ -1,7 +1,9 @@
 import ctypes
-import cython
 import sys
 from typing import Optional
+
+import cython
+
 
 @cython.cclass
 class pyWindowColorMode:
@@ -34,7 +36,7 @@ class pyWindowColorMode:
         """
         if sys.platform != "win32":
             raise RuntimeError("pyWindowColorMode is only supported on Windows platform")
-        
+
         self._dark_mode = False
         self._dwmapi_available = self._check_dwmapi_availability()
         self.window_handle = window_handle if window_handle is not None else 0
@@ -72,7 +74,7 @@ class pyWindowColorMode:
         """
         if not self._validate_window_handle():
             return False
-            
+
         try:
             result = ctypes.windll.dwmapi.DwmSetWindowAttribute(
                 self.window_handle,
@@ -94,45 +96,45 @@ class pyWindowColorMode:
         """Enable or disable dark mode."""
         if not self._validate_window_handle():
             raise RuntimeError("Invalid or non-existent window handle")
-            
+
         if value:
             success1 = self._set_attribute(self.DWMWA_USE_IMMERSIVE_DARK_MODE, 1)
             success2 = self._set_attribute(self.DWMWA_SYSTEMBACKDROP_TYPE, self.DWMSBT_MAINWINDOW_DARK)
         else:
             success1 = self._set_attribute(self.DWMWA_USE_IMMERSIVE_DARK_MODE, 0)
             success2 = self._set_attribute(self.DWMWA_SYSTEMBACKDROP_TYPE, self.DWMSBT_MAINWINDOW_LIGHT)
-        
+
         # Only update internal state if both operations were successful
         if success1 and success2:
             self._dark_mode = value
 
     def toggle_theme(self) -> bool:
         """
-        Toggle between dark and light mode. 
+        Toggle between dark and light mode.
         Returns new state after toggle.
-        
+
         Raises:
             RuntimeError: If window handle is invalid
         """
         if not self._validate_window_handle():
             raise RuntimeError("Cannot toggle theme: Invalid or non-existent window handle")
-            
+
         self.dark_mode = not self.dark_mode
         return self._dark_mode
 
     def reset_to_system(self) -> bool:
         """
         Reset to system default (disables custom backdrop).
-        
+
         Returns:
             bool: True if operation was successful, False otherwise
-            
+
         Raises:
             RuntimeError: If window handle is invalid
         """
         if not self._validate_window_handle():
             raise RuntimeError("Cannot reset to system: Invalid or non-existent window handle")
-            
+
         success = self._set_attribute(self.DWMWA_SYSTEMBACKDROP_TYPE, self.DWMSBT_DISABLE)
         if success:
             self._dark_mode = False
@@ -141,7 +143,7 @@ class pyWindowColorMode:
     def set_window_handle(self, handle: int) -> None:
         """
         Set a new window handle.
-        
+
         Args:
             handle (int): New window handle to use
         """
@@ -153,16 +155,16 @@ class pyWindowColorMode:
     def find_window_by_title(title: str) -> Optional[int]:
         """
         Find a window by its title.
-        
+
         Args:
             title (str): Title of the window to find
-            
+
         Returns:
             Optional[int]: Window handle if found, None otherwise
         """
         if sys.platform != "win32":
             return None
-            
+
         def enum_windows_proc(hwnd, lParam):
             length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
             if length > 0:
@@ -177,10 +179,10 @@ class pyWindowColorMode:
         # Create a buffer to store the found handle
         handle_buffer = ctypes.c_int(0)
         enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
-        
+
         # Use a wrapper to capture the handle
         found_handle = [None]
-        
+
         def callback(hwnd, param):
             length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
             if length > 0:
@@ -190,7 +192,7 @@ class pyWindowColorMode:
                     found_handle[0] = hwnd
                     return False  # Stop enumeration
             return True  # Continue enumeration
-        
+
         # Use the simpler approach with ctypes
         try:
             # Define callback function
@@ -204,23 +206,23 @@ class pyWindowColorMode:
                         enum_callback.result = hwnd
                         return False  # Stop enumeration
                 return True  # Continue enumeration
-            
+
             # Add an attribute to store the result
             enum_callback.result = None
-            
+
             # Define the callback function type
             prototype = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
             paramflags = (1, "hwnd"), (1, "lparam")
             enum_func = prototype(("EnumWindows", ctypes.windll.user32), paramflags)
-            
+
             # Call EnumWindows
             ctypes.windll.user32.EnumWindows(
                 ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)(
                     lambda hwnd, param: enum_callback(hwnd, param)
-                ), 
-                0
+                ),
+                0,
             )
-            
+
             return enum_callback.result
         except Exception:
             return None
@@ -229,13 +231,13 @@ class pyWindowColorMode:
     def get_foreground_window() -> Optional[int]:
         """
         Get the handle of the currently active foreground window.
-        
+
         Returns:
             Optional[int]: Handle of the foreground window, None if failed
         """
         if sys.platform != "win32":
             return None
-            
+
         try:
             return ctypes.windll.user32.GetForegroundWindow()
         except Exception:
@@ -244,7 +246,7 @@ class pyWindowColorMode:
     def is_valid(self) -> bool:
         """
         Check if the current window handle is valid and the window exists.
-        
+
         Returns:
             bool: True if window handle is valid, False otherwise
         """
@@ -253,7 +255,7 @@ class pyWindowColorMode:
     def __bool__(self) -> bool:
         """
         Return True if the window handle is valid.
-        
+
         Returns:
             bool: True if window handle is valid, False otherwise
         """
@@ -262,7 +264,7 @@ class pyWindowColorMode:
     def __str__(self) -> str:
         """String representation of the object."""
         if sys.platform != "win32":
-            return f"pyWindowColorMode(disabled - non-Windows platform)"
-        
+            return "pyWindowColorMode(disabled - non-Windows platform)"
+
         validity = "valid" if self.is_valid() else "invalid"
         return f"pyWindowColorMode(window_handle={self.window_handle}, dark_mode={self.dark_mode}, status={validity})"

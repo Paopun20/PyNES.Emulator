@@ -1,10 +1,11 @@
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Final
-import sys
-from rich.logging import RichHandler
+
 from rich.console import Console
+from rich.logging import RichHandler
 
 console: Final[Console] = Console()
 

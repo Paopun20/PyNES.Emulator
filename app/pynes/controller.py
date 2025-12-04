@@ -4,7 +4,7 @@ from typing import Dict, Literal, Optional
 class Controller:
     """Represents an NES controller state and shift register."""
 
-    def __init__(self, buttons: Optional[Dict[str, Literal[True, False]]]=None) -> None:
+    def __init__(self, buttons: Optional[Dict[str, Literal[True, False]]] = None) -> None:
         if buttons is None:
             buttons = {}
         self.buttons: Dict[str, bool] = buttons  # Current button states

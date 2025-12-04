@@ -1,5 +1,7 @@
 import time
-from typing import Optional, Any
+from typing import Any, Optional
+
+
 class Timer:
     def __init__(self) -> None:
         self.start_time: Optional[float] = None

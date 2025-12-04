@@ -1,9 +1,10 @@
-import numpy as np
-from numpy.typing import NDArray
-from typing import Final, Optional, Tuple, Union, final
-from logger import log
 from pathlib import Path
-from returns.result import Result, Success, Failure
+from typing import Final, Optional, Tuple, Union, final
+
+import numpy as np
+from logger import log
+from numpy.typing import NDArray
+from returns.result import Failure, Result, Success
 from typing_extensions import deprecated
 
 

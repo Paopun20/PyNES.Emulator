@@ -345,7 +345,7 @@ class Emulator:
     def _ppu_open_bus_value(self) -> int:
         """Return current PPU open-bus value with decay before 1 second passes."""
         # If more than ~0.9s has passed without activity, decay to 0
-        if self.ppu_bus_latch_time.get_elapsed_time()/1000 > 0.9:
+        if self.ppu_bus_latch_time.get_elapsed_time() / 1000 > 0.9:
             self.ppu_bus_latch = 0
             self.ppu_bus_latch_time.reset()
         return self.ppu_bus_latch
@@ -978,7 +978,7 @@ class Emulator:
         :type cartridge: Cartridge
         """
         if not isinstance(cartridge, Cartridge):
-            raise EmulatorError(ValueError("Invalid cartridge object provided.")) # it is not a valid cartridge object
+            raise EmulatorError(ValueError("Invalid cartridge object provided."))  # it is not a valid cartridge object
 
         self.cartridge = cartridge
         self.PRGROM = self.cartridge.PRGROM
@@ -2298,7 +2298,7 @@ class Emulator:
         if not self.PPUMASK & 0x08:  # Background disabled
             return
 
-        scroll_x, scroll_y, *_ = self.PPUSCROLL # *_ make sure to ignore the rest of the tuple
+        scroll_x, scroll_y, *_ = self.PPUSCROLL  # *_ make sure to ignore the rest of the tuple
         base_nametable = self.PPUCTRL & 0x03
         backdrop_color = int(self.PaletteRAM[0])
         clip_left = (self.PPUMASK & 0x02) == 0
@@ -2487,7 +2487,7 @@ class Emulator:
             # Check if current scanline intersects with sprite
             if sprite_scanline_start <= self.Scanline < sprite_scanline_end and y < 240:
                 n_found += 1
-                
+
                 # Only store first 8 sprites
                 if len(sprites) < 8:
                     sprites.append(
@@ -2499,7 +2499,7 @@ class Emulator:
                             attr=self.OAM[oam_addr + 2],
                         )
                     )
-                
+
         # Set sprite overflow flag if more than 8 sprites on this line
         if n_found > 8:
             self.PPUSTATUS |= 0x20
