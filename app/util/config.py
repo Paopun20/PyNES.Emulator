@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 from copy import deepcopy
-from typing import TypedDict
+from typing import Any, Mapping, MutableMapping, TypedDict
 
 import tomllib
+from logger import log as _log
 from resources import config_file
-
-# from logger import log as _log
 
 
 class KeyboardConfig(TypedDict):
@@ -35,11 +36,7 @@ class Config(TypedDict):
 
 
 DEFAULT_CONFIG: Config = {
-    "general": {
-        "fps": 60,
-        "scale": 3,
-        "vsync": True,
-    },
+    "general": {"fps": 60, "scale": 3, "vsync": True},
     "discord": {"enable": True},
     "keyboard": {
         "A": "Z",
@@ -54,50 +51,50 @@ DEFAULT_CONFIG: Config = {
 }
 
 
-def _deep_update(original: dict, new_data: dict, path: str = "") -> dict:
-    for key, value in new_data.items():
-        current_path = f"{path}.{key}" if path else key
-        if key in original and isinstance(original[key], dict) and isinstance(value, dict):
-            # _log.debug(f"Merging dict at {current_path}")
-            _deep_update(original[key], value, current_path)
+def _deep_merge(
+    target: MutableMapping[str, Any],
+    overrides: Mapping[str, Any],
+) -> MutableMapping[str, Any]:
+    for key, value in overrides.items():
+        if isinstance(target.get(key), dict) and isinstance(value, dict):
+            _deep_merge(target[key], value)
         else:
-            original[key] = value
-            # _log.info(f"Set {current_path} = {value!r}")
-    return original
+            target[key] = value
+    return target
+
+
+def _validate_config(cfg: Config) -> None:
+    """Light validation — ไม่ต้องจริงจังแต่กันพลาดได้ดีขึ้น"""
+    if not isinstance(cfg["general"]["fps"], int) or cfg["general"]["fps"] <= 0:
+        raise ValueError("general.fps must be a positive integer")
+
+    if not isinstance(cfg["general"]["scale"], int) or cfg["general"]["scale"] <= 0:
+        raise ValueError("general.scale must be a positive integer")
+
+    if not isinstance(cfg["general"]["vsync"], bool):
+        raise ValueError("general.vsync must be a boolean")
+
+    if not isinstance(cfg["discord"]["enable"], bool):
+        raise ValueError("discord.enable must be a boolean")
 
 
 def load_config() -> Config:
-    # _log.info(f"Default config: {DEFAULT_CONFIG}")
-
-    _config = deepcopy(DEFAULT_CONFIG)
-    # _log.info(f"Working copy after deepcopy: {_config}")
-
+    if not config_file.exists():
+        return DEFAULT_CONFIG
+    
+    config = deepcopy(DEFAULT_CONFIG)
+    
     try:
-        # _log.info(f"Checking if config file exists: {config_file} -> {config_file.exists()}")
-        if config_file.exists():
-            # _log.info(f"Config file found. Attempting to read: {config_file}")
-            try:
-                with open(config_file, "rb") as f:
-                    raw_content = f.read()
-                    # _log.debug(f"Raw file content (first 200 chars):\n{raw_content[:200]!r}")
-                    f.seek(0)  # rewind for tomllib
-                    data = tomllib.load(f)
-                # _log.info(f"Parsed TOML data: {data}")
+        with open(config_file, "rb") as f:
+            data = tomllib.load(f)
 
-                # _log.info("Starting deep update")
-                _deep_update(_config, data, path="root")
-                # _log.info("Deep update finished")
+        if not isinstance(data, dict):
+            raise ValueError("Config file root must be a table (dict).")
 
-            except Exception:
-                # _log.exception(f"Exception during TOML parsing or update: {e}")
-                raise
-        else:
-            pass
-            # _log.warning("Config file NOT FOUND. Using defaults only.")
+        _deep_merge(config, data)
+        _validate_config(config)
 
-    except Exception:
-        pass
-        # _log.exception(f"Unexpected error in load_config: {e}")
+    except Exception as e:
+        _log.error(f"Failed to load config: {e}", exc_info=(type(e), e, e.__traceback__))
 
-    # _log.info(f"Final loaded config: {_config}")
-    return _config
+    return config

@@ -1,3 +1,7 @@
 [ ] fix emulator.py
 - [ ] fix negative 8-bit unsigned bug
-- [ ] apu
+- [ ] make apu work with no sound
+- [ ] fix memory mapping
+- [ ] fix sprite rendering
+
+[ ] optimize performance

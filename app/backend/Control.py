@@ -55,22 +55,35 @@ class Control(object):
         self.init_all_joysticks()
 
     def _build_key_mapping(self) -> dict[int, str]:
-        """Map pygame key constants from config"""
         mapping = {}
         cfg_map = cfg["keyboard"]
-        for nes_key in ["A", "B", "START", "SELECT", "ARROW_UP", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT"]:
+    
+        NORMALIZE = {
+            "A": "A",
+            "B": "B",
+            "START": "Start",
+            "SELECT": "Select",
+            "ARROW_UP": "Up",
+            "ARROW_DOWN": "Down",
+            "ARROW_LEFT": "Left",
+            "ARROW_RIGHT": "Right",
+        }
+    
+        for nes_key in NORMALIZE:
             py_key_name = cfg_map.get(nes_key, nes_key).lower()
             try:
-                if py_key_name.lower() == "enter":
+                if py_key_name == "enter":
                     py_key_name = "RETURN"
+    
                 py_key_name = py_key_name.lower() if len(py_key_name) == 1 else py_key_name.upper()
                 py_key = getattr(pygame, f"K_{py_key_name}")
             except AttributeError:
                 _log.warning(f"Invalid key '{py_key_name}' in config for {nes_key}")
                 continue
-            # map NES key names to internal state keys (normalize)
-            state_key = nes_key.capitalize() if nes_key not in ["A", "B"] else nes_key
+    
+            state_key = NORMALIZE[nes_key]
             mapping[py_key] = state_key
+    
         return mapping
 
     def init_all_joysticks(self) -> None:

@@ -35,7 +35,7 @@ from pygame.locals import DOUBLEBUF, GL_SWAP_CONTROL, HWPALETTE, HWSURFACE, OPEN
 from pynes.cartridge import Cartridge
 from pynes.emulator import Emulator, EmulatorError, OpCodes
 from pypresence.types import ActivityType, StatusDisplayType
-from resources import font_path, icon_path, shader_path, roms_path
+from resources import font_path, icon_path, roms_path, shader_path
 from returns.result import Failure, Result, Success
 from rich.traceback import install
 from util.clip import Clip as PyClip
@@ -46,6 +46,7 @@ from util.timer import Timer
 IS_WINDOWS: bool = platform.system() == "Windows"
 IS_LINUX: bool = platform.system() == "Linux"
 IS_MAC: bool = platform.system() == "Darwin"
+_mnemonic = OpCodes.GetAllMnemonics(True)
 
 running: bool = True
 _thread_list: deque[threading.Thread] = deque()
@@ -237,9 +238,9 @@ def main() -> None:
         def __exit__(self, *args) -> None:
             pass
 
-        def add_thread(self, target: Callable[..., Any], name: str) -> None:
+        def add_thread(self, target: Callable[..., Any], name: str, args: tuple = None) -> None:
             global _thread_list
-            _thread_list.append(threading.Thread(target=target, name=name, daemon=True))
+            _thread_list.append(threading.Thread(target=target, name=name, daemon=True, args=args or ()))
 
     run_event: threading.Event = threading.Event()
     run_event.set()
@@ -253,11 +254,9 @@ def main() -> None:
         icon_surface: Optional[pygame.Surface] = pygame.image.load(icon_path)
     except Exception as e:
         icon_surface = None
-        _log.error(f"Failed to load icon: {icon_path} ({e})")
+        _log.error("Failed to load icon", exc_info=(type(e), e, e.__traceback__))
 
-    screen: pygame.Surface = pygame.display.set_mode(
-        (NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE
-    )
+    _ = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE)
 
     try:
         pygame.display.gl_set_attribute(GL_SWAP_CONTROL, int(cfg["general"]["vsync"]))
@@ -430,22 +429,24 @@ def main() -> None:
             if event.type == pygame.QUIT:
                 running = False
                 return
-        
-        file_path: Path = Path(filedialog.askopenfilename(
-            title="Select a NES file to load",
-            defaultextension=".nes",
-            filetypes=[("NES file", "*.nes")],
-            initialdir=roms_path,
-            parent=root
-        ))
-        
+
+        file_path: Path = Path(
+            filedialog.askopenfilename(
+                title="Select a NES file to load",
+                defaultextension=".nes",
+                filetypes=[("NES file", "*.nes")],
+                initialdir=roms_path,
+                parent=root,
+            )
+        )
+
         if not file_path.exists() or not file_path.is_file():
             messagebox.showerror("Error", "No NES file selected")
             continue
         elif file_path.suffix != ".nes":
             messagebox.showerror("Error", "Invalid file type, please select a NES file")
             continue
-        
+
         valid, msg = Cartridge.is_valid_file(file_path)
         if valid:
             nes_path = file_path
@@ -477,7 +478,6 @@ def main() -> None:
 
     paused = False
     show_debug = False
-    frame_count = 0
     frame_lock = threading.Lock()
     latest_frame: Optional[NDArray[np.uint8]] = None
     frame_ready = False
@@ -528,7 +528,7 @@ def main() -> None:
             while len(result) < lines and addr <= 0xFFFF:
                 try:
                     opcode = self.emu.cartridge.get_byte(addr)
-                    mnemonic = OpCodes.GetAllMnemonics(True)[opcode]
+                    mnemonic = _mnemonic[opcode]
                     bytes_str = f"{opcode:02X}"
                     operand_str = ""
                     if mnemonic in ["JMP", "JSR"] and opcode in [0x4C, 0x20]:
@@ -619,8 +619,10 @@ def main() -> None:
                     f"{'C' if nes_emu.Architecture.flags.Carry else '-'}"
                     f"{'U' if nes_emu.Architecture.flags.Unused else '-'}",
                 ]
+                debug_info.append("Latest Log:")
                 if nes_emu.tracelog:
-                    debug_info.append(f"Latest Log: {nes_emu.tracelog[-1]}")
+                    for log_entry in list(nes_emu.tracelog)[-10:]:
+                        debug_info.append(log_entry)
                 else:
                     debug_info.append("No trace log entries")
             case 1:
@@ -647,7 +649,7 @@ def main() -> None:
                     f"Python {platform.python_version()}",
                     f"Platform: {platform.system()} {platform.release()} ({platform.machine()})",
                     f"PyGame CE {pygame.__version__}",
-                    f"ModernGL {moderngl.__version__}",
+                    f"ModernGL {moderngl.__version__}",  # type: ignore
                     f"CTk {ctk.__version__}, Numpy {np.__version__}",
                     "",
                     f"GIL Status: {GIL_status}",
@@ -659,7 +661,7 @@ def main() -> None:
                     for tstat in tstats:
                         debug_info.append(f"Thread {tstat.name} (ID: {tstat.tid}): Total Time={tstat.ttot:.4f}s")
                     debug_info.append("")
-                    for i, fs in enumerate(func_stats.sort(sort_type="ttot", sort_order="desc")[:10], 1): # type: ignore
+                    for i, fs in enumerate(func_stats.sort(sort_type="ttot", sort_order="desc")[:10], 1):  # type: ignore
                         debug_info.append(f"  {i}. {fs.full_name}: {fs.ttot:.4f}s ({fs.tsub:.4f}s own)")
                 else:
                     debug_info.append("Yappi Profiler: OFF (Press F9 to enable)")
@@ -683,21 +685,22 @@ def main() -> None:
                 debug_mode_index %= 6
                 draw_debug_overlay()
                 return
-        debug_overlay.update(debug_info) # type: ignore
-        debug_overlay.draw(offset=(0, 0)) # type: ignore
+        debug_overlay.update(debug_info)  # type: ignore
+        debug_overlay.draw(offset=(0, 0))  # type: ignore
 
     def render_frame(frame: NDArray[np.uint8]) -> None:
         try:
             frame_rgb = np.ascontiguousarray(frame, dtype=np.uint8)
             ctx.clear()
-            sprite.update_frame(frame_rgb) # type: ignore
-            sprite.draw() # type: ignore
+            sprite.update_frame(frame_rgb)  # type: ignore
+            sprite.draw()  # type: ignore
             draw_debug_overlay()
             pygame.display.flip()
         except ValueError as e:
-            _log.error(f"Error rendering frame: {e}")
+            _log.error("Error rendering frame", exc_info=(type(e), e, e.__traceback__))
 
-    def subpro() -> None:
+    def subpro(_log) -> None:
+        global running
         while running:
             if not run_event.is_set():
                 run_event.wait(5)
@@ -706,16 +709,20 @@ def main() -> None:
                 break
             try:
                 nes_emu.step_Cycle()
-            except (EmulatorError, ExitException) as e:
+            except (EmulatorError) as e:
+                _log.error("Emulator Error", exc_info=(type(e), e, e.__traceback__))
                 if debug_mode:
                     raise
-                _log.error(f"{type(e).__name__}: {e}")
+                else:
+                    break
+            except ExitException as e:
+                _log.error("Exit Exception", exc_info=(type(e), e, e.__traceback__))
                 break
 
     with CoreThread() as core_thread:
-        core_thread.add_thread(target=subpro, name="Emulator Cycle Thread")
+        core_thread.add_thread(target=subpro, name="Emulator Cycle Thread", args=(_log,))
 
-    def tracelogger() -> None:
+    def tracelogger(_log) -> None:
         @nes_emu.on("tracelogger")
         def _(nes_line: str) -> None:
             _log.debug(nes_line)
@@ -723,17 +730,17 @@ def main() -> None:
 
     if debug_mode and "--emu_debug" in sys.argv:
         with CoreThread() as core_thread:
-            core_thread.add_thread(target=tracelogger, name="TraceLogger Thread")
+            core_thread.add_thread(target=tracelogger, name="TraceLogger Thread", args=(_log,))
 
     @nes_emu.on("frame_complete")
-    def vm_frame(frame: NDArray[np.uint8]) -> None:
+    def _(frame: NDArray[np.uint8]) -> None:
         nonlocal latest_frame, frame_ready
         with frame_lock:
             latest_frame = frame.copy() if hasattr(frame, "copy") else np.array(frame)
             frame_ready = True
 
     @nes_emu.on("before_cycle")
-    def cycle(_: Any) -> None:
+    def _(_: Any) -> None:
         nes_emu.Input(1, user_input.state)
 
     ctx.clear()
@@ -832,7 +839,7 @@ def main() -> None:
 
         def apply_shader(selected_shader: Shader) -> None:
             try:
-                if sprite.set_fragment_shader(selected_shader):
+                if sprite.set_fragment_shader(selected_shader):  # type: ignore
                     _log.info(f"Applied shader: {selected_shader.name}")
                     refresh_buttons()
             except Exception as e:
@@ -841,7 +848,7 @@ def main() -> None:
 
         def reset_shader() -> None:
             try:
-                sprite.reset_fragment_shader()
+                sprite.reset_fragment_shader()  # type: ignore
                 _log.info("Reset to default shader")
                 refresh_buttons()
             except Exception as e:
@@ -868,7 +875,7 @@ def main() -> None:
             win.transient(mod_window)
             set_scroll_frame = ctk.CTkScrollableFrame(win, fg_color="transparent")
             set_scroll_frame.pack(pady=10, padx=20, fill="both", expand=True)
-            for uniform in sprite._shclass.uniforms:
+            for uniform in sprite._shclass.uniforms:  # type: ignore
                 if uniform.name in ("u_time", "u_tex", "u_resolution", "u_scale"):
                     continue
                 card = ctk.CTkFrame(set_scroll_frame, corner_radius=10)
@@ -880,7 +887,7 @@ def main() -> None:
                     val = float(uniform.default_value) if uniform.default_value else 0.0
                     val_label = ctk.CTkLabel(card, text=f"{val:.3f}", font=ctk.CTkFont(size=12), text_color="gray70")
                     val_label.pack(pady=(0, 5), padx=15, anchor="w")
-                    slider = ctk.CTkSlider(card, from_=0.0, to=10.0, number_of_steps=200)
+                    slider = ctk.CTkSlider(card, from_=0.0, to=10.0, number_of_steps=200)  # type: ignore
                     slider.set(val)
                     slider.pack(pady=(0, 15), padx=15, fill="x")
 
@@ -908,7 +915,7 @@ def main() -> None:
         def refresh_buttons() -> None:
             for _, shader_obj, apply_btn in shader_buttons:
                 apply_btn.configure(
-                    state="disabled" if sprite._shclass and sprite._shclass.name == shader_obj.name else "normal"
+                    state="disabled" if sprite._shclass and sprite._shclass.name == shader_obj.name else "normal"  # type: ignore
                 )
 
         for _, shader_obj in shader_list:
@@ -1008,7 +1015,6 @@ def main() -> None:
                         _log.info("Yappi profiler stopped")
                 elif event.key == pygame.K_r:
                     nes_emu.Reset()
-                    frame_count = 0
                     emu_timer.reset()
                     _log.info("Emulator reset")
                 elif event.key == pygame.K_m:
@@ -1017,7 +1023,7 @@ def main() -> None:
                     try:
                         mod_picker()
                     except Exception as e:
-                        _log.error(f"mod_picker: {e}")
+                        _log.error("mod_picker", exc_info=(type(e), e, e.__traceback__))
                     emu_timer.resume()
                     run_event.set()
                 elif event.key == pygame.K_F12:
@@ -1069,23 +1075,15 @@ def main() -> None:
         clock.tick(maxfps)
 
 
-def error_handler(exc_type, exc_value, exc_traceback):
-    if exc_type is KeyboardInterrupt:
-        _log.info("Interrupted by user (Ctrl+C)")
-    else:
-        _log.error("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
-    sys.__excepthook__(exc_type, exc_value, exc_traceback)
-
-
 # ENTRY POINT
 if __name__ == "__main__":
-    sys.excepthook = error_handler
     try:
         main()
     except KeyboardInterrupt:
         _log.info("Interrupted by user (Ctrl+C)")
     except Exception as e:
         _log.error("Unhandled exception", exc_info=(type(e), e, e.__traceback__))
+
     finally:
         platform_safe_cleanup()
         shutdown_threads()

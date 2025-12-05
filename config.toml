@@ -1,7 +1,7 @@
 [general]
 fps = 60
 scale = 3
-vsync = false
+vsync = true
 
 [discord]
 enable = true

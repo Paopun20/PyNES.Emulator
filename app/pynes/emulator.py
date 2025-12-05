@@ -105,9 +105,9 @@ class CurrentInstructionMode(Enum):
 
 @dataclass
 class Architecture:
-    A: int = 0
-    X: int = 0
-    Y: int = 0
+    A: CByte = CByte[8, CSign.UNSIGNED](0)
+    X: CByte = CByte[8, CSign.UNSIGNED](0)
+    Y: CByte = CByte[8, CSign.UNSIGNED](0)
     Cycles: int = 0
     Halted: bool = False
     StackPointer: CByte = CByte[8, CSign.UNSIGNED](0)
@@ -233,20 +233,10 @@ class Emulator:
 
         self.tracelog.append(line)
 
-    def on(self, event_name: str) -> Callable:
-        """Instance-level decorator for events."""
-
-        def decorator(warp: Callable) -> Callable:
-            if warp is None:
-                raise EmulatorError(ValueError("Callback cannot be None"))
-            if callable(warp):
-                if event_name not in self._events:
-                    self._events[event_name] = deque()
-                self._events[event_name].append(warp)
-                return warp
-            else:
-                raise EmulatorError(ValueError("Callback must be Callable"))
-
+    def on(self, event_name: str):
+        def decorator(func: Callable):
+            self._events.setdefault(event_name, deque()).append(func)
+            return func
         return decorator
 
     def _emit(self, event_name: str, *args: Any, **kwargs: Any) -> None:
@@ -472,7 +462,7 @@ class Emulator:
         # collect entries ready to apply (remaining <= 0)
         ready = [e for e in self._ppu_pending_writes if e.remaining_ppu_cycles <= 0]
         # keep rest
-        self._ppu_pending_writes = [e for e in self._ppu_pending_writes if e.remaining_ppu_cycles > 0]
+        self._ppu_pending_writes = deque([PPUPendingWrites(reg=entry.reg, value=entry.value, remaining_ppu_cycles=entry.remaining_ppu_cycles) for entry in self._ppu_pending_writes if entry.remaining_ppu_cycles > 0])
 
         # apply ready writes in order they were queued (FIFO)
         for entry in ready:
