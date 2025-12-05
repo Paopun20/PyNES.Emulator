@@ -1,5 +1,7 @@
 # PyNES Core
 
-This folder holds the core pieces of the PyNES emulator. Think of it as the bare-bones engine — no windowing, no graphics output, just the essentials.
+This folder contains the essential components of the PyNES emulator. Think of it as the fundamental engine—it has no windowing, graphics output, or sound, just the basics you need.
 
-Use it as a foundation for building your own emulator, digging into how one works, improving accuracy and performance, or bolting on new features and broader game support.
+You can use it as a foundation for building your own emulator, exploring how one functions, enhancing accuracy and performance, or adding new features and broader game support.
+
+And don’t forget to copy the utils folder!

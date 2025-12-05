@@ -1,16 +1,16 @@
 import array
-
-# debugger
+import math
 import time  # for fps
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from string import Template
+
+# debugger
 from typing import Any, Callable, Dict, Final, List, Optional, Type, final
 
 import numpy as np
 from logger import log as _logger
-from pynes.apu import APU
 from pynes.cartridge import Cartridge
 from pynes.classes.NESPalette import ntsc as ntsc_pel
 from pynes.classes.NESPalette import pal as pal_pel
@@ -53,7 +53,7 @@ class Flags:
 
 @dataclass
 class Debug:
-    Debug: bool = False
+    Logging: bool = False
     halt_on_unknown_opcode: bool = False
 
 
@@ -103,21 +103,22 @@ class CurrentInstructionMode(Enum):
     Relative = 9
     IndexedIndirect = 10
 
-
 @dataclass
 class Architecture:
     A: int = 0
     X: int = 0
     Y: int = 0
+    Cycles: int = 0
     Halted: bool = False
     StackPointer: CByte = CByte[8, CSign.UNSIGNED](0)
     ProgramCounter: CByte = CByte[16, CSign.UNSIGNED](0)
-    OpCode: CByte = CByte[8, CSign.UNSIGNED](0)
+    OpCode: int = 0
     Bus: int = 0
     current_instruction_mode: CurrentInstructionMode = CurrentInstructionMode.Undefined
     page_boundary_crossed: bool = False
     page_boundary_crossed_just_happened: bool = False
     Bus_latch_timer: Timer = Timer()
+    flags: Flags = field(default_factory=Flags)
 
 
 @dataclass
@@ -136,27 +137,33 @@ class PPUPendingWrites:
     remaining_ppu_cycles: int
 
 
+CHROMA_SATURATION_CORRECTION: Final[float] = 2.4
+HUE: Final[float] = 0
+SinTable: Final[List[float]] = [
+    math.sin(math.pi * (i + 2.5 + HUE) / 6) * CHROMA_SATURATION_CORRECTION for i in range(12)
+]
+CosTable: Final[List[float]] = [
+    math.cos(math.pi * (i + 2.5 + HUE) / 6) * CHROMA_SATURATION_CORRECTION for i in range(12)
+]
+
+
 class Emulator:
     """
     Main NES Emulator class
     """
-
     def __init__(self) -> None:
         # CPU initialization
         self.cartridge: Cartridge = Cartridge.EmptyCartridge()
         self.mapper: Optional[Mapper] = None
         self._events: Dict[str, deque[Callable[..., Any]]] = {}
-        self.apu: APU = APU(sample_rate=44100, buffer_size=1024)
-        self.RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
-        self.PRGROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
-        self.CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
-        self.logging: bool = True
+        self._RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
+        self._PRGROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
+        self._CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
         self.tracelog: deque[str] = deque(maxlen=2024)
         self.controllers: Final[Dict[int, Controller]] = {
             1: Controller(buttons={}),  # Controller 1
             2: Controller(buttons={}),  # Controller 2
         }
-        self.cycles: int = 0
         self.operationCycle: int = 0
         self.instruction_state: Dict[str, Any] = {}
         self.operationComplete: bool = False
@@ -165,8 +172,7 @@ class Emulator:
         self._base_addr: int = 0
         self._bg_opaque_line: deque[bool] = deque()
         self.ppu_bus_latch: int = 0
-
-        self.flag: Flags = Flags()
+        self.NTSC_Samples: List[float] = [0.0] * (257 * 8 + 16)
         self.debug: Debug = Debug()
         self.addressBus: int = 0
         self.dataBus: int = 0
@@ -217,12 +223,12 @@ class Emulator:
             X=f"{self.Architecture.X:02X}",
             Y=f"{self.Architecture.Y:02X}",
             SP=f"{self.Architecture.StackPointer:02X}",
-            N="1" if self.flag.Negative else "0",
-            V="1" if self.flag.Overflow else "0",
-            D="1" if self.flag.Decimal else "0",
-            I="1" if self.flag.InterruptDisable else "0",
-            Z="1" if self.flag.Zero else "0",
-            C="1" if self.flag.Carry else "0",
+            N="N" if self.Architecture.flags.Negative else "-",
+            V="V" if self.Architecture.flags.Overflow else "-",
+            D="D" if self.Architecture.flags.Decimal else "-",
+            I="I" if self.Architecture.flags.InterruptDisable else "-",
+            Z="Z" if self.Architecture.flags.Zero else "-",
+            C="C" if self.Architecture.flags.Carry else "-",
         )
 
         self.tracelog.append(line)
@@ -264,7 +270,7 @@ class Emulator:
 
         # RAM ($0000-$1FFF)
         if addr < 0x2000:
-            val = int(self.RAM[addr & 0x07FF])
+            val = int(self._RAM[addr & 0x07FF])
 
         # PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
@@ -277,7 +283,8 @@ class Emulator:
             elif addr == 0x4017:  # Controller 2
                 val = (self.controllers[2].read() & 1) | (self.dataBus & 0xE0)
             else:  # APU registers ($4000-$4015)
-                val = self.apu.read_register(addr & 0xFF)
+                val = 0
+                pass
 
         # Unmapped memory ($4018-$FFFF)
         elif addr < 0x8000:
@@ -292,7 +299,7 @@ class Emulator:
             if self.mapper:
                 val = self.mapper.cpu_read(addr)
             else:
-                val = int(self.PRGROM[addr - 0x8000])
+                val = int(self._PRGROM[addr - 0x8000])
 
         if hasattr(self.mapper, "tick_a12") and addr < 0x2000:
             # A12 = bit 12 of PPU address
@@ -310,7 +317,7 @@ class Emulator:
 
         # RAM ($0000-$1FFF) with mirroring
         if addr < 0x2000:
-            self.RAM[addr & 0x07FF] = val
+            self._RAM[addr & 0x07FF] = val
 
         # PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
@@ -332,7 +339,7 @@ class Emulator:
                 self.controllers[1].write(val)
                 self.controllers[2].write(val)
             else:  # APU registers ($4000-$4015)
-                self.apu.write_register(addr & 0xFF, val)
+                pass
 
         # OAM DMA ($4014)
         if addr == 0x4014:
@@ -429,14 +436,14 @@ class Emulator:
                     # Buffer should be loaded with underlying nametable data
                     nt_addr = ppu_addr & 0x2FFF
                     if nt_addr < 0x2000:
-                        self.PPUDataBuffer = int(self.CHRROM[nt_addr])
+                        self.PPUDataBuffer = int(self._CHRROM[nt_addr])
                     else:
                         self.PPUDataBuffer = int(self.VRAM[nt_addr & 0x0FFF])
                 else:
                     # Return buffered value, then load buffer from current address
                     result = self.PPUDataBuffer
                     if ppu_addr < 0x2000:
-                        self.PPUDataBuffer = int(self.CHRROM[ppu_addr])
+                        self.PPUDataBuffer = int(self._CHRROM[ppu_addr])
                     else:
                         self.PPUDataBuffer = int(self.VRAM[ppu_addr & 0x0FFF])
 
@@ -559,7 +566,7 @@ class Emulator:
             ppu_addr = self.v & 0x3FFF
 
             if ppu_addr < 0x2000:
-                self.CHRROM[ppu_addr] = val
+                self._CHRROM[ppu_addr] = val
             elif ppu_addr < 0x3F00:
                 self.VRAM[ppu_addr & 0x0FFF] = val
             else:
@@ -703,33 +710,33 @@ class Emulator:
     def _get_processor_status(self) -> int:
         """Get processor status byte."""
         status = 0
-        status |= 0x01 if self.flag.Carry else 0
-        status |= 0x02 if self.flag.Zero else 0
-        status |= 0x04 if self.flag.InterruptDisable else 0
-        status |= 0x08 if self.flag.Decimal else 0
-        status |= 0x10 if self.flag.Break else 0  # Break flag reflects flag.Break when pushing
+        status |= 0x01 if self.Architecture.flags.Carry else 0
+        status |= 0x02 if self.Architecture.flags.Zero else 0
+        status |= 0x04 if self.Architecture.flags.InterruptDisable else 0
+        status |= 0x08 if self.Architecture.flags.Decimal else 0
+        status |= 0x10 if self.Architecture.flags.Break else 0  # Break flag reflects flag.Break when pushing
         status |= 0x20  # Unused (always 1)
-        status |= 0x40 if self.flag.Overflow else 0
-        status |= 0x80 if self.flag.Negative else 0
+        status |= 0x40 if self.Architecture.flags.Overflow else 0
+        status |= 0x80 if self.Architecture.flags.Negative else 0
         return status
 
     def _set_processor_status(self, status: int) -> None:
         """Set processor status from byte."""
-        self.flag.Carry = bool(status & 0x01)
-        self.flag.Zero = bool(status & 0x02)
-        self.flag.InterruptDisable = bool(status & 0x04)
-        self.flag.Decimal = bool(status & 0x08)
+        self.Architecture.flags.Carry = bool(status & 0x01)
+        self.Architecture.flags.Zero = bool(status & 0x02)
+        self.Architecture.flags.InterruptDisable = bool(status & 0x04)
+        self.Architecture.flags.Decimal = bool(status & 0x08)
         # Break flag is loaded from the status byte on PLP/RTI
-        self.flag.Break = bool(status & 0x10)
+        self.Architecture.flags.Break = bool(status & 0x10)
         # Unused bit is ignored in flags but should be considered set
-        self.flag.Unused = True
-        self.flag.Overflow = bool(status & 0x40)
-        self.flag.Negative = bool(status & 0x80)
+        self.Architecture.flags.Unused = True
+        self.Architecture.flags.Overflow = bool(status & 0x40)
+        self.Architecture.flags.Negative = bool(status & 0x80)
 
     def _do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self, value: int) -> None:
         """Update Zero and Negative flags based on value."""
-        self.flag.Zero = bool(value == 0x00)
-        self.flag.Negative = bool(value >= 0x80)
+        self.Architecture.flags.Zero = bool(value == 0x00)
+        self.Architecture.flags.Negative = bool(value >= 0x80)
 
     # OPERATIONS
 
@@ -737,20 +744,20 @@ class Emulator:
         """Arithmetic Shift Left."""
         _ = self._read(Address)  # Dummy read
         self._write(Address, Input)  # Dummy write of original value
-        self.flag.Carry = Input >= 0x80
+        self.Architecture.flags.Carry = Input >= 0x80
         result = (Input << 1) & 0xFF
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(result)
         self._write(Address, result)  # Final write
 
     def _do_op_ASL_A(self) -> None:
         """Arithmetic Shift Left A."""
-        self.flag.Carry = self.Architecture.A >= 0x80
+        self.Architecture.flags.Carry = self.Architecture.A >= 0x80
         self.Architecture.A = self.Architecture.A << 1
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
 
     def _do_op_SLO(self, Input: int) -> None:
         """Shift Left and OR."""
-        self.flag.Carry = Input >= 0x80
+        self.Architecture.flags.Carry = Input >= 0x80
         self.Architecture.A <<= 1
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
 
@@ -761,7 +768,7 @@ class Emulator:
         # Then do a dummy write of the original value
         self._write(Address, Input)
         # Calculate result
-        self.flag.Carry = (Input & 0x01) != 0
+        self.Architecture.flags.Carry = (Input & 0x01) != 0
         result = (Input >> 1) & 0xFF
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(result)
         # Finally write the actual new value
@@ -774,8 +781,8 @@ class Emulator:
         # Then do a dummy write of the original value
         self._write(Address, Input)
         # Calculate result
-        carry_in = 1 if self.flag.Carry else 0
-        self.flag.Carry = (Input & 0x80) != 0
+        carry_in = 1 if self.Architecture.flags.Carry else 0
+        self.Architecture.flags.Carry = (Input & 0x80) != 0
         result = ((Input << 1) | carry_in) & 0xFF
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(result)
         # Finally write the actual new value
@@ -788,8 +795,8 @@ class Emulator:
         # Then do a dummy write of the original value
         self._write(Address, Input)
         # Calculate result
-        carry_in = 0x80 if self.flag.Carry else 0
-        self.flag.Carry = (Input & 0x01) != 0
+        carry_in = 0x80 if self.Architecture.flags.Carry else 0
+        self.Architecture.flags.Carry = (Input & 0x01) != 0
         result = ((Input >> 1) | carry_in) & 0xFF
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(result)
         # Finally write the actual new value
@@ -836,11 +843,11 @@ class Emulator:
 
     def _do_op_ADC(self, Input: int) -> None:
         """Add with carry. On NES, decimal mode is ignored."""
-        carry = 1 if self.flag.Carry else 0
+        carry = 1 if self.Architecture.flags.Carry else 0
         result = self.Architecture.A + Input + carry
         # Overflow if sign of result differs from both operands
-        self.flag.Overflow = (~(self.Architecture.A ^ Input) & (self.Architecture.A ^ result) & 0x80) != 0
-        self.flag.Carry = result > 0xFF
+        self.Architecture.flags.Overflow = (~(self.Architecture.A ^ Input) & (self.Architecture.A ^ result) & 0x80) != 0
+        self.Architecture.flags.Carry = result > 0xFF
         self.Architecture.A = result & 0xFF
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
 
@@ -852,33 +859,33 @@ class Emulator:
     def _do_op_CMP(self, Input: int) -> None:
         """Compare accumulator."""
         result = (self.Architecture.A - Input) & 0xFF
-        self.flag.Carry = self.Architecture.A >= Input
+        self.Architecture.flags.Carry = self.Architecture.A >= Input
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(result)
 
     def _do_op_CPX(self, Input: int) -> None:
         """Compare X register."""
         result = (self.Architecture.X - Input) & 0xFF
-        self.flag.Carry = self.Architecture.X >= Input
+        self.Architecture.flags.Carry = self.Architecture.X >= Input
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(result)
 
     def _do_op_CPY(self, Input: int) -> None:
         """Compare Y register."""
         result = (self.Architecture.Y - Input) & 0xFF
-        self.flag.Carry = self.Architecture.Y >= Input
+        self.Architecture.flags.Carry = self.Architecture.Y >= Input
         self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(result)
 
     def _do_op_BIT(self, Input: int) -> None:
         """Bit test."""
-        self.flag.Zero = (self.Architecture.A & Input) == 0
-        self.flag.Negative = (Input & 0x80) != 0
-        self.flag.Overflow = (Input & 0x40) != 0
+        self.Architecture.flags.Zero = (self.Architecture.A & Input) == 0
+        self.Architecture.flags.Negative = (Input & 0x80) != 0
+        self.Architecture.flags.Overflow = (Input & 0x40) != 0
 
     def _do_poll_interrupts(self) -> None:
         self.NMI.PreviousPinsSignal = self.NMI.PinsSignal
         self.NMI.PinsSignal = self.NMI.Line
         if self.NMI.PinsSignal and not self.NMI.PreviousPinsSignal:
             self.DoTask.NMI = True
-        self.DoTask.IRQ = self.IRQ.Line and not self.flag.InterruptDisable
+        self.DoTask.IRQ = self.IRQ.Line and not self.Architecture.flags.InterruptDisable
 
     def _do_poll_interrupts_with_cartridge_disable_IRQ(self) -> None:
         self.NMI.PreviousPinsSignal = self.NMI.PinsSignal
@@ -886,7 +893,7 @@ class Emulator:
         if self.NMI.PinsSignal and not self.NMI.PreviousPinsSignal:
             self.DoTask.NMI = True
         if not self.DoTask.IRQ:
-            self.DoTask.IRQ = self.IRQ.Line and not self.flag.InterruptDisable
+            self.DoTask.IRQ = self.IRQ.Line and not self.Architecture.flags.InterruptDisable
 
     def _do_branch(self, condition: bool) -> None:
         """Handle branch instruction."""
@@ -900,11 +907,16 @@ class Emulator:
             old_pc = self.Architecture.ProgramCounter
             self.Architecture.ProgramCounter = (self.Architecture.ProgramCounter + offset) & 0xFFFF
             # 1 extra cycle for branch taken, and +1 if page crossed
-            self.cycles = 3
+            self.Architecture.Cycles = 3
             if (old_pc & 0xFF00) != (self.Architecture.ProgramCounter & 0xFF00):
-                self.cycles += 1
+                self.Architecture.Cycles += 1
         else:
-            self.cycles = 2  # Branch not taken
+            self.Architecture.Cycles = 2  # Branch not taken
+
+    def Copy(self):
+        clone = self.__class__.__new__(self.__class__)
+        clone.__dict__ = self.__dict__.copy()
+        return clone
 
     def Reset(self) -> None:
         """Reset the emulator state."""
@@ -913,42 +925,40 @@ class Emulator:
 
         _logger.info("Resetting emulator...")
         self.cartridge = self.cartridge
-        self.PRGROM = self.cartridge.PRGROM
-        self.CHRROM = self.cartridge.CHRROM
+        self._PRGROM = self.cartridge.PRGROM
+        self._CHRROM = self.cartridge.CHRROM
 
         # Initialize mapper based on cartridge mapper ID
         mapper_id = self.cartridge.MapperID
         match mapper_id:
             case 0:
-                self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper000(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
             case 1:
-                self.mapper = Mapper001(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper001(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
             case 2:
-                self.mapper = Mapper002(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper002(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
             case 3:
-                self.mapper = Mapper003(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper003(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
             case 4:
-                self.mapper = Mapper004(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper004(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
             case _:
                 raise EmulatorError(NotImplementedError(f"Mapper {mapper_id} not supported."))
 
         # Reset CPU
         self.Architecture.Bus_latch_timer.stop()
         self.Architecture.Bus_latch_timer.reset()
-        self.Architecture = Architecture(
-            StackPointer=0xFD, ProgramCounter=0xFFFC, Bus_latch_timer=self.Architecture.Bus_latch_timer
-        )
-        self.flag = Flags(InterruptDisable=True)
+        self.Architecture = Architecture(Bus_latch_timer=self.Architecture.Bus_latch_timer)
+        self.Architecture.flags = Flags(InterruptDisable=True)
         self.DoTask = DoTask()
         self.IRQ = IRQ()
         self.NMI = NMI()
         self.PendingsTask = PendingsTask()
-        self.cycles = 0
+        self.Architecture.Cycles = 0
 
         # Read reset vector
         PCL = self._read(0xFFFC)
         PCH = self._read(0xFFFD)
-        self.Architecture.ProgramCounter = (PCH << 8) | PCL
+        self.Architecture.ProgramCounter = CByte[16, CSign.UNSIGNED]((PCH << 8) | PCL)
 
         # Reset PPU
         self.FrameBuffer = np.zeros((240, 256, 3), dtype=np.uint8)
@@ -981,21 +991,21 @@ class Emulator:
             raise EmulatorError(ValueError("Invalid cartridge object provided."))  # it is not a valid cartridge object
 
         self.cartridge = cartridge
-        self.PRGROM = self.cartridge.PRGROM
-        self.CHRROM = self.cartridge.CHRROM
+        self._PRGROM = self.cartridge.PRGROM
+        self._CHRROM = self.cartridge.CHRROM
 
         # Initialize mapper based on cartridge mapper ID
         mapper_id = self.cartridge.MapperID
         if mapper_id == 0:
-            self.mapper = Mapper000(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper000(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 1:
-            self.mapper = Mapper001(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper001(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 2:
-            self.mapper = Mapper002(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper002(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 3:
-            self.mapper = Mapper003(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper003(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 4:
-            self.mapper = Mapper004(self.PRGROM, self.CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper004(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
         else:
             _logger.warning(f"Mapper {mapper_id} not supported")
             raise EmulatorError(NotImplementedError(f"Mapper {mapper_id} not supported."))
@@ -1021,14 +1031,14 @@ class Emulator:
         try:
             if self.Architecture.Halted:
                 return
-            self._emit("before_cycle", self.cycles)
+            self._emit("before_cycle", self.Architecture.Cycles)
             self._emulate_CPU()
 
             for _ in range(3):
                 self._emulate_PPU()
             # Advance APU once per CPU cycle (was previously called per PPU step)
-            self.apu.step()
-            self._emit("after_cycle", self.cycles)
+            pass  # todo: implement APU step
+            self._emit("after_cycle", self.Architecture.Cycles)
 
         except MemoryError as e:
             raise EmulatorError(MemoryError(e))
@@ -1048,19 +1058,19 @@ class Emulator:
     def _do_run_IRQ(self) -> None:
         """Handle Interrupt Request."""
         # Only process if interrupts are enabled
-        if not self.flag.InterruptDisable:
+        if not self.Architecture.flags.InterruptDisable:
             # Push return address
             self._do_push(self.Architecture.ProgramCounter >> 8)
             self._do_push(self.Architecture.ProgramCounter & 0xFF)
             # Push status with B clear (IRQ) but bit 5 set
             self._do_push((self._get_processor_status() & ~0x10) | 0x20)
             # Set interrupt disable
-            self.flag.InterruptDisable = True
+            self.Architecture.flags.InterruptDisable = True
             # Load interrupt vector
             low = self._read(0xFFFE)
             high = self._read(0xFFFF)
             self.Architecture.ProgramCounter = (high << 8) | low
-            self.cycles = 7
+            self.Architecture.Cycles = 7
 
     def _emulate_CPU(self) -> None:
         # Reset instruction mode at the start of each cycle
@@ -1077,22 +1087,22 @@ class Emulator:
             return
 
         # Check for IRQ
-        if self.PendingsTask.IRQ and not self.flag.InterruptDisable:
+        if self.PendingsTask.IRQ and not self.Architecture.flags.InterruptDisable:
             self.PendingsTask.IRQ = False
             self._do_run_IRQ()
             return
 
         if hasattr(self.mapper, "irq_pending") and self.mapper.irq_pending:
-            if not self.flag.InterruptDisable:
-                self.mapper.irq_pending = False
+            if not self.Architecture.flags.InterruptDisable:
+                self.mapper.irq_pending = False # type: ignore
                 self._do_run_IRQ()
 
-        self.cycles = min(self.cycles, 0)
+        self.Architecture.Cycles = min(self.Architecture.Cycles, 0)
 
         self.Architecture.OpCode = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
 
-        if self.logging:
+        if self.debug.Logging:
             self._tracelogger(self.Architecture.OpCode)
             self._emit("tracelogger", self.tracelog[-1])
 
@@ -1101,7 +1111,7 @@ class Emulator:
         # Apply Any extra cycles recorded during operand fetch (page-cross, dummy reads)
         extra = self._cycles_extra
         if extra:
-            self.cycles += extra
+            self.Architecture.Cycles += extra
             self._cycles_extra = 0
 
         # Run Any pending OAM DMA exactly once at end of instruction
@@ -1127,42 +1137,14 @@ class Emulator:
 
     def _make_end_execute_opcode(self, set_cycles: int = 0) -> int:
         if set_cycles == 0:
-            self.cycles = OpCodeClass.GetCycles(self.Architecture.OpCode)
+            self.Architecture.Cycles = OpCodeClass.GetCycles(self.Architecture.OpCode)
         else:
-            self.cycles = set_cycles
-        return self.cycles
+            self.Architecture.Cycles = set_cycles
+        return self.Architecture.Cycles
 
     def _do_execute_opcode(self) -> int | None:
         """
-        Execute the current Architecture.OpCode
-
-        This is a large match statement for all 256 possible opcodes.
-        Each case handles a specific Architecture.OpCode, its addressing mode, and its operation.
-        The `_make_end_execute_opcode()` method is called at the end of each Architecture.OpCode's execution
-        to set the correct number of cycles for that instruction.
-        The `_cycles_extra` attribute is used to track additional cycles incurred
-        by page boundary crossings during operand fetching for certain addressing modes.
-        It is reset at the beginning of each instruction and added to the total cycles
-        at the end of `Emulate_CPU`.
-        Unofficial opcodes are not explicitly handled here and will fall through
-        to the default case, which raises an error if `halt_on_unknown_opcode` is true.
-        For a full implementation, unofficial opcodes would need their own cases.
-        Addressing mode helper functions (e.g., `_do_read_operands_AbsoluteAddressed`)
-        are responsible for updating `self.addressBus` and `self.Architecture.ProgramCounter`,
-        and for setting `self._cycles_extra` if a page boundary is crossed.
-        The `read()` and `write()` methods handle memory access, including mirroring
-        and PPU/APU register interactions.
-        Flag manipulation (Zero, Negative, Carry, Overflow, InterruptDisable, Decimal, Break)
-        is handled by dedicated helper methods like `UpdateZeroNegativeFlags`,
-        `SetProcessorStatus`, and `GetProcessorStatus`.
-        Interrupts (NMI, IRQ, BRK) are handled by `NMI_RUN`, `IRQ_RUN`, and the BRK Architecture.OpCode itself.
-        NMI is edge-triggered and has higher priority than IRQ/BRK.
-        IRQ can be disabled by the InterruptDisable flag.
-        BRK is a software interrupt.
-        PPU and APU interactions are primarily through `ReadPPURegister`, `WritePPURegister`,
-        and `self.apu.step()`. PPU register writes can have delayed effects, handled by
-        `_ppu_pending_writes`.
-        The `Tracelogger` method records the state of the CPU for debugging purposes.
+        Execute the current opcode.
         """
         match self.Architecture.OpCode:
             # CONTROL FLOW
@@ -1173,7 +1155,7 @@ class Emulator:
                 self._do_push(self.Architecture.ProgramCounter >> 8)
                 self._do_push(self.Architecture.ProgramCounter & 0xFF)
                 self._do_push(self._get_processor_status() | 0x30)
-                self.flag.InterruptDisable = True
+                self.Architecture.flags.InterruptDisable = True
                 low = self._read(0xFFFE)
                 high = self._read(0xFFFF)
                 self.Architecture.ProgramCounter = (high << 8) | low
@@ -1223,21 +1205,21 @@ class Emulator:
             # BRANCH INSTRUCTIONS
             case 0x10 | 0x30 | 0x50 | 0x70 | 0x90 | 0xB0 | 0xD0 | 0xF0 as sub_opcode:
                 if sub_opcode == 0x10:
-                    self._do_branch(not self.flag.Negative)
+                    self._do_branch(not self.Architecture.flags.Negative)
                 elif sub_opcode == 0x30:
-                    self._do_branch(self.flag.Negative)
+                    self._do_branch(self.Architecture.flags.Negative)
                 elif sub_opcode == 0x50:
-                    self._do_branch(not self.flag.Overflow)
+                    self._do_branch(not self.Architecture.flags.Overflow)
                 elif sub_opcode == 0x70:
-                    self._do_branch(self.flag.Overflow)
+                    self._do_branch(self.Architecture.flags.Overflow)
                 elif sub_opcode == 0x90:
-                    self._do_branch(not self.flag.Carry)
+                    self._do_branch(not self.Architecture.flags.Carry)
                 elif sub_opcode == 0xB0:
-                    self._do_branch(self.flag.Carry)
+                    self._do_branch(self.Architecture.flags.Carry)
                 elif sub_opcode == 0xD0:
-                    self._do_branch(not self.flag.Zero)
+                    self._do_branch(not self.Architecture.flags.Zero)
                 elif sub_opcode == 0xF0:
-                    self._do_branch(self.flag.Zero)
+                    self._do_branch(self.Architecture.flags.Zero)
                 return self._make_end_execute_opcode()
 
             # LOAD INSTRUCTIONS - LDA
@@ -1662,7 +1644,7 @@ class Emulator:
             case 0x0A | 0x06 | 0x16 | 0x0E | 0x1E as sub_opcode:
                 if sub_opcode == 0x0A:  # ASL A
                     self._read(self.Architecture.ProgramCounter)
-                    self.flag.Carry = (self.Architecture.A & 0x80) != 0
+                    self.Architecture.flags.Carry = (self.Architecture.A & 0x80) != 0
                     self.Architecture.A = (self.Architecture.A << 1) & 0xFF
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0x06:  # ASL Zero Page
@@ -1682,7 +1664,7 @@ class Emulator:
             # SHIFT INSTRUCTIONS - LSR
             case 0x4A | 0x46 | 0x56 | 0x4E | 0x5E as sub_opcode:
                 if sub_opcode == 0x4A:  # LSR A
-                    self.flag.Carry = (self.Architecture.A & 0x01) != 0
+                    self.Architecture.flags.Carry = (self.Architecture.A & 0x01) != 0
                     self.Architecture.A = (self.Architecture.A >> 1) & 0xFF
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0x46:  # LSR Zero Page
@@ -1702,8 +1684,8 @@ class Emulator:
             # ROTATE INSTRUCTIONS - ROL
             case 0x2A | 0x26 | 0x36 | 0x2E | 0x3E as sub_opcode:
                 if sub_opcode == 0x2A:  # ROL A
-                    carry_in = 1 if self.flag.Carry else 0
-                    self.flag.Carry = (self.Architecture.A & 0x80) != 0
+                    carry_in = 1 if self.Architecture.flags.Carry else 0
+                    self.Architecture.flags.Carry = (self.Architecture.A & 0x80) != 0
                     self.Architecture.A = ((self.Architecture.A << 1) | carry_in) & 0xFF
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0x26:  # ROL Zero Page
@@ -1723,8 +1705,8 @@ class Emulator:
             # ROTATE INSTRUCTIONS - ROR
             case 0x6A | 0x66 | 0x76 | 0x6E | 0x7E as sub_opcode:
                 if sub_opcode == 0x6A:  # ROR A
-                    carry_in = 0x80 if self.flag.Carry else 0
-                    self.flag.Carry = (self.Architecture.A & 0x01) != 0
+                    carry_in = 0x80 if self.Architecture.flags.Carry else 0
+                    self.Architecture.flags.Carry = (self.Architecture.A & 0x01) != 0
                     self.Architecture.A = ((self.Architecture.A >> 1) | carry_in) & 0xFF
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0x66:  # ROR Zero Page
@@ -1744,19 +1726,19 @@ class Emulator:
             # FLAG INSTRUCTIONS
             case 0x18 | 0x38 | 0x58 | 0x78 | 0xB8 | 0xD8 | 0xF8 as sub_opcode:
                 if sub_opcode == 0x18:  # CLC
-                    self.flag.Carry = False
+                    self.Architecture.flags.Carry = False
                 elif sub_opcode == 0x38:  # SEC
-                    self.flag.Carry = True
+                    self.Architecture.flags.Carry = True
                 elif sub_opcode == 0x58:  # CLI
-                    self.flag.InterruptDisable = False
+                    self.Architecture.flags.InterruptDisable = False
                 elif sub_opcode == 0x78:  # SEI
-                    self.flag.InterruptDisable = True
+                    self.Architecture.flags.InterruptDisable = True
                 elif sub_opcode == 0xB8:  # CLV
-                    self.flag.Overflow = False
+                    self.Architecture.flags.Overflow = False
                 elif sub_opcode == 0xD8:  # CLD
-                    self.flag.Decimal = False
+                    self.Architecture.flags.Decimal = False
                 elif sub_opcode == 0xF8:  # SED
-                    self.flag.Decimal = True
+                    self.Architecture.flags.Decimal = True
                 return self._make_end_execute_opcode()
 
             # NOP INSTRUCTIONS - Official
@@ -1801,7 +1783,7 @@ class Emulator:
                 val = self._read(self.Architecture.ProgramCounter)
                 self.Architecture.ProgramCounter += 1
                 self._do_op_AND(val)
-                self.flag.Carry = self.flag.Negative
+                self.Architecture.flags.Carry = self.Architecture.flags.Negative
                 return self._make_end_execute_opcode()
 
             case 0x4B:  # ALR - AND then LSR
@@ -1809,7 +1791,7 @@ class Emulator:
                 val = self._read(self.Architecture.ProgramCounter)
                 self.Architecture.ProgramCounter += 1
                 self.Architecture.A = self.Architecture.A & val
-                self.flag.Carry = (self.Architecture.A & 0x01) != 0
+                self.Architecture.flags.Carry = (self.Architecture.A & 0x01) != 0
                 self.Architecture.A = (self.Architecture.A >> 1) & 0xFF
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 return self._make_end_execute_opcode()
@@ -1819,12 +1801,12 @@ class Emulator:
                 val = self._read(self.Architecture.ProgramCounter)
                 self.Architecture.ProgramCounter += 1
                 self.Architecture.A = self.Architecture.A & val
-                old_carry = self.flag.Carry
+                old_carry = self.Architecture.flags.Carry
                 self.Architecture.A = ((self.Architecture.A >> 1) | (0x80 if old_carry else 0)) & 0xFF
                 bit6 = (self.Architecture.A & 0x40) != 0
                 bit5 = (self.Architecture.A & 0x20) != 0
-                self.flag.Carry = bit6
-                self.flag.Overflow = bit6 ^ bit5
+                self.Architecture.flags.Carry = bit6
+                self.Architecture.flags.Overflow = bit6 ^ bit5
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 return self._make_end_execute_opcode()
 
@@ -1849,7 +1831,7 @@ class Emulator:
                 val = self._read(self.Architecture.ProgramCounter)
                 self.Architecture.ProgramCounter += 1
                 tmp = (self.Architecture.A & self.Architecture.X) - val
-                self.flag.Carry = tmp >= 0
+                self.Architecture.flags.Carry = tmp >= 0
                 self.Architecture.X = tmp & 0xFF
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.X)
                 return self._make_end_execute_opcode()
@@ -1873,7 +1855,7 @@ class Emulator:
                     self._do_read_operands_ZeroPage_XIndexed()
                 value = self._read(self.addressBus)
                 self._write(self.addressBus, value)  # Dummy write
-                self.flag.Carry = (value & 0x80) != 0
+                self.Architecture.flags.Carry = (value & 0x80) != 0
                 value = (value << 1) & 0xFF
                 self._write(self.addressBus, value)
                 self._do_op_ORA(value)
@@ -1898,8 +1880,8 @@ class Emulator:
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
                 value = self._read(self.addressBus)
                 self._write(self.addressBus, value)  # Dummy write
-                carry_in = 1 if self.flag.Carry else 0
-                self.flag.Carry = (value & 0x80) != 0
+                carry_in = 1 if self.Architecture.flags.Carry else 0
+                self.Architecture.flags.Carry = (value & 0x80) != 0
                 value = ((value << 1) | carry_in) & 0xFF
                 self._write(self.addressBus, value)
                 self._do_op_AND(value)
@@ -1924,7 +1906,7 @@ class Emulator:
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
                 value = self._read(self.addressBus)
                 self._write(self.addressBus, value)  # Dummy write
-                self.flag.Carry = (value & 0x01) != 0
+                self.Architecture.flags.Carry = (value & 0x01) != 0
                 value >>= 1
                 self._write(self.addressBus, value)
                 self._do_op_EOR(value)
@@ -1949,8 +1931,8 @@ class Emulator:
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
                 value = self._read(self.addressBus)
                 self._write(self.addressBus, value)  # Dummy write
-                carry_in = 0x80 if self.flag.Carry else 0
-                self.flag.Carry = (value & 0x01) != 0
+                carry_in = 0x80 if self.Architecture.flags.Carry else 0
+                self.Architecture.flags.Carry = (value & 0x01) != 0
                 value = ((value >> 1) | carry_in) & 0xFF
                 self._write(self.addressBus, value)
                 self._do_op_ADC(value)
@@ -2126,7 +2108,7 @@ class Emulator:
                 if self.debug.halt_on_unknown_opcode:
                     self.Architecture.Halted = True
                     raise EmulatorError(
-                        Exception(
+                        ValueError(
                             f"Unknown Architecture.OpCode ${error_opcode:02X} at ${self.Architecture.ProgramCounter - 1:04X}"
                         )
                     )
@@ -2137,11 +2119,11 @@ class Emulator:
         self._do_push(self.Architecture.ProgramCounter >> 8)
         self._do_push(self.Architecture.ProgramCounter & 0xFF)
         self._do_push(self._get_processor_status() & ~0x10)  # Clear break flag for NMI
-        self.flag.InterruptDisable = True
+        self.Architecture.flags.InterruptDisable = True
         low = self._read(0xFFFA)
         high = self._read(0xFFFB)
         self.Architecture.ProgramCounter = (high << 8) | low
-        self.cycles = 7
+        self.Architecture.Cycles = 7
 
     def _do_check_sprite_zero_hit(self, x: int, sprite_index: int, color_idx: int) -> bool:
         """Check if this sprite should trigger sprite 0 hit."""
@@ -2253,7 +2235,7 @@ class Emulator:
             if self.mapper:
                 return self.mapper.ppu_read(addr)
             else:
-                return int(self.CHRROM[addr])
+                return int(self._CHRROM[addr])
 
         # VRAM ($2000-$3EFF)
         elif addr < 0x3F00:
@@ -2344,8 +2326,8 @@ class Emulator:
                 plane1 = self.mapper.ppu_read(tile_addr + tile_row)
                 plane2 = self.mapper.ppu_read(tile_addr + tile_row + 8)
             else:
-                plane1 = int(self.CHRROM[tile_addr + tile_row])
-                plane2 = int(self.CHRROM[tile_addr + tile_row + 8])
+                plane1 = int(self._CHRROM[tile_addr + tile_row])
+                plane2 = int(self._CHRROM[tile_addr + tile_row + 8])
 
             # Extract pixel
             bit = 7 - pixel_x
@@ -2516,7 +2498,7 @@ class Emulator:
             # Update data bus with the read value
             self.dataBus = data
         # DMA takes 513 or 514 CPU cycles depending on alignment
-        self.cycles += 513
+        self.Architecture.Cycles += 513
 
         # Also handle the case when reading from $4014
         self.oam_dma_page = page  # Store for reading

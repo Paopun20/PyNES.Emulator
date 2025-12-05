@@ -13,7 +13,7 @@ A NES (Nintendo Entertainment System) emulator written in Python
 ## Accuracy (may be outdated)
 
 <div style="display: flex; gap: 10px;">
-    <img src="./docs/screenshot/testshot 2025-10-31 200135.png" width="480" alt="PyNES Emulator Screenshot it take ⁓9 minutes to run all test results. It's not 100% accurate yet, but it's getting there!"/>
+    <img src="./docs/assets/screenshot/testshot 2025-10-31 200135.png" width="480" alt="PyNES Emulator Screenshot it take ⁓9 minutes to run all test results. It's not 100% accurate yet, but it's getting there!"/>
 </div>
 
 Not suitable for speedrunning at this time—please wait for future updates before using PyNES for these purposes.
@@ -107,8 +107,12 @@ If you want to use a ready-made executable:
 
 #### Prerequisites
 
-- Python **3.13+**
-- `git`, `pip` (or [`uv`](https://docs.astral.sh/uv/)), and a C compiler (for Cython)
+- [`Python **3.13+**`](https://www.python.org/downloads/)
+- [`Cython`](https://cython.org/)
+- [`git`](https://git-scm.com/)
+- [`pip`](https://pypi.org/project/pip/)
+- [`uv`](https://docs.astral.sh/uv/) (a best tool for managing Python packages, it extremely fast than `pip`)
+- [`C compiler`](https://gcc.gnu.org/)
 
 #### Steps
 
@@ -142,7 +146,7 @@ python setup.py build_ext --inplace
 ```bash
 # Install dependencies
 pip install -r requirements.txt
-# or (faster):
+# or (extremely fast):
 uv pip install -r requirements.txt
 ```
 

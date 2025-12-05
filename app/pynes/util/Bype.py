@@ -1,9 +1,7 @@
 from enum import Enum
 from typing import (
     Dict,
-    Generic,
     Optional,
-    SupportsFloat,
     SupportsInt,
     Tuple,
     Type,
@@ -22,7 +20,6 @@ class Sign(Enum):
     SIGNED = "signed"
 
 
-T = TypeVar("T", bound="Bype")
 B = TypeVar("B", bound="Bype")
 
 
@@ -62,7 +59,7 @@ class BypeMeta(type):
         return subclass
 
 
-class Bype(int, Generic[T], metaclass=BypeMeta):
+class Bype(int, metaclass=BypeMeta):
     """Fixed-width integer type that wraps on overflow.
 
     Key features:
@@ -95,18 +92,35 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
     @classmethod
     def _wrap_class(cls: Type[B], v: int) -> int:
         """Wrap value at class level using precomputed mask."""
+        # Apply bitmask first to constrain to bit width
         v = v & cls.mask
+        
+        # Handle signed interpretation
         if cls.sign == Sign.SIGNED and cls.bits is not None:
             sign_bit = 1 << (cls.bits - 1)
             if v & sign_bit:
                 v -= 1 << cls.bits
+            elif v > cls.mask:
+                # Ensure signed values never exceed mask
+                v &= cls.mask
+        
+        # CRITICAL FIX FOR UNSIGNED TYPES:
+        # Ensure unsigned values never become negative after wrapping
+        if cls.sign == Sign.UNSIGNED:
+            if v < 0:
+                # Convert negative to equivalent positive modulo 2^bits
+                v = v % (1 << cls.bits)
+            elif v > cls.mask:
+                # Ensure unsigned values never exceed mask
+                v &= cls.mask
+        
         return v
 
-    def _new(self: B, v: int) -> B:
+    @classmethod
+    def _new(cls: Type[B], v: int) -> B:
         """Create new instance of same Bype type with wrapped value."""
-        return type(self)(v)
+        return cls(v)
 
-    # Core conversions
     @override
     def __int__(self) -> int:
         return super().__int__()
@@ -197,14 +211,6 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
         return self._new(int(other) // int(self))
 
     @override
-    def __truediv__(self, other: SupportsFloat) -> float:
-        return int(self) / float(other)
-
-    @override
-    def __rtruediv__(self, other: SupportsFloat) -> float:
-        return float(other) / int(self)
-
-    @override
     def __mod__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) % int(other))
 
@@ -221,29 +227,6 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
     @override
     def __rpow__(self: B, other: SupportsInt) -> B:
         return self._new(pow(int(other), int(self)))
-
-    # Comparison operations
-    @override
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, SupportsInt):
-            return int(self) == int(other)
-        return NotImplemented
-
-    @override
-    def __lt__(self, other: SupportsInt) -> bool:
-        return int(self) < int(other)
-
-    @override
-    def __le__(self, other: SupportsInt) -> bool:
-        return int(self) <= int(other)
-
-    @override
-    def __gt__(self, other: SupportsInt) -> bool:
-        return int(self) > int(other)
-
-    @override
-    def __ge__(self, other: SupportsInt) -> bool:
-        return int(self) >= int(other)
 
     # Bitwise operations
     @override
@@ -276,45 +259,6 @@ class Bype(int, Generic[T], metaclass=BypeMeta):
 
     @override
     def __rshift__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) >> int(other))
-
-    # In-place operations (return new instances due to immutability)
-    def __iadd__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) + int(other))
-
-    def __isub__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) - int(other))
-
-    def __imul__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) * int(other))
-
-    def __ifloordiv__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) // int(other))
-
-    def __itruediv__(self: B, other: SupportsFloat) -> B:
-        return self._new(int(int(self) / float(other)))
-
-    def __imod__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) % int(other))
-
-    def __ipow__(self: B, other: SupportsInt, modulo: Optional[int] = None) -> B:
-        if modulo is None:
-            return self._new(pow(int(self), int(other)))
-        return self._new(pow(int(self), int(other), modulo))
-
-    def __iand__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) & int(other))
-
-    def __ior__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) | int(other))
-
-    def __ixor__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) ^ int(other))
-
-    def __ilshift__(self: B, other: SupportsInt) -> B:
-        return self._new(int(self) << int(other))
-
-    def __irshift__(self: B, other: SupportsInt) -> B:
         return self._new(int(self) >> int(other))
 
     # Additional numeric protocols

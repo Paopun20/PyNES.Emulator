@@ -152,7 +152,7 @@ class Cartridge:
         return Success(obj)
 
     @classmethod
-    def is_valid_file(cls, filepath: str) -> Tuple[bool, Optional[str]]:
+    def is_valid_file(cls, filepath: Union[Path, str]) -> Tuple[bool, Optional[str]]:
         """
         Check if a file is a valid NES ROM.
 
@@ -165,7 +165,7 @@ class Cartridge:
             or contains an error string if invalid.
         """
         try:
-            with open(filepath, "rb") as f:
+            with open(str(filepath), "rb") as f:
                 data = f.read()
         except OSError as e:
             return False, f"Failed to read file: {e}"
@@ -200,6 +200,33 @@ class Cartridge:
             return cart
 
         return result.map(attach_file)
+    
+    def get_byte(self, address: int) -> int:
+        """
+        Get a byte from the cartridge's memory.
+
+        Args:
+            address: Memory address to read from.
+
+        Returns:
+            The byte at the specified address.
+        """
+        if address < 0x8000:
+            return self.CHRROM[address]
+        else:
+            return self.PRGROM[address - 0x8000]
+
+    def get_word(self, address: int) -> int:
+        """
+        Get a word (2 bytes) from the cartridge's memory.
+
+        Args:
+            address: Memory address to read from.
+
+        Returns:
+            The word at the specified address.
+        """
+        return self.get_byte(address) | (self.get_byte(address + 1) << 8)
 
     @property
     @deprecated("Use .PRGROM instead of .ROM")

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict, Literal
 
 
 class OpCode(TypedDict):
@@ -8,6 +8,7 @@ class OpCode(TypedDict):
     cycles: int
 
 
+# Exhaustive mapping: every byte 0x00–0xFF is defined — no gaps
 list_OpCode: Dict[int, OpCode] = {
     0x00: {"opcode": "BRK", "type": ["implied"], "bytes": 1, "cycles": 7},
     0x01: {"opcode": "ORA", "type": ["indexed_indirect"], "bytes": 2, "cycles": 6},
@@ -268,11 +269,19 @@ list_OpCode: Dict[int, OpCode] = {
 }
 
 
+# Exhaustive set of all valid 6502 addressing modes (excluding 'illegal')
+_AddressMode = Literal[
+    "implied", "accumulator", "immediate", "zeropage", "zeropage_x", "zeropage_y",
+    "absolute", "absolute_x", "absolute_y", "indirect",
+    "indexed_indirect", "indirect_indexed", "relative"
+]
+
+
 class OpCodes:
     """Enhanced 6502 OpCode lookup table with complete instruction information."""
 
     @staticmethod
-    def GetEntry(opcode: int) -> Optional[Dict[str, Any]]:
+    def GetEntry(opcode: int) -> OpCode:
         """
         Get complete opcode entry.
 
@@ -284,155 +293,81 @@ class OpCodes:
 
         Raises:
             ValueError: If opcode is out of valid range
+            KeyError: If opcode not defined (should never occur)
         """
         if not (0 <= opcode <= 0xFF):
             raise ValueError(f"Invalid opcode: 0x{opcode:02X} (must be 0x00-0xFF)")
-        return list_OpCode.get(opcode, None)
+        return list_OpCode[opcode]  # exhaustive → safe
 
     @staticmethod
     def GetName(opcode: int) -> str:
-        """
-        Get the mnemonic name of an opcode.
-
-        Args:
-            opcode: Opcode value (0x00-0xFF)
-
-        Returns:
-            Mnemonic string (e.g., "LDA", "STA")
-        """
+        """Get the mnemonic name of an opcode."""
         return OpCodes.GetEntry(opcode)["opcode"]
 
     @staticmethod
     def GetType(opcode: int) -> List[str]:
-        """
-        Get the type/addressing mode list for an opcode.
-
-        Args:
-            opcode: Opcode value (0x00-0xFF)
-
-        Returns:
-            List of type strings (may include "illegal")
-        """
+        """Get the type/addressing mode list for an opcode."""
         return OpCodes.GetEntry(opcode)["type"]
 
     @staticmethod
     def GetBytes(opcode: int) -> int:
-        """
-        Get instruction size in bytes.
-
-        Args:
-            opcode: Opcode value (0x00-0xFF)
-
-        Returns:
-            Instruction size (1-3 bytes)
-        """
+        """Get instruction size in bytes."""
         return OpCodes.GetEntry(opcode)["bytes"]
 
     @staticmethod
     def GetCycles(opcode: int) -> int:
-        """
-        Get base cycle count for instruction.
-        Note: Actual cycles may vary due to page boundary crossings.
-
-        Args:
-            opcode: Opcode value (0x00-0xFF)
-
-        Returns:
-            Base cycle count
-        """
+        """Get base cycle count for instruction."""
         return OpCodes.GetEntry(opcode)["cycles"]
 
     @staticmethod
     def IsIllegal(opcode: int) -> bool:
-        """
-        Check if an opcode is illegal/undocumented.
-
-        Args:
-            opcode: Opcode value (0x00-0xFF)
-
-        Returns:
-            True if opcode is illegal/undocumented
-        """
+        """Check if an opcode is illegal/undocumented."""
         return "illegal" in OpCodes.GetType(opcode)
 
     @staticmethod
-    def GetAddressingMode(opcode: int) -> str:
-        """
-        Get the primary addressing mode (excludes 'illegal' tag).
-
-        Args:
-            opcode: Opcode value (0x00-0xFF)
-
-        Returns:
-            Addressing mode string
-        """
+    def GetAddressingMode(opcode: int) -> _AddressMode:
+        """Get the primary addressing mode (excludes 'illegal' tag)."""
         types = OpCodes.GetType(opcode)
-        return next((t for t in types if t != "illegal"), "unknown")
+        for t in types:
+            if t != "illegal":
+                return t  # type: ignore
+        # Should never happen since all entries have at least 1 real mode
+        raise ValueError(f"Opcode 0x{opcode:02X} has no valid addressing mode")
 
     @staticmethod
     def FindOpcodes(mnemonic: str, addressing_mode: Optional[str] = None) -> List[int]:
         """
         Find all opcodes matching a mnemonic and optional addressing mode.
 
-        Args:
-            mnemonic: Instruction mnemonic (e.g., "LDA", "STA")
-            addressing_mode: Optional addressing mode filter
-
         Returns:
-            List of matching opcode values
-
-        Examples:
-            >>> OpCodes.FindOpcodes("LDA", "immediate")
-            [0xA9]
-            >>> OpCodes.FindOpcodes("LDA")
-            [0xA1, 0xA5, 0xA9, 0xAD, 0xB1, 0xB5, 0xB9, 0xBD]
+            List of matching opcode values (sorted)
         """
         results = []
         mnemonic_upper = mnemonic.upper()
-
         for opcode, data in list_OpCode.items():
             if data["opcode"] == mnemonic_upper:
                 if addressing_mode is None:
                     results.append(opcode)
                 elif addressing_mode in data["type"]:
                     results.append(opcode)
-
         return sorted(results)
 
     @staticmethod
     def GetAllMnemonics(include_illegal: bool = False) -> List[str]:
-        """
-        Get list of all unique mnemonics.
-
-        Args:
-            include_illegal: If True, include illegal opcodes
-
-        Returns:
-            Sorted list of unique mnemonics
-        """
+        """Get list of all unique mnemonics."""
         mnemonics = set()
         for data in list_OpCode.values():
             is_illegal = "illegal" in data["type"]
             if include_illegal or not is_illegal:
                 mnemonics.add(data["opcode"])
-
         return sorted(mnemonics)
 
     @staticmethod
     def GetInstructionInfo(opcode: int) -> str:
-        """
-        Get formatted instruction information string.
-
-        Args:
-            opcode: Opcode value (0x00-0xFF)
-
-        Returns:
-            Formatted string with complete instruction info
-        """
+        """Get formatted instruction information string."""
         entry = OpCodes.GetEntry(opcode)
         mode = OpCodes.GetAddressingMode(opcode)
         illegal = " (ILLEGAL)" if OpCodes.IsIllegal(opcode) else ""
-
         return (
             f"0x{opcode:02X}: {entry['opcode']} [{mode}] - "
             f"{entry['bytes']} byte(s), {entry['cycles']} cycle(s){illegal}"
@@ -443,71 +378,57 @@ class OpCodes:
         """
         Disassemble an instruction with its operand bytes.
 
-        Args:
-            opcode: Opcode value (0x00-0xFF)
-            operand_bytes: List of operand bytes (if any)
-
-        Returns:
-            Disassembled instruction string
-
-        Examples:
-            >>> OpCodes.DisassembleBytes(0xA9, [0x42])
-            'LDA #$42'
-            >>> OpCodes.DisassembleBytes(0xAD, [0x00, 0x80])
-            'LDA $8000'
+        Raises:
+            ValueError: If operand_bytes length doesn't match expected size
         """
         entry = OpCodes.GetEntry(opcode)
         mnemonic = entry["opcode"]
         mode = OpCodes.GetAddressingMode(opcode)
         operand_bytes = operand_bytes or []
 
+        # Validate operand count
+        expected_bytes = entry["bytes"] - 1  # opcode itself is 1 byte
+        if len(operand_bytes) != expected_bytes:
+            raise ValueError(
+                f"Opcode 0x{opcode:02X} ({mnemonic} {mode}) expects {expected_bytes} operand byte(s), "
+                f"got {len(operand_bytes)}: {operand_bytes}"
+            )
+
         # Format based on addressing mode
-        if mode == "implied" or mode == "accumulator":
+        if mode in ("implied", "accumulator"):
             return mnemonic
         elif mode == "immediate":
-            value = operand_bytes[0] if operand_bytes else 0
+            value = operand_bytes[0]
             return f"{mnemonic} #${value:02X}"
         elif mode == "zeropage":
-            addr = operand_bytes[0] if operand_bytes else 0
+            addr = operand_bytes[0]
             return f"{mnemonic} ${addr:02X}"
         elif mode == "zeropage_x":
-            addr = operand_bytes[0] if operand_bytes else 0
+            addr = operand_bytes[0]
             return f"{mnemonic} ${addr:02X},X"
         elif mode == "zeropage_y":
-            addr = operand_bytes[0] if operand_bytes else 0
+            addr = operand_bytes[0]
             return f"{mnemonic} ${addr:02X},Y"
-        elif mode == "absolute":
-            if len(operand_bytes) >= 2:
-                addr = operand_bytes[0] | (operand_bytes[1] << 8)
-            else:
-                addr = 0
-            return f"{mnemonic} ${addr:04X}"
-        elif mode == "absolute_x":
-            if len(operand_bytes) >= 2:
-                addr = operand_bytes[0] | (operand_bytes[1] << 8)
-            else:
-                addr = 0
-            return f"{mnemonic} ${addr:04X},X"
-        elif mode == "absolute_y":
-            if len(operand_bytes) >= 2:
-                addr = operand_bytes[0] | (operand_bytes[1] << 8)
-            else:
-                addr = 0
-            return f"{mnemonic} ${addr:04X},Y"
-        elif mode == "indirect":
-            if len(operand_bytes) >= 2:
-                addr = operand_bytes[0] | (operand_bytes[1] << 8)
-            else:
-                addr = 0
-            return f"{mnemonic} (${addr:04X})"
+        elif mode in ("absolute", "absolute_x", "absolute_y", "indirect"):
+            lo, hi = operand_bytes[0], operand_bytes[1]
+            addr = lo | (hi << 8)
+            if mode == "absolute":
+                return f"{mnemonic} ${addr:04X}"
+            elif mode == "absolute_x":
+                return f"{mnemonic} ${addr:04X},X"
+            elif mode == "absolute_y":
+                return f"{mnemonic} ${addr:04X},Y"
+            elif mode == "indirect":
+                return f"{mnemonic} (${addr:04X})"
         elif mode == "indexed_indirect":
-            addr = operand_bytes[0] if operand_bytes else 0
+            addr = operand_bytes[0]
             return f"{mnemonic} (${addr:02X},X)"
         elif mode == "indirect_indexed":
-            addr = operand_bytes[0] if operand_bytes else 0
+            addr = operand_bytes[0]
             return f"{mnemonic} (${addr:02X}),Y"
         elif mode == "relative":
-            offset = operand_bytes[0] if operand_bytes else 0
+            offset = operand_bytes[0]
             return f"{mnemonic} ${offset:02X}"
         else:
-            return mnemonic
+            # This should never happen due to _AddressMode enforcement
+            return f"{mnemonic} ???"
