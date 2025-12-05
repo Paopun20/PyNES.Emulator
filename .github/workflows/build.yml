@@ -144,6 +144,7 @@ jobs:
 
       # Build Extensions
       - name: Build Extensions
+        if: false # disable for now
         run: python setup.py build_ext --inplace
 
       # Build PyNES
