@@ -7,7 +7,7 @@ from enum import Enum
 from string import Template
 
 # debugger
-from typing import Any, Callable, Dict, Final, List, Optional, Type, final
+from typing import Any, Callable, Dict, Final, List, Optional, Tuple, Type, final
 
 import numpy as np
 from logger import log as _logger
@@ -19,22 +19,21 @@ from pynes.mapper import Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Map
 from pynes.util.Bype import Bype as CByte
 from pynes.util.Bype import Sign as CSign
 from pynes.util.OpCodes import OpCodes
-from typing_extensions import deprecated
 from util.memoize import memoize
 from util.timer import Timer
 
 # Template
 TEMPLATE: Final[Template] = Template(
-    "Run at line: ${PC} | opcode: ${OP} | A: ${A} | X: ${X} | Y: ${Y} | SP: ${SP} | Flags: ${N}${V}${D}${I}${Z}${C}"
+    "${PC}: opcode: ${OP} | A: ${A} | X: ${X} | Y: ${Y} | SP: ${SP} | Flags: ${N}${V}${D}${I}${Z}${C}"
 )
 
 OpCodeClass: Final[OpCodes] = OpCodes()  # can more one
 
 
 class EmulatorError(BaseException):
-    def __init__(self, exception: Exception):
-        self.original: Final[Exception] = exception
-        self.exception: Final[Type[Exception]] = type(exception)
+    def __init__(self, exception: BaseException):
+        self.original: Final[BaseException] = exception
+        self.exception: Final[Type[BaseException]] = type(exception)
         self.message: Final[str] = str(exception)
         super().__init__(self.message)
 
@@ -52,9 +51,23 @@ class Flags:
 
 
 @dataclass
+class FPS:
+    FPS: float = 0.0
+    FPSCount: int = 0
+    FPSLastTime: float = 0.0
+    FCCount: int = 0
+
+
+@dataclass
+class HaltOn:
+    UnknownOpcode: bool = False
+
+
+@dataclass
 class Debug:
     Logging: bool = False
-    halt_on_unknown_opcode: bool = False
+    FPS: FPS = field(default_factory=FPS)
+    HaltOn: HaltOn = field(default_factory=HaltOn)
 
 
 @dataclass
@@ -103,15 +116,20 @@ class CurrentInstructionMode(Enum):
     Relative = 9
     IndexedIndirect = 10
 
+
+Cb8U = CByte[8, CSign.UNSIGNED]
+Cb16U = CByte[16, CSign.UNSIGNED]
+
+
 @dataclass
 class Architecture:
-    A: CByte = CByte[8, CSign.UNSIGNED](0)
-    X: CByte = CByte[8, CSign.UNSIGNED](0)
-    Y: CByte = CByte[8, CSign.UNSIGNED](0)
+    A: Cb8U = Cb8U(0)
+    X: Cb8U = Cb8U(0)
+    Y: Cb8U = Cb8U(0)
     Cycles: int = 0
     Halted: bool = False
-    StackPointer: CByte = CByte[8, CSign.UNSIGNED](0)
-    ProgramCounter: CByte = CByte[16, CSign.UNSIGNED](0)
+    StackPointer: Cb16U = Cb8U(0)
+    ProgramCounter: Cb16U = Cb16U(0)
     OpCode: int = 0
     Bus: int = 0
     current_instruction_mode: CurrentInstructionMode = CurrentInstructionMode.Undefined
@@ -119,6 +137,12 @@ class Architecture:
     page_boundary_crossed_just_happened: bool = False
     Bus_latch_timer: Timer = Timer()
     flags: Flags = field(default_factory=Flags)
+
+
+@dataclass
+class NameTable:
+    data: List[List[int]] = field(default_factory=lambda: [[0] * 32 for _ in range(32)])
+    zone: Tuple[int, int] = (0, 0)
 
 
 @dataclass
@@ -147,10 +171,93 @@ CosTable: Final[List[float]] = [
 ]
 
 
+NTSC_VOLTAGES = [
+    0.518,
+    0.358,
+    0.496,
+    0.512,
+    0.650,
+    0.966,
+    1.558,
+    1.040,
+    0.622,
+    0.450,
+    0.466,
+    0.906,
+    1.040,
+    0.638,
+    0.478,
+    0.494,
+]
+NTSC_VBL = NTSC_VOLTAGES[1]  # Black level
+NTSC_VWL = NTSC_VOLTAGES[6]  # White level
+NTSC_LEVEL_0 = (NTSC_VOLTAGES[0] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_1 = (NTSC_VOLTAGES[1] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_2 = (NTSC_VOLTAGES[2] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_3 = (NTSC_VOLTAGES[3] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_4 = (NTSC_VOLTAGES[4] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_5 = (NTSC_VOLTAGES[5] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_6 = (NTSC_VOLTAGES[6] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_7 = (NTSC_VOLTAGES[7] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_8 = (NTSC_VOLTAGES[8] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_9 = (NTSC_VOLTAGES[9] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_A = (NTSC_VOLTAGES[10] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_B = (NTSC_VOLTAGES[11] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_C = (NTSC_VOLTAGES[12] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_D = (NTSC_VOLTAGES[13] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_E = (NTSC_VOLTAGES[14] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+NTSC_LEVEL_F = (NTSC_VOLTAGES[15] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
+
+# Level lookup table (index 0-15)
+NTSC_LEVELS = [
+    NTSC_LEVEL_0,
+    NTSC_LEVEL_1,
+    NTSC_LEVEL_2,
+    NTSC_LEVEL_3,
+    NTSC_LEVEL_4,
+    NTSC_LEVEL_5,
+    NTSC_LEVEL_6,
+    NTSC_LEVEL_7,
+    NTSC_LEVEL_8,
+    NTSC_LEVEL_9,
+    NTSC_LEVEL_A,
+    NTSC_LEVEL_B,
+    NTSC_LEVEL_C,
+    NTSC_LEVEL_D,
+    NTSC_LEVEL_E,
+    NTSC_LEVEL_F,
+]
+
+# Colorburst high/low values
+NTSC_COLORBURST_HIGH = (0.358 - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0  # Approximate
+NTSC_COLORBURST_LOW = (0.148 - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0  # Approximate
+
+# Sine/Cosine tables for decoding (based on 12-phase NTSC)
+NTSC_HUE = 0  # Can adjust for tint
+NTSC_SINE_TABLE = [math.sin(math.pi * (i + 2.5 + NTSC_HUE) / 6) for i in range(12)]
+NTSC_COSINE_TABLE = [math.cos(math.pi * (i + 2.5 + NTSC_HUE) / 6) for i in range(12)]
+
+
+@dataclass
+class EmulatorMemory:
+    RAM: np.ndarray
+    PRGROM: np.ndarray
+    CHRROM: np.ndarray
+
+
+class _HelperTool:
+    @staticmethod
+    def _flip_byte(b: int) -> int:
+        """Helper function to flip the bits of a byte."""
+        # Example: 0b11001010 -> 0b01010011
+        return int(format(b, "08b")[::-1], 2)
+
+
 class Emulator:
     """
     Main NES Emulator class
     """
+
     def __init__(self) -> None:
         # CPU initialization
         self.cartridge: Cartridge = Cartridge.EmptyCartridge()
@@ -192,18 +299,14 @@ class Emulator:
         self.t: int = 0  # temporary VRAM address (15 bits)
         self.x: int = 0  # fine X scroll (3 bits)
         self.w: bool = False  # write toggle for $2005/$2006
-        self.PPUSCROLL: List[int] = [0, 0]  # kept for renderer compatibility for now
+        self.PPUSCROLL: Tuple[int, int] = (0, 0)  # kept for renderer compatibility for now
         self.PPUADDR: int = 0  # kept for compatibility; v will be used for $2007
         self.PPUDATA: int = 0
         self.AddressLatch = False
         self.PPUDataBuffer: int = 0
         self.FrameBuffer: np.ndarray = np.zeros((240, 256, 3), dtype=np.uint8)
         self._ppu_pending_writes: deque[PPUPendingWrites] = deque()
-        # debugger
-        self.fps: float = 0
-        self.frame_count: int = 0
-        self.frame_complete_count: int = 0
-        self.last_fps_time: float = time.time()
+
         # PPU open bus decay timer
         self.ppu_bus_latch_time: Final[Timer] = Timer()
         # OAM DMA pending page (execute after instruction completes)
@@ -214,6 +317,18 @@ class Emulator:
         self.IRQ: IRQ = IRQ()
         self.DoTask: DoTask = DoTask()
         self.PendingsTask: PendingsTask = PendingsTask()
+
+        self._ntsc_signal_phase: int = 0  # Current phase of the NTSC colorburst (0-11)
+        self._ntsc_samples: List[float] = [0.0] * (
+            257 * 8
+        )  # Buffer for samples per scanline (256 visible + 1 for edge cases)
+        self._ntsc_sample_index: int = 0  # Current index in the sample buffer
+        self._ntsc_decode_signal: bool = True  # Toggle for NTSC decoding
+        self._ntsc_colorburst_phase_at_dot_0: int = 0  # Phase at the start of the scanline
+
+    @property
+    def getMemory(self) -> EmulatorMemory:
+        return EmulatorMemory(self._RAM, self._PRGROM, self._CHRROM)
 
     def _tracelogger(self, OpCode: int) -> None:
         line = TEMPLATE.substitute(
@@ -237,6 +352,7 @@ class Emulator:
         def decorator(func: Callable):
             self._events.setdefault(event_name, deque()).append(func)
             return func
+
         return decorator
 
     def _emit(self, event_name: str, *args: Any, **kwargs: Any) -> None:
@@ -462,7 +578,13 @@ class Emulator:
         # collect entries ready to apply (remaining <= 0)
         ready = [e for e in self._ppu_pending_writes if e.remaining_ppu_cycles <= 0]
         # keep rest
-        self._ppu_pending_writes = deque([PPUPendingWrites(reg=entry.reg, value=entry.value, remaining_ppu_cycles=entry.remaining_ppu_cycles) for entry in self._ppu_pending_writes if entry.remaining_ppu_cycles > 0])
+        self._ppu_pending_writes = deque(
+            [
+                PPUPendingWrites(reg=entry.reg, value=entry.value, remaining_ppu_cycles=entry.remaining_ppu_cycles)
+                for entry in self._ppu_pending_writes
+                if entry.remaining_ppu_cycles > 0
+            ]
+        )
 
         # apply ready writes in order they were queued (FIFO)
         for entry in ready:
@@ -532,7 +654,7 @@ class Emulator:
                 self.t = (self.t & ~0x7000) | (fine_y << 12)
                 self.w = False
             # Keep legacy scroll for renderer compatibility
-            self.PPUSCROLL[int(self.AddressLatch)] = val
+            self.PPUSCROLL = (self.x, self.t & 0x03E0)
             self.AddressLatch = not self.AddressLatch
 
         elif reg == 0x06:  # PPUADDR
@@ -894,8 +1016,8 @@ class Emulator:
             # Sign extend the offset
             if offset & 0x80:
                 offset = offset - 0x100
-            old_pc = self.Architecture.ProgramCounter
-            self.Architecture.ProgramCounter = (self.Architecture.ProgramCounter + offset) & 0xFFFF
+            old_pc = Cb16U(self.Architecture.ProgramCounter)  # make a copy
+            self.Architecture.ProgramCounter += offset
             # 1 extra cycle for branch taken, and +1 if page crossed
             self.Architecture.Cycles = 3
             if (old_pc & 0xFF00) != (self.Architecture.ProgramCounter & 0xFF00):
@@ -948,7 +1070,7 @@ class Emulator:
         # Read reset vector
         PCL = self._read(0xFFFC)
         PCH = self._read(0xFFFD)
-        self.Architecture.ProgramCounter = CByte[16, CSign.UNSIGNED]((PCH << 8) | PCL)
+        self.Architecture.ProgramCounter = Cb16U((PCH << 8) | PCL)
 
         # Reset PPU
         self.FrameBuffer = np.zeros((240, 256, 3), dtype=np.uint8)
@@ -957,7 +1079,7 @@ class Emulator:
         self.PPUCTRL = 0
         self.PPUMASK = 0
         self.OAMADDR = 0
-        self.PPUSCROLL = [0, 0]
+        self.PPUSCROLL = (0, 0)
         self.PPUADDR = 0
         self.PPUDataBuffer = 0
         self.PPUCycles = 0
@@ -969,6 +1091,17 @@ class Emulator:
 
         _logger.debug(f"ROM Header: [{', '.join(f'{b:02X}' for b in self.cartridge.HeaderedROM[:0x10])}]")
         _logger.debug(f"Reset Vector: ${self.Architecture.ProgramCounter:04X}")
+
+    def Load(self, cartridge: Cartridge):
+        if self.cartridge is not None:
+            raise EmulatorError(
+                ValueError(
+                    "Cannot load cartridge while another cartridge is loaded, if load by swap, use Swap(cartridge)"
+                )
+            )
+        self.cartridge = cartridge
+        self._PRGROM = self.cartridge.PRGROM
+        self._CHRROM = self.cartridge.CHRROM
 
     def Swap(self, cartridge: Cartridge) -> None:
         """
@@ -1024,8 +1157,9 @@ class Emulator:
             self._emit("before_cycle", self.Architecture.Cycles)
             self._emulate_CPU()
 
-            for _ in range(3):
+            for _ in range(3):  # [0, 1, 2]
                 self._emulate_PPU()
+
             # Advance APU once per CPU cycle (was previously called per PPU step)
             pass  # todo: implement APU step
             self._emit("after_cycle", self.Architecture.Cycles)
@@ -1039,11 +1173,8 @@ class Emulator:
         """Run one CPU cycle and corresponding PPU cycles."""
         if not self.Architecture.Halted:
             self._step()
-
-    @deprecated("Use step_Cycle() instead, it has bugs")
-    def step_Frame(self) -> None:
-        while not self.FrameComplete:
-            self.step_Cycle()
+        else:
+            raise EmulatorError(RuntimeError("Cannot step cycle when halted"))
 
     def _do_run_IRQ(self) -> None:
         """Handle Interrupt Request."""
@@ -1059,7 +1190,7 @@ class Emulator:
             # Load interrupt vector
             low = self._read(0xFFFE)
             high = self._read(0xFFFF)
-            self.Architecture.ProgramCounter = (high << 8) | low
+            self.Architecture.ProgramCounter = Cb16U((high << 8) | low)
             self.Architecture.Cycles = 7
 
     def _emulate_CPU(self) -> None:
@@ -1082,9 +1213,9 @@ class Emulator:
             self._do_run_IRQ()
             return
 
-        if hasattr(self.mapper, "irq_pending") and self.mapper.irq_pending:
+        if hasattr(self.mapper, "irq_pending") and self.mapper.irq_pending: # type: ignore
             if not self.Architecture.flags.InterruptDisable:
-                self.mapper.irq_pending = False # type: ignore
+                self.mapper.irq_pending = False  # type: ignore
                 self._do_run_IRQ()
 
         self.Architecture.Cycles = min(self.Architecture.Cycles, 0)
@@ -1148,7 +1279,7 @@ class Emulator:
                 self.Architecture.flags.InterruptDisable = True
                 low = self._read(0xFFFE)
                 high = self._read(0xFFFF)
-                self.Architecture.ProgramCounter = (high << 8) | low
+                self.Architecture.ProgramCounter = Cb16U((high << 8) | low)
                 return self._make_end_execute_opcode()
 
             case 0x20:  # JSR
@@ -1160,7 +1291,7 @@ class Emulator:
                 self._do_push(ret_addr >> 8)
                 self._do_push(ret_addr & 0xFF)
                 self.dataBus = high
-                self.Architecture.ProgramCounter = (high << 8) | low
+                self.Architecture.ProgramCounter = Cb16U((high << 8) | low)
                 return self._make_end_execute_opcode()
 
             case 0x40 | 0x60 as sub_opcode:  # RTI (0x40), RTS (0x60)
@@ -1168,12 +1299,11 @@ class Emulator:
                     self._set_processor_status(self._do_pop())
                     low = self._do_pop()
                     high = self._do_pop()
-                    self.Architecture.ProgramCounter = (high << 8) | low
+                    self.Architecture.ProgramCounter = Cb16U((high << 8) | low)
                 else:  # RTS
                     low = self._do_pop()
                     high = self._do_pop()
-                    self.Architecture.ProgramCounter = ((high << 8) | low) + 1
-                    self.Architecture.ProgramCounter &= 0xFFFF
+                    self.Architecture.ProgramCounter = Cb16U(((high << 8) | low) + 1)
                 return self._make_end_execute_opcode()
 
             case 0x4C | 0x6C as sub_opcode:  # JMP Absolute (0x4C), JMP Indirect (0x6C)
@@ -1181,7 +1311,7 @@ class Emulator:
                     low = self._read(self.Architecture.ProgramCounter)
                     self.Architecture.ProgramCounter += 1
                     high = self._read(self.Architecture.ProgramCounter)
-                    self.Architecture.ProgramCounter = (high << 8) | low
+                    self.Architecture.ProgramCounter = Cb16U((high << 8) | low)
                 else:  # JMP Indirect
                     ptr_low = self._read(self.Architecture.ProgramCounter)
                     self.Architecture.ProgramCounter += 1
@@ -1189,7 +1319,7 @@ class Emulator:
                     ptr = (ptr_high << 8) | ptr_low
                     low = self._read(ptr)
                     high = self._read((ptr & 0xFF00) | ((ptr + 1) & 0xFF))
-                    self.Architecture.ProgramCounter = (high << 8) | low
+                    self.Architecture.ProgramCounter = Cb16U((high << 8) | low)
                 return self._make_end_execute_opcode()
 
             # BRANCH INSTRUCTIONS
@@ -2095,7 +2225,7 @@ class Emulator:
                 _logger.error(
                     f"Unknown OpCode: ${error_opcode:02X} ({OpCodes.GetName(error_opcode)}) at PC=${self.Architecture.ProgramCounter - 1:04X}"
                 )
-                if self.debug.halt_on_unknown_opcode:
+                if self.debug.HaltOn.UnknownOpcode:
                     self.Architecture.Halted = True
                     raise EmulatorError(
                         ValueError(
@@ -2112,7 +2242,7 @@ class Emulator:
         self.Architecture.flags.InterruptDisable = True
         low = self._read(0xFFFA)
         high = self._read(0xFFFB)
-        self.Architecture.ProgramCounter = (high << 8) | low
+        self.Architecture.ProgramCounter = Cb16U((high << 8) | low)
         self.Architecture.Cycles = 7
 
     def _do_check_sprite_zero_hit(self, x: int, sprite_index: int, color_idx: int) -> bool:
@@ -2149,24 +2279,25 @@ class Emulator:
         Each frame = 262 scanlines (261.5 for odd frames with rendering enabled).
 
         Scanline breakdown:
-        - 0-239: Visible scanlines (rendering)
-        - 240: Post-render (idle)
-        - 241-260: VBlank
-        - 261: Pre-render scanline
+            - 0-255: Visible scanlines (rendering)
+            - 256: Post-render (idle)
+            - 257-260: VBlank
+            - 261: Pre-render scanline
+            - 262+: Idle
         """
 
         # VBlank set timing
         # VBlank flag is SET at scanline 241, cycle 1 (second cycle of scanline)
-        if self.Scanline == 261 and self.PPUCycles == 1:
-            self.PPUSTATUS &= 0x1F  # Clear VBlank, sprite 0 hit, sprite overflow
-            self.NMI.Pending = False
+        if self.Scanline == 241 and self.PPUCycles == 1:
+            self.PPUSTATUS |= 0x80  # set VBlank
+            if self.PPUCTRL & 0x80:
+                self.NMI.Pending = True
 
         # Pre-render scanline behavior
-        # Clear VBlank and sprite flags at scanline 261, cycle 1
-        if self.Scanline == 241 and self.PPUCycles == 1:
-            self.PPUSTATUS |= 0x80  # Set VBlank flag
-            if self.PPUCTRL & 0x80:  # NMI enabled
-                self.NMI.Pending = True
+        # Clear VBlank and sprite flags at scanline 241, cycle 1
+        if self.Scanline == 261 and self.PPUCycles == 1:
+            self.PPUSTATUS &= 0x1F  # clear VBlank + sprite 0 hit + overflow
+            self.NMI.Pending = False
 
         # Advance one PPU cycle
         self.PPUCycles += 1
@@ -2184,31 +2315,32 @@ class Emulator:
 
             # Odd frame skip (NTSC) if rendering enabled
             if self.Scanline == 261 and self.FrameComplete and self.PPUCTRL & 0x18:
-                if self.frame_count % 2 == 1:
+                if self.debug.FPS.FPSCount % 2 == 1:
                     self.PPUCycles += 1  # skip a cycle on odd frames
 
             # End of frame
-            if self.Scanline >= 262:
+            if self.Scanline == 261:
                 self.Scanline = 0
                 self.FrameComplete = True
+                self._emit("frame_complete", self.FrameBuffer)
 
                 # Track FPS
-                self.frame_count += 1
+                self.debug.FPS.FPSCount += 1
+                self.debug.FPS.FCCount += 1
                 now = time.time()
-                elapsed = now - self.last_fps_time
-                if elapsed >= 1.0:
-                    self.fps = self.frame_count / elapsed
-                    self.frame_count = 0
-                    self.last_fps_time = now
-
-                self._emit("frame_complete", self.FrameBuffer)
-                self.frame_complete_count += 1
+                if (elapsed := now - self.debug.FPS.FPSLastTime) > 1.0:
+                    self.debug.FPS.FPS = self.debug.FPS.FPSCount / elapsed
+                    self.debug.FPS.FPSLastTime = now
+                    self.debug.FPS.FPSCount = 0
                 self.FrameComplete = False
 
         if 0 <= self.Scanline < 240:
             # Render at the start of each scanline
             if self.PPUCycles == 1:
                 self._render_Scanline()
+
+    def _emulate_APU(self):
+        raise NotImplementedError("APU emulation not implemented")
 
     def _do_read_memory_PPU(self, ppu_addr: int) -> int:
         """Read from PPU memory space (for internal PPU use)"""
@@ -2270,7 +2402,7 @@ class Emulator:
         if not self.PPUMASK & 0x08:  # Background disabled
             return
 
-        scroll_x, scroll_y, *_ = self.PPUSCROLL  # *_ make sure to ignore the rest of the tuple
+        scroll_x, scroll_y = self.PPUSCROLL
         base_nametable = self.PPUCTRL & 0x03
         backdrop_color = int(self.PaletteRAM[0])
         clip_left = (self.PPUMASK & 0x02) == 0
@@ -2310,7 +2442,7 @@ class Emulator:
             # Call tick_a12 for MMC3
             if hasattr(self.mapper, "tick_a12"):
                 a12_state = bool(tile_addr & 0x1000)
-                self.mapper.tick_a12(a12_state)
+                self.mapper.tick_a12(a12_state) # type: ignore
 
             if self.mapper and hasattr(self.mapper, "ppu_read"):
                 plane1 = self.mapper.ppu_read(tile_addr + tile_row)

@@ -57,7 +57,11 @@ jobs:
             libxxf86vm-dev \
             libgl1-mesa-dev \
             mesa-common-dev \
-            libgl-dev
+            libgl-dev \
+            libglu1-mesa-dev \
+            xclip \
+            libasound2-dev \
+            libpulse-dev
 
       # UPX (skip macOS)
       - name: Setup UPX

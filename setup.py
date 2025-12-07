@@ -1,29 +1,42 @@
-from setuptools import (setup, Extension as CythonExtension)
-from Cython.Build import cythonize
-# from setuptools_rust import RustExtension
+import sys
 from pathlib import Path
-from app.__version__ import __version_string__
+
 import numpy as np
+import pybind11
+from Cython.Build import cythonize
+from setuptools import Extension, setup
+from setuptools import Extension as CythonExtension
 
-# Obtain the absolute path of the directory containing setup.py
-ROOT_DIR = Path(__file__).parent.resolve()
+from app.__version__ import __version_string__
 
-cython_ext = cythonize([
-    CythonExtension(
-        "pynes.mapper",
-        sources=["app/pynes/mapper.py"],
-        include_dirs=[np.get_include()]
-    ),
-])
+ROOT_DIR = Path(__file__).parent.resolve() / "app"
+
+cython_ext = cythonize(
+    [
+        CythonExtension("pynes.mapper", sources=[ROOT_DIR / "pynes" / "mapper.py"], include_dirs=[np.get_include()]),
+    ]
+)
+
+extra_args = []
+if sys.platform.startswith("win"):
+    extra_args.append("/std:c++17")
+else:
+    extra_args.append("-std=c++17")
 
 """
-rust_ext = [
-    RustExtension(
-        target="rust.disklist",
-        path="app/rust/disklist/Cargo.toml",
-        debug=False,
-        py_limited_api=False,
-    ),
+clipboard_ext = [
+    Extension(
+        "app.util.Clipboard",
+        sources=[ROOT_DIR / "extension" / "cpp" / "Clipboard" / "Clipboard.cpp"],
+        include_dirs=[
+            pybind11.get_include(),
+            np.get_include(),
+            str(ROOT_DIR)
+        ],
+        language="c++",
+        libraries=["User32"],
+        extra_compile_args=extra_args,
+    )
 ]
 """
 
@@ -31,10 +44,8 @@ setup(
     name="PyNES",
     version=__version_string__,
     packages=["pynes"],
-    ext_modules=cython_ext,
-    # rust_extensions=rust_ext,
-    # install_requires=list_req,
+    ext_modules=cython_ext,  # + clipboard_ext,
     include_package_data=True,
-    package_dir={'pynes': 'app/pynes'},
+    package_dir={"pynes": "app/pynes"},
     zip_safe=False,
 )

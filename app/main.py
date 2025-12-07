@@ -5,10 +5,11 @@ import platform
 import sys
 import threading
 from collections import deque
+from itertools import islice
 from pathlib import Path
 from tkinter import TclError, Tk, messagebox
-from types import FrameType
-from typing import Any, Callable, List, Optional, Tuple
+from types import FrameType, TracebackType
+from typing import Any, Callable, List, Optional, Tuple, Type, TypeVar
 
 import customtkinter as ctk
 import moderngl
@@ -16,6 +17,7 @@ import numpy as np
 import psutil
 import pygame
 import yappi
+
 from __version__ import __version_string__ as __version__
 from api.discord import Presence
 from backend.Control import Control
@@ -48,6 +50,8 @@ IS_LINUX: bool = platform.system() == "Linux"
 IS_MAC: bool = platform.system() == "Darwin"
 _mnemonic = OpCodes.GetAllMnemonics(True)
 
+run_event: threading.Event = threading.Event()
+
 running: bool = True
 _thread_list: deque[threading.Thread] = deque()
 
@@ -61,9 +65,7 @@ hwnd: Optional[int] = None
 pyWindow: Optional[Any] = None
 process: Optional[psutil.Process] = None
 
-
-# Cleanup functions (now at module scope)
-def platform_safe_cleanup() -> None:
+def _platform_safe_cleanup() -> None:
     """Platform-aware resource cleanup"""
     _log.info("Starting cleanup")
     global debug_overlay, sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow
@@ -74,14 +76,14 @@ def platform_safe_cleanup() -> None:
             debug_overlay.destroy()
             _log.info("Debug overlay destroyed")
         except Exception as e:
-            _log.error(f"Debug overlay cleanup failed: {e}")
+            _log.error(f"Debug overlay cleanup failed: {e}", exc_info=_extract_exc_info(e))
 
     if sprite is not None:
         try:
             sprite.destroy()
             _log.info("Render sprite destroyed")
         except Exception as e:
-            _log.error(f"Sprite cleanup failed: {e}")
+            _log.error(f"Sprite cleanup failed: {e}", exc_info=_extract_exc_info(e))
 
     # Stop monitors
     if cpu_monitor is not None:
@@ -89,14 +91,14 @@ def platform_safe_cleanup() -> None:
             cpu_monitor.stop()
             _log.info("CPU monitor stopped")
         except Exception as e:
-            _log.error(f"CPU monitor stop failed: {e}")
+            _log.error(f"CPU monitor stop failed: {e}", exc_info=_extract_exc_info(e))
 
     if gpu_monitor is not None and hasattr(gpu_monitor, "shutdown"):
         try:
             gpu_monitor.shutdown()
             _log.info("GPU monitor shutdown")
         except Exception as e:
-            _log.error(f"GPU monitor shutdown failed: {e}")
+            _log.error(f"GPU monitor shutdown failed: {e}", exc_info=_extract_exc_info(e))
 
     # Close Discord presence
     if presence is not None:
@@ -104,7 +106,7 @@ def platform_safe_cleanup() -> None:
             presence.close()
             _log.info("Discord presence closed")
         except Exception as e:
-            _log.error(f"Discord presence close failed: {e}")
+            _log.error(f"Discord presence close failed: {e}", exc_info=_extract_exc_info(e))
 
     # Platform-specific window cleanup
     if IS_WINDOWS and hwnd is not None:
@@ -126,7 +128,7 @@ def platform_safe_cleanup() -> None:
     pyWindow = None
 
 
-def shutdown_threads() -> None:
+def _shutdown_threads() -> None:
     global _thread_list
     threads: deque[threading.Thread] = deque(_thread_list)
     max_retry: int = 4
@@ -168,8 +170,11 @@ def shutdown_threads() -> None:
                 else:
                     remaining.append(thread)
 
+E = TypeVar("E", bound=BaseException)
 
-# Main logic (no cleanup inside)
+def _extract_exc_info(e: E) -> Tuple[Type[E], E, Optional[TracebackType]]:
+    return (type(e), e, e.__traceback__)
+    
 def main() -> None:
     global running, _thread_list, debug_overlay, sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow, process
 
@@ -238,11 +243,10 @@ def main() -> None:
         def __exit__(self, *args) -> None:
             pass
 
-        def add_thread(self, target: Callable[..., Any], name: str, args: tuple = None) -> None:
+        def add_thread(self, target: Callable[..., Any], name: str, args: Optional[Tuple] = None) -> None:
             global _thread_list
             _thread_list.append(threading.Thread(target=target, name=name, daemon=True, args=args or ()))
 
-    run_event: threading.Event = threading.Event()
     run_event.set()
 
     _log.info(f"Starting pygame community edition {pygame.__version__}")
@@ -254,9 +258,9 @@ def main() -> None:
         icon_surface: Optional[pygame.Surface] = pygame.image.load(icon_path)
     except Exception as e:
         icon_surface = None
-        _log.error("Failed to load icon", exc_info=(type(e), e, e.__traceback__))
+        _log.error("Failed to load icon", exc_info=_extract_exc_info(e))
 
-    _ = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE)
+    _ = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE)  # type: ignore
 
     try:
         pygame.display.gl_set_attribute(GL_SWAP_CONTROL, int(cfg["general"]["vsync"]))
@@ -276,7 +280,7 @@ def main() -> None:
             pyWindow = pyWindowColorMode(hwnd)
             pyWindow.dark_mode = True
         except Exception as e:
-            _log.warning(f"Failed to set dark mode: {e}")
+            _log.warning(f"Failed to set dark mode: {e}", exc_info=_extract_exc_info(e))
 
     _log.info("Starting ModernGL")
     ctx: moderngl.Context = moderngl.create_context()
@@ -469,11 +473,16 @@ def main() -> None:
 
     nes_emu.cartridge = result.unwrap()
     nes_emu.debug.Logging = True
-    nes_emu.debug.halt_on_unknown_opcode = True
+    nes_emu.debug.HaltOn.UnknownOpcode = True
     _log.info(f"Loaded: {Path(nes_path).name}")
 
     emu_timer = Timer()
-    nes_emu.Reset()
+    try:
+        nes_emu.Reset()
+    except EmulatorError as e:
+        messagebox.showerror("Error", str(e))
+        _log.error(f"Emulator error: {str(e)}", exc_info=_extract_exc_info(e))
+        sys.exit(1)
     emu_timer.start()
 
     paused = False
@@ -568,11 +577,11 @@ def main() -> None:
             try:
                 os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
                 with open(filename, "wb") as f:
-                    f.write(self.emu._RAM[:].tobytes())
+                    f.write(self.emu.getMemory.RAM[:].tobytes())
                 _log.info(f"Memory dumped to {filename}")
                 return True
             except Exception as e:
-                _log.error(f"Memory dump failed: {e}")
+                _log.error(f"Memory dump failed: {e}", exc_info=_extract_exc_info(e))
                 return False
 
     debug_state = DebugState(nes_emu)
@@ -606,8 +615,8 @@ def main() -> None:
                     f"EMU runtime: {emu_timer.get_elapsed_time():.4f}s",
                     f"IRL estimate: {(emu_timer.get_elapsed_time() * 1789773 / 1000000):.4f}s",
                     f"CPU Halted: {nes_emu.Architecture.Halted}",
-                    f"Frame Complete Count: {nes_emu.frame_complete_count}",
-                    f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.fps:.1f} | EMU Run: {'True' if not paused else 'False'}",
+                    f"Frame Complete Count: {nes_emu.debug.FPS.FCCount}",
+                    f"FPS: {clock.get_fps():.1f} | EMU FPS: {nes_emu.debug.FPS.FPS:.1f} | EMU Run: {'True' if not paused else 'False'}",
                     f"PC: ${nes_emu.Architecture.ProgramCounter:04X} | Cycles: {nes_emu.Architecture.Cycles}",
                     f"A: ${nes_emu.Architecture.A:02X} X: ${nes_emu.Architecture.X:02X} Y: ${nes_emu.Architecture.Y:02X}",
                     f"Flags: {'N' if nes_emu.Architecture.flags.Negative else '-'}"
@@ -619,10 +628,10 @@ def main() -> None:
                     f"{'C' if nes_emu.Architecture.flags.Carry else '-'}"
                     f"{'U' if nes_emu.Architecture.flags.Unused else '-'}",
                 ]
-                debug_info.append("Latest Log:")
-                if nes_emu.tracelog:
-                    for log_entry in list(nes_emu.tracelog)[-10:]:
-                        debug_info.append(log_entry)
+                debug_info.append("Latest Log (Latest -> Oldest, only 10):")
+                if len(nes_emu.tracelog) > 0:
+                    last = list(islice(nes_emu.tracelog, max(len(nes_emu.tracelog) - 10, 0), None))
+                    debug_info.extend(last)
                 else:
                     debug_info.append("No trace log entries")
             case 1:
@@ -697,7 +706,7 @@ def main() -> None:
             draw_debug_overlay()
             pygame.display.flip()
         except ValueError as e:
-            _log.error("Error rendering frame", exc_info=(type(e), e, e.__traceback__))
+            _log.error("Error rendering frame", exc_info=_extract_exc_info(e))
 
     def subpro(_log) -> None:
         global running
@@ -709,26 +718,27 @@ def main() -> None:
                 break
             try:
                 nes_emu.step_Cycle()
-            except (EmulatorError) as e:
-                _log.error("Emulator Error", exc_info=(type(e), e, e.__traceback__))
+            except EmulatorError as e:
+                _log.error("Emulator Error", exc_info=_extract_exc_info(e))
                 if debug_mode:
                     raise
                 else:
                     break
             except ExitException as e:
-                _log.error("Exit Exception", exc_info=(type(e), e, e.__traceback__))
+                _log.error("Exit Exception", exc_info=_extract_exc_info(e))
                 break
 
     with CoreThread() as core_thread:
         core_thread.add_thread(target=subpro, name="Emulator Cycle Thread", args=(_log,))
 
-    def tracelogger(_log) -> None:
-        @nes_emu.on("tracelogger")
-        def _(nes_line: str) -> None:
-            _log.debug(nes_line)
-            debug_state.log_lines.append(nes_line)
-
     if debug_mode and "--emu_debug" in sys.argv:
+
+        def tracelogger(_log) -> None:
+            @nes_emu.on("tracelogger")
+            def _(nes_line: str) -> None:
+                _log.debug(nes_line)
+                debug_state.log_lines.append(nes_line)
+
         with CoreThread() as core_thread:
             core_thread.add_thread(target=tracelogger, name="TraceLogger Thread", args=(_log,))
 
@@ -736,7 +746,7 @@ def main() -> None:
     def _(frame: NDArray[np.uint8]) -> None:
         nonlocal latest_frame, frame_ready
         with frame_lock:
-            latest_frame = frame.copy() if hasattr(frame, "copy") else np.array(frame)
+            latest_frame = frame.copy()
             frame_ready = True
 
     @nes_emu.on("before_cycle")
@@ -752,7 +762,7 @@ def main() -> None:
         try:
             thread.start()
         except threading.ThreadError as e:
-            _log.error(f"Thread {thread.name} failed to start: {e}")
+            _log.error(f"Thread {thread.name} failed to start: {e}", exc_info=_extract_exc_info(e))
 
     def _show_error_dialog(parent: ctk.CTkToplevel, message: str) -> None:
         error_label = ctk.CTkLabel(parent, text=message, font=ctk.CTkFont(size=14), text_color="red")
@@ -806,7 +816,7 @@ def main() -> None:
                             shader_list.append((attr.name, attr))
                             break
             except Exception as e:
-                _log.error(f"Failed to load shader module '{module_name}': {e}")
+                _log.error(f"Failed to load shader module '{module_name}': {e}", exc_info=_extract_exc_info(e))
 
         shader_list.sort(key=lambda x: x[1].name)
         if not shader_list:
@@ -843,7 +853,7 @@ def main() -> None:
                     _log.info(f"Applied shader: {selected_shader.name}")
                     refresh_buttons()
             except Exception as e:
-                _log.error(f"Failed to apply shader: {e}")
+                _log.error(f"Failed to apply shader: {e}", exc_info=_extract_exc_info(e))
                 _show_error_dialog(mod_window, f"Failed to apply shader:\n{str(e)}")
 
         def reset_shader() -> None:
@@ -852,7 +862,7 @@ def main() -> None:
                 _log.info("Reset to default shader")
                 refresh_buttons()
             except Exception as e:
-                _log.error(f"Failed to reset shader: {e}")
+                _log.error(f"Failed to reset shader: {e}", exc_info=_extract_exc_info(e))
                 _show_error_dialog(mod_window, f"Failed to reset shader:\n{str(e)}")
 
         def filter_shaders(*_: str) -> None:
@@ -976,82 +986,84 @@ def main() -> None:
     while running:
         events = pygame.event.get()
         user_input.update(events)
-        for event in events:
-            if event.type == pygame.QUIT:
-                running = False
-                break
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+        if len(events) != 0:
+            for event in events:
+                if event.type == pygame.QUIT:
                     running = False
-                elif event.key == pygame.K_p:
-                    paused = not paused
-                    if paused:
+                    break
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                    elif event.key == pygame.K_p:
+                        paused = not paused
+                        if paused:
+                            run_event.clear()
+                            emu_timer.pause()
+                        else:
+                            run_event.set()
+                            emu_timer.resume()
+                        _log.info(f"{'Paused' if paused else 'Resumed'}")
+                    elif event.key == pygame.K_F10 and paused:
+                        run_event.set()
+                        run_event.clear()
+                        _log.info("Single step executed")
+                    elif event.key == pygame.K_F5:
+                        show_debug = not show_debug
+                        debug_overlay.prev_lines = None
+                        _log.info(f"Debug {'ON' if show_debug else 'OFF'}")
+                    elif event.key == pygame.K_F6 and show_debug:
+                        debug_mode_index = (debug_mode_index - 1) % 6
+                    elif event.key == pygame.K_F7 and show_debug:
+                        debug_mode_index = (debug_mode_index + 1) % 6
+                    elif event.key == pygame.K_F9 and show_debug:
+                        _is_yappi_enabled = not _is_yappi_enabled
+                        if _is_yappi_enabled:
+                            yappi.start()
+                            _log.info("Yappi profiler started")
+                        else:
+                            yappi.stop()
+                            yappi.clear_stats()
+                            _log.info("Yappi profiler stopped")
+                    elif event.key == pygame.K_r:
+                        nes_emu.Reset()
+                        emu_timer.reset()
+                        _log.info("Emulator reset")
+                    elif event.key == pygame.K_m:
                         run_event.clear()
                         emu_timer.pause()
-                    else:
-                        run_event.set()
+                        try:
+                            mod_picker()
+                        except Exception as e:
+                            _log.error("mod_picker", exc_info=_extract_exc_info(e))
                         emu_timer.resume()
-                    _log.info(f"{'Paused' if paused else 'Resumed'}")
-                elif event.key == pygame.K_F10 and paused:
-                    run_event.set()
-                    run_event.clear()
-                    _log.info("Single step executed")
-                elif event.key == pygame.K_F5:
-                    show_debug = not show_debug
-                    debug_overlay.prev_lines = None
-                    _log.info(f"Debug {'ON' if show_debug else 'OFF'}")
-                elif event.key == pygame.K_F6 and show_debug:
-                    debug_mode_index = (debug_mode_index - 1) % 6
-                elif event.key == pygame.K_F7 and show_debug:
-                    debug_mode_index = (debug_mode_index + 1) % 6
-                elif event.key == pygame.K_F9 and show_debug:
-                    _is_yappi_enabled = not _is_yappi_enabled
-                    if _is_yappi_enabled:
-                        yappi.start()
-                        _log.info("Yappi profiler started")
-                    else:
-                        yappi.stop()
-                        yappi.clear_stats()
-                        _log.info("Yappi profiler stopped")
-                elif event.key == pygame.K_r:
-                    nes_emu.Reset()
-                    emu_timer.reset()
-                    _log.info("Emulator reset")
-                elif event.key == pygame.K_m:
-                    run_event.clear()
-                    emu_timer.pause()
-                    try:
-                        mod_picker()
-                    except Exception as e:
-                        _log.error("mod_picker", exc_info=(type(e), e, e.__traceback__))
-                    emu_timer.resume()
-                    run_event.set()
-                elif event.key == pygame.K_F12:
-                    try:
-                        sprite.export()
-                        PyClip.copy(sprite.export())
-                        _log.info("Frame copied to clipboard")
-                    except Exception as e:
-                        _log.error(f"Clipboard copy failed: {e}")
-                elif show_debug:
-                    if debug_mode_index == 4:
-                        if event.key == pygame.K_F1:
-                            debug_state.memory_view_start = max(0, debug_state.memory_view_start - 0x100)
-                        elif event.key == pygame.K_F2:
-                            debug_state.memory_view_start = min(0x700, debug_state.memory_view_start + 0x100)
-                        elif event.key == pygame.K_F3:
-                            dump_path = filedialog.asksaveasfilename(
-                                defaultextension=".bin",
-                                filetypes=[("Binary files", "*.bin")],
-                                title="Save Memory Dump",
-                            )
-                            if dump_path and debug_state.dump_memory(dump_path):
-                                messagebox.showinfo("Success", f"Memory dumped to:\n{dump_path}")
-                    elif debug_mode_index == 5:
-                        if event.key == pygame.K_F1:
-                            debug_state.disasm_start = max(0x8000, debug_state.disasm_start - 0x30)
-                        elif event.key == pygame.K_F2:
-                            debug_state.disasm_start = min(0xFFD0, debug_state.disasm_start + 0x30)
+                        run_event.set()
+                    elif event.key == pygame.K_F12:
+                        _log.info("Try to copy frame to clipboard")
+                        try:
+                            sprite.export()
+                            PyClip.copy(sprite.export())
+                            _log.info("Clipboard copied")
+                        except Exception as e:
+                            _log.error(f"Clipboard failed: {e}", exc_info=_extract_exc_info(e))
+                    elif show_debug:
+                        if debug_mode_index == 4:
+                            if event.key == pygame.K_F1:
+                                debug_state.memory_view_start = max(0, debug_state.memory_view_start - 0x100)
+                            elif event.key == pygame.K_F2:
+                                debug_state.memory_view_start = min(0x700, debug_state.memory_view_start + 0x100)
+                            elif event.key == pygame.K_F3:
+                                dump_path = filedialog.asksaveasfilename(
+                                    defaultextension=".bin",
+                                    filetypes=[("Binary files", "*.bin")],
+                                    title="Save Memory Dump",
+                                )
+                                if dump_path and debug_state.dump_memory(dump_path):
+                                    messagebox.showinfo("Success", f"Memory dumped to:\n{dump_path}")
+                        elif debug_mode_index == 5:
+                            if event.key == pygame.K_F1:
+                                debug_state.disasm_start = max(0x8000, debug_state.disasm_start - 0x30)
+                            elif event.key == pygame.K_F2:
+                                debug_state.disasm_start = min(0xFFD0, debug_state.disasm_start + 0x30)
 
         if frame_ready:
             with frame_lock:
@@ -1075,18 +1087,19 @@ def main() -> None:
         clock.tick(maxfps)
 
 
-# ENTRY POINT
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
         _log.info("Interrupted by user (Ctrl+C)")
     except Exception as e:
-        _log.error("Unhandled exception", exc_info=(type(e), e, e.__traceback__))
+        _log.error("Unhandled exception", exc_info=_extract_exc_info(e))
 
     finally:
-        platform_safe_cleanup()
-        shutdown_threads()
+        if run_event is not None:
+            run_event.set()  # make sure the event is set before shutting down # type: ignore
+        _platform_safe_cleanup()
+        _shutdown_threads()
         pygame.quit()
         _log.info("Pygame: Shutting down")
         _log.info("PyNES Emulator: Shutdown complete")

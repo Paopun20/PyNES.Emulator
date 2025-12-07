@@ -2,6 +2,7 @@
 maturin # Rust
 cython # Cython
 setuptools-rust # Rust build
+pybind11 # C++ bindings
 
 # game development
 pygame-ce # community edition of pygame

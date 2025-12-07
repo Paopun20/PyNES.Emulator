@@ -1,18 +1,8 @@
 from enum import Enum
-from typing import (
-    Dict,
-    Optional,
-    SupportsInt,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-    overload,
-    override,
-)
+from typing import Dict, Optional, SupportsInt, Tuple, Type, TypeVar, Union, cast, final, overload, override
 
 
+@final
 class Sign(Enum):
     """Enumeration for signedness of Bype values."""
 
@@ -91,29 +81,26 @@ class Bype(int, metaclass=BypeMeta):
 
     @classmethod
     def _wrap_class(cls: Type[B], v: int) -> int:
-        """Wrap value at class level using precomputed mask."""
-        # Apply bitmask first to constrain to bit width
-        v = v & cls.mask
-        
-        # Handle signed interpretation
-        if cls.sign == Sign.SIGNED and cls.bits is not None:
+        """Wrap value at class level using precomputed mask.
+
+        This method ensures values are constrained to the specified bit width
+        and interprets them according to the signedness setting.
+        """
+        if cls.bits is None:
+            raise TypeError("Bits not configured for this Bype class")
+
+        # First, wrap to the bit width using modulo arithmetic
+        # This handles both positive and negative inputs correctly
+        modulo = 1 << cls.bits
+        v = v % modulo
+
+        # For signed types, convert to two's complement representation
+        if cls.sign == Sign.SIGNED:
+            # If the sign bit is set, interpret as negative
             sign_bit = 1 << (cls.bits - 1)
-            if v & sign_bit:
-                v -= 1 << cls.bits
-            elif v > cls.mask:
-                # Ensure signed values never exceed mask
-                v &= cls.mask
-        
-        # CRITICAL FIX FOR UNSIGNED TYPES:
-        # Ensure unsigned values never become negative after wrapping
-        if cls.sign == Sign.UNSIGNED:
-            if v < 0:
-                # Convert negative to equivalent positive modulo 2^bits
-                v = v % (1 << cls.bits)
-            elif v > cls.mask:
-                # Ensure unsigned values never exceed mask
-                v &= cls.mask
-        
+            if v >= sign_bit:
+                v -= modulo
+
         return v
 
     @classmethod

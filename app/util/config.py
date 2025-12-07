@@ -64,7 +64,6 @@ def _deep_merge(
 
 
 def _validate_config(cfg: Config) -> None:
-    """Light validation — ไม่ต้องจริงจังแต่กันพลาดได้ดีขึ้น"""
     if not isinstance(cfg["general"]["fps"], int) or cfg["general"]["fps"] <= 0:
         raise ValueError("general.fps must be a positive integer")
 
@@ -91,7 +90,7 @@ def load_config() -> Config:
         if not isinstance(data, dict):
             raise ValueError("Config file root must be a table (dict).")
 
-        _deep_merge(config, data)
+        _deep_merge(config, data) # type: ignore
         _validate_config(config)
 
     except Exception as e:

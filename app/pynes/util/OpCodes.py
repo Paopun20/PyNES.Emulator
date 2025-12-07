@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, TypedDict, Literal
+from typing import Dict, List, Literal, Optional, TypedDict
 
 
 class OpCode(TypedDict):
@@ -271,9 +271,19 @@ list_OpCode: Dict[int, OpCode] = {
 
 # Exhaustive set of all valid 6502 addressing modes (excluding 'illegal')
 _AddressMode = Literal[
-    "implied", "accumulator", "immediate", "zeropage", "zeropage_x", "zeropage_y",
-    "absolute", "absolute_x", "absolute_y", "indirect",
-    "indexed_indirect", "indirect_indexed", "relative"
+    "implied",
+    "accumulator",
+    "immediate",
+    "zeropage",
+    "zeropage_x",
+    "zeropage_y",
+    "absolute",
+    "absolute_x",
+    "absolute_y",
+    "indirect",
+    "indexed_indirect",
+    "indirect_indexed",
+    "relative",
 ]
 
 

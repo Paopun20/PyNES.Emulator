@@ -37,15 +37,15 @@ jobs:
             build-mode: none
             os: ubuntu-latest
           
-          # Rust scanning on Ubuntu
-          - language: rust
-            build-mode: none
-            os: ubuntu-latest
+          # # Rust scanning on Ubuntu
+          # - language: rust
+          #   build-mode: none
+          #   os: ubuntu-latest
           
-          # Rust scanning on Windows (if platform-specific code exists)
-          - language: rust
-            build-mode: none
-            os: windows-latest
+          # # Rust scanning on Windows (if platform-specific code exists)
+          # - language: rust
+          #   build-mode: none
+          #   os: windows-latest
     
     steps:
       - name: Checkout repository

@@ -31,6 +31,7 @@ app/rust/*/Cargo.lock
 *.log
 *.bak
 *.backup
+*.egg-info
 
 # venv
 .venv/*
