@@ -30,10 +30,9 @@ The emulator is still under development, and performance is not yet optimized. E
 
 - **CPU Emulation**: Partial implementation of the 6502 CPU instruction set. (support unofficial opcodes but not complete yet)
 - **PPU Emulation**: Basic PPU functionality for rendering graphics, sprites, and backgrounds. (WIP)
-- **APU Emulation**: Basic sound emulation (WIP).
 - **Input Emulation**: Keyboard support. (You need to hold it until frame is rendered, idk why but it work that way)
 - **Controller Support**: Like **Input Emulation** but with every **Joystick**/**Gamepad** support? (using pygame-ce (pygame community edition), but untesting).
-- **ROM Loading**: Supports `.nes` ROM files.
+- **ROM Loading**: Supports `.nes` ROM files. (not txt files, and ram)
 - **Debugging**: Basic FPS and CPU register display. (WIP for more advanced debugging tools)
 - **Discord Rich Presence**: Support for displaying current game activity on Discord.
 - **Mapper Support**: support only 3 mappers and 1 buggy mapper.
@@ -54,7 +53,8 @@ The emulator is still under development, and performance is not yet optimized. E
 - **Performance Optimizations**: Further optimize the emulator for speed and efficiency.
 - **Multiplayer Support**: Implement support for multiple controllers for two-player games.
 - **Documentation**: Improve documentation for users and developers.
-<!-- - **Add "Cython, Rust or Any" components**: Move more performance-critical parts to Cython, Rust or Any for better performance and lower cpu use. -->
+- **New User Interface**: Design and implement a modern and intuitive user interface.
+- **Add extensions components**: Move more performance-critical parts to Cython, Rust or C++ for better performance and lower cpu use. (not now)
 
 ## Development Note
 
@@ -67,13 +67,13 @@ Some code may be messy or not well-optimized as this is a learning project. Cont
 
 ### Mapper Support
 
-| Status | ID  | Name  | Notes                         | Known Issues |
-| ------ | --- | ----- | ----------------------------- | ------------ |
-| ✅     | 0   | NROM  | Fixed PRG/CHR                 | —            |
-| ✅     | 1   | MMC1  | PRG/CHR bank switching + IRQ  | —            |
-| ✅     | 2   | UxROM | PRG bank switch (8KB @ $E000) | —            |
-| ✅     | 3   | CNROM | CHR bank switch (8KB)         | —            |
-| ⚠️     | 4   | MMC3  | PRG/CHR bank + scanline IRQ   | IRQ          |
+| Status | ID  | Name  | Notes                         | Known Issues   |
+| ------ | --- | ----- | ----------------------------- | -------------- |
+| ✅     | 0   | NROM  | Fixed PRG/CHR                 | —              |
+| ⚠️     | 1   | MMC1  | PRG/CHR bank switching + IRQ  | unknown issues |
+| ⚠️     | 2   | UxROM | PRG bank switch (8KB @ $E000) | Untested       |
+| ⚠️     | 3   | CNROM | CHR bank switch (8KB)         | Untested       |
+| ⚠️     | 4   | MMC3  | PRG/CHR bank + scanline IRQ   | IRQ            |
 
 ---
 

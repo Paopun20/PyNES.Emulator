@@ -141,9 +141,23 @@ class Architecture:
 
 @dataclass
 class NameTable:
-    data: List[List[int]] = field(default_factory=lambda: [[0] * 32 for _ in range(32)])
+    tiles: np.ndarray = field(
+        default_factory=lambda: np.zeros((30, 32), dtype=np.uint8)
+    )
+    attributes: np.ndarray = field(
+        default_factory=lambda: np.zeros((8, 8), dtype=np.uint8)
+    )
     zone: Tuple[int, int] = (0, 0)
 
+    @property
+    def ppu_address(self) -> int:
+        base = 0x2000
+        return base + (self.zone[1] * 0x400) + (self.zone[0] * 0x400)
+
+    def to_bytes(self) -> bytes:
+        """Export full 1 KB NT block"""
+        return bytes(self.tiles.flatten().tolist() +
+                     self.attributes.flatten().tolist())
 
 @dataclass
 class Sprite:
@@ -160,102 +174,29 @@ class PPUPendingWrites:
     value: int
     remaining_ppu_cycles: int
 
-
-CHROMA_SATURATION_CORRECTION: Final[float] = 2.4
-HUE: Final[float] = 0
-SinTable: Final[List[float]] = [
-    math.sin(math.pi * (i + 2.5 + HUE) / 6) * CHROMA_SATURATION_CORRECTION for i in range(12)
-]
-CosTable: Final[List[float]] = [
-    math.cos(math.pi * (i + 2.5 + HUE) / 6) * CHROMA_SATURATION_CORRECTION for i in range(12)
-]
-
-
-NTSC_VOLTAGES = [
-    0.518,
-    0.358,
-    0.496,
-    0.512,
-    0.650,
-    0.966,
-    1.558,
-    1.040,
-    0.622,
-    0.450,
-    0.466,
-    0.906,
-    1.040,
-    0.638,
-    0.478,
-    0.494,
-]
-NTSC_VBL = NTSC_VOLTAGES[1]  # Black level
-NTSC_VWL = NTSC_VOLTAGES[6]  # White level
-NTSC_LEVEL_0 = (NTSC_VOLTAGES[0] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_1 = (NTSC_VOLTAGES[1] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_2 = (NTSC_VOLTAGES[2] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_3 = (NTSC_VOLTAGES[3] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_4 = (NTSC_VOLTAGES[4] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_5 = (NTSC_VOLTAGES[5] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_6 = (NTSC_VOLTAGES[6] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_7 = (NTSC_VOLTAGES[7] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_8 = (NTSC_VOLTAGES[8] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_9 = (NTSC_VOLTAGES[9] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_A = (NTSC_VOLTAGES[10] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_B = (NTSC_VOLTAGES[11] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_C = (NTSC_VOLTAGES[12] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_D = (NTSC_VOLTAGES[13] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_E = (NTSC_VOLTAGES[14] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-NTSC_LEVEL_F = (NTSC_VOLTAGES[15] - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0
-
-# Level lookup table (index 0-15)
-NTSC_LEVELS = [
-    NTSC_LEVEL_0,
-    NTSC_LEVEL_1,
-    NTSC_LEVEL_2,
-    NTSC_LEVEL_3,
-    NTSC_LEVEL_4,
-    NTSC_LEVEL_5,
-    NTSC_LEVEL_6,
-    NTSC_LEVEL_7,
-    NTSC_LEVEL_8,
-    NTSC_LEVEL_9,
-    NTSC_LEVEL_A,
-    NTSC_LEVEL_B,
-    NTSC_LEVEL_C,
-    NTSC_LEVEL_D,
-    NTSC_LEVEL_E,
-    NTSC_LEVEL_F,
-]
-
-# Colorburst high/low values
-NTSC_COLORBURST_HIGH = (0.358 - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0  # Approximate
-NTSC_COLORBURST_LOW = (0.148 - NTSC_VBL) / (NTSC_VWL - NTSC_VBL) / 12.0  # Approximate
-
-# Sine/Cosine tables for decoding (based on 12-phase NTSC)
-NTSC_HUE = 0  # Can adjust for tint
-NTSC_SINE_TABLE = [math.sin(math.pi * (i + 2.5 + NTSC_HUE) / 6) for i in range(12)]
-NTSC_COSINE_TABLE = [math.cos(math.pi * (i + 2.5 + NTSC_HUE) / 6) for i in range(12)]
-
-
 @dataclass
 class EmulatorMemory:
-    RAM: np.ndarray
-    PRGROM: np.ndarray
-    CHRROM: np.ndarray
+    RAM: np.ndarray = field(default_factory=lambda: np.zeros(0x800, dtype=np.uint8))
+    PRGROM: np.ndarray = field(default_factory=lambda: np.zeros(0x8000, dtype=np.uint8))
+    CHRROM: np.ndarray = field(default_factory=lambda: np.zeros(0x2000, dtype=np.uint8))
 
+    def copy(self) -> 'EmulatorMemory':
+        """
+        Create a copy of the emulator memory.
+        """
+        return EmulatorMemory(self.RAM.copy(), self.PRGROM.copy(), self.CHRROM.copy())
 
 class _HelperTool:
     @staticmethod
-    def _flip_byte(b: int) -> int:
+    def flip_byte(b: int) -> int:
         """Helper function to flip the bits of a byte."""
         # Example: 0b11001010 -> 0b01010011
         return int(format(b, "08b")[::-1], 2)
 
-
 class Emulator:
     """
-    Main NES Emulator class
+    PyNES is an object-oriented NES emulator written in Python,
+    aiming to replicate the behavior of the original hardware as accurately as possible.
     """
 
     def __init__(self) -> None:
@@ -263,9 +204,7 @@ class Emulator:
         self.cartridge: Cartridge = Cartridge.EmptyCartridge()
         self.mapper: Optional[Mapper] = None
         self._events: Dict[str, deque[Callable[..., Any]]] = {}
-        self._RAM: np.ndarray = np.zeros(0x800, dtype=np.uint8)  # 2KB RAM
-        self._PRGROM: np.ndarray = np.zeros(0x8000, dtype=np.uint8)  # 32KB ROM
-        self._CHRROM: np.ndarray = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR ROM
+        self._memory: EmulatorMemory = EmulatorMemory()
         self.tracelog: deque[str] = deque(maxlen=2024)
         self.controllers: Final[Dict[int, Controller]] = {
             1: Controller(buttons={}),  # Controller 1
@@ -328,7 +267,10 @@ class Emulator:
 
     @property
     def getMemory(self) -> EmulatorMemory:
-        return EmulatorMemory(self._RAM, self._PRGROM, self._CHRROM)
+        """
+        Returns a copy of the emulator's memory.
+        """
+        return self._memory.copy()
 
     def _tracelogger(self, OpCode: int) -> None:
         line = TEMPLATE.substitute(
@@ -376,7 +318,7 @@ class Emulator:
 
         # RAM ($0000-$1FFF)
         if addr < 0x2000:
-            val = int(self._RAM[addr & 0x07FF])
+            val = int(self._memory.RAM[addr & 0x07FF])
 
         # PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
@@ -405,7 +347,7 @@ class Emulator:
             if self.mapper:
                 val = self.mapper.cpu_read(addr)
             else:
-                val = int(self._PRGROM[addr - 0x8000])
+                val = int(self._memory.PRGROM[addr - 0x8000])
 
         if hasattr(self.mapper, "tick_a12") and addr < 0x2000:
             # A12 = bit 12 of PPU address
@@ -423,7 +365,7 @@ class Emulator:
 
         # RAM ($0000-$1FFF) with mirroring
         if addr < 0x2000:
-            self._RAM[addr & 0x07FF] = val
+            self._memory.RAM[addr & 0x07FF] = val
 
         # PPU registers ($2000-$3FFF)
         elif addr < 0x4000:
@@ -542,14 +484,14 @@ class Emulator:
                     # Buffer should be loaded with underlying nametable data
                     nt_addr = ppu_addr & 0x2FFF
                     if nt_addr < 0x2000:
-                        self.PPUDataBuffer = int(self._CHRROM[nt_addr])
+                        self.PPUDataBuffer = int(self._memory.CHRROM[nt_addr])
                     else:
                         self.PPUDataBuffer = int(self.VRAM[nt_addr & 0x0FFF])
                 else:
                     # Return buffered value, then load buffer from current address
                     result = self.PPUDataBuffer
                     if ppu_addr < 0x2000:
-                        self.PPUDataBuffer = int(self._CHRROM[ppu_addr])
+                        self.PPUDataBuffer = int(self._memory.CHRROM[ppu_addr])
                     else:
                         self.PPUDataBuffer = int(self.VRAM[ppu_addr & 0x0FFF])
 
@@ -678,7 +620,7 @@ class Emulator:
             ppu_addr = self.v & 0x3FFF
 
             if ppu_addr < 0x2000:
-                self._CHRROM[ppu_addr] = val
+                self._memory.CHRROM[ppu_addr] = val
             elif ppu_addr < 0x3F00:
                 self.VRAM[ppu_addr & 0x0FFF] = val
             else:
@@ -690,7 +632,6 @@ class Emulator:
             increment = 32 if (self.PPUCTRL & 0x04) else 1
             self.v = (self.v + increment) & 0x7FFF
 
-    # @lru_cache(maxsize=None)
     def _do_read_operands_AbsoluteAddressed(self) -> None:
         """Read 16-bit absolute address (little endian)."""
         self.Architecture.current_instruction_mode = CurrentInstructionMode.Absolute
@@ -700,7 +641,6 @@ class Emulator:
         self.Architecture.ProgramCounter += 1
         self.addressBus = (high << 8) | low
 
-    # @lru_cache(maxsize=None)
     def _do_read_operands_AbsoluteAddressed_YIndexed(self) -> None:
         """Read absolute address and add Y (Y is NOT modified)."""
         self.Architecture.current_instruction_mode = CurrentInstructionMode.AbsoluteIndexed
@@ -726,14 +666,12 @@ class Emulator:
             self.Architecture.page_boundary_crossed_just_happened = True
             self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
 
-    # @lru_cache(maxsize=None)
     def _do_read_operands_ZeroPage(self) -> None:
         """Read zero page address."""
         self.Architecture.current_instruction_mode = CurrentInstructionMode.ZeroPage
         self.addressBus = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
 
-    # @lru_cache(maxsize=None)
     def _do_read_operands_ZeroPage_XIndexed(self) -> None:
         """Read zero page address and add X."""
         self.Architecture.current_instruction_mode = CurrentInstructionMode.ZeroPageIndexd
@@ -741,7 +679,6 @@ class Emulator:
         self.Architecture.ProgramCounter += 1
         self.addressBus = (addr + self.Architecture.X) & 0xFF
 
-    # @lru_cache(maxsize=None)
     def _do_read_operands_ZeroPage_YIndexed(self) -> None:
         """Read zero page address and add Y."""
         self.Architecture.current_instruction_mode = CurrentInstructionMode.ZeroPageIndexd
@@ -749,7 +686,6 @@ class Emulator:
         self.Architecture.ProgramCounter += 1
         self.addressBus = (addr + self.Architecture.Y) & 0xFF
 
-    # @lru_cache(maxsize=None)
     def _do_read_operands_IndirectAddressed_YIndexed(self) -> None:
         """Indirect indexed addressing (zero page),Y."""
         self.Architecture.current_instruction_mode = CurrentInstructionMode.IndirectIndexed
@@ -775,7 +711,6 @@ class Emulator:
             self.Architecture.page_boundary_crossed_just_happened = True
             self._cycles_extra = getattr(self, "_cycles_extra", 0) + 1
 
-    # @lru_cache(maxsize=None)
     def _do_read_operands_IndirectAddressed_XIndexed(self) -> None:
         """Indexed indirect addressing (zero page,X)."""
         self.Architecture.current_instruction_mode = CurrentInstructionMode.IndexedIndirect
@@ -851,7 +786,6 @@ class Emulator:
         self.Architecture.flags.Negative = bool(value >= 0x80)
 
     # OPERATIONS
-
     def _do_op_ASL(self, Address: int, Input: int) -> None:
         """Arithmetic Shift Left."""
         _ = self._read(Address)  # Dummy read
@@ -1025,7 +959,7 @@ class Emulator:
         else:
             self.Architecture.Cycles = 2  # Branch not taken
 
-    def Copy(self):
+    def Copy(self) -> "Emulator":
         clone = self.__class__.__new__(self.__class__)
         clone.__dict__ = self.__dict__.copy()
         return clone
@@ -1037,22 +971,22 @@ class Emulator:
 
         _logger.info("Resetting emulator...")
         self.cartridge = self.cartridge
-        self._PRGROM = self.cartridge.PRGROM
-        self._CHRROM = self.cartridge.CHRROM
+        self._memory.PRGROM = self.cartridge.PRGROM
+        self._memory.CHRROM = self.cartridge.CHRROM
 
         # Initialize mapper based on cartridge mapper ID
         mapper_id = self.cartridge.MapperID
         match mapper_id:
             case 0:
-                self.mapper = Mapper000(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper000(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
             case 1:
-                self.mapper = Mapper001(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper001(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
             case 2:
-                self.mapper = Mapper002(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper002(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
             case 3:
-                self.mapper = Mapper003(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper003(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
             case 4:
-                self.mapper = Mapper004(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+                self.mapper = Mapper004(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
             case _:
                 raise EmulatorError(NotImplementedError(f"Mapper {mapper_id} not supported."))
 
@@ -1100,8 +1034,8 @@ class Emulator:
                 )
             )
         self.cartridge = cartridge
-        self._PRGROM = self.cartridge.PRGROM
-        self._CHRROM = self.cartridge.CHRROM
+        self._memory.PRGROM = self.cartridge.PRGROM
+        self._memory.CHRROM = self.cartridge.CHRROM
 
     def Swap(self, cartridge: Cartridge) -> None:
         """
@@ -1114,21 +1048,21 @@ class Emulator:
             raise EmulatorError(ValueError("Invalid cartridge object provided."))  # it is not a valid cartridge object
 
         self.cartridge = cartridge
-        self._PRGROM = self.cartridge.PRGROM
-        self._CHRROM = self.cartridge.CHRROM
+        self._memory.PRGROM = self.cartridge.PRGROM
+        self._memory.CHRROM = self.cartridge.CHRROM
 
         # Initialize mapper based on cartridge mapper ID
         mapper_id = self.cartridge.MapperID
         if mapper_id == 0:
-            self.mapper = Mapper000(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper000(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 1:
-            self.mapper = Mapper001(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper001(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 2:
-            self.mapper = Mapper002(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper002(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 3:
-            self.mapper = Mapper003(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper003(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
         elif mapper_id == 4:
-            self.mapper = Mapper004(self._PRGROM, self._CHRROM, self.cartridge.MirroringMode)
+            self.mapper = Mapper004(self._memory.PRGROM, self._memory.CHRROM, self.cartridge.MirroringMode)
         else:
             _logger.warning(f"Mapper {mapper_id} not supported")
             raise EmulatorError(NotImplementedError(f"Mapper {mapper_id} not supported."))
@@ -1174,7 +1108,7 @@ class Emulator:
         if not self.Architecture.Halted:
             self._step()
         else:
-            raise EmulatorError(RuntimeError("Cannot step cycle when halted"))
+            pass # it is not possible to step cycle when halted
 
     def _do_run_IRQ(self) -> None:
         """Handle Interrupt Request."""
@@ -2357,7 +2291,7 @@ class Emulator:
             if self.mapper:
                 return self.mapper.ppu_read(addr)
             else:
-                return int(self._CHRROM[addr])
+                return int(self._memory.CHRROM[addr])
 
         # VRAM ($2000-$3EFF)
         elif addr < 0x3F00:
@@ -2448,8 +2382,8 @@ class Emulator:
                 plane1 = self.mapper.ppu_read(tile_addr + tile_row)
                 plane2 = self.mapper.ppu_read(tile_addr + tile_row + 8)
             else:
-                plane1 = int(self._CHRROM[tile_addr + tile_row])
-                plane2 = int(self._CHRROM[tile_addr + tile_row + 8])
+                plane1 = int(self._memory.CHRROM[tile_addr + tile_row])
+                plane2 = int(self._memory.CHRROM[tile_addr + tile_row + 8])
 
             # Extract pixel
             bit = 7 - pixel_x
@@ -2545,26 +2479,21 @@ class Emulator:
                     continue
                 if clip_left and sx < 8:
                     continue
+                
+                bg_pixel = self._bg_opaque_line[sx]
 
-                sprite_palette = attributes & 0x03
-                palette_base = 0x10 + (sprite_palette << 2)
-                palette_addr = (palette_base + color_idx) & 0x1F
-                color = self.PaletteRAM[palette_addr]
-                rgb = self._NESPaletteToRGB(color & 0x3F)
-
-                # Sprite 0 hit detection
+                # Sprite 0 hit detection # it not working
                 if i == 0 and (self.PPUMASK & 0x18) == 0x18:
-                    bg_opaque = self._bg_opaque_line[sx] if hasattr(self, "_bg_opaque_line") else False
-                    if bg_opaque and color_idx != 0 and sx != 255:
+                    if bg_pixel and color_idx != 0 and sx != 255:
                         if not ((clip_left or (self.PPUMASK & 0x02) == 0) and sx < 8):
                             self.PPUSTATUS |= 0x40
 
                 priority = (attributes >> 5) & 1
-                bg_pixel_opaque = self._bg_opaque_line[sx] if hasattr(self, "_bg_opaque_line") else False
 
-                if priority == 0 or not bg_pixel_opaque:
-                    if 0 <= scanline < 240:
-                        self.FrameBuffer[scanline, sx] = rgb
+                if priority == 0 or not bg_pixel:
+                    self.FrameBuffer[scanline, sx] = self._NESPaletteToRGB(
+                        self.PaletteRAM[(((0x10 + ((attributes & 0x03) << 2)) + color_idx) & 0x1F)] & 0x3F
+                    )
 
     def _evaluate_sprites_for_scanline(self) -> None:
         """

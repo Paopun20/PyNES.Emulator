@@ -447,7 +447,7 @@ def main() -> None:
         if not file_path.exists() or not file_path.is_file():
             messagebox.showerror("Error", "No NES file selected")
             continue
-        elif file_path.suffix != ".nes":
+        elif file_path.suffix.lower() != ".nes":
             messagebox.showerror("Error", "Invalid file type, please select a NES file")
             continue
 
@@ -511,7 +511,7 @@ def main() -> None:
                 for j in range(16):
                     if addr + j < end:
                         try:
-                            val = self.emu._RAM[addr + j]
+                            val = self.emu._memory.RAM[addr + j]
                             hex_vals.append(f"{val:02X}")
                             chr_str = chr(val) if 32 <= val <= 126 else "?"
                             ascii_vals.append(chr_str if chr_str.isprintable() else ".")
@@ -577,7 +577,7 @@ def main() -> None:
             try:
                 os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
                 with open(filename, "wb") as f:
-                    f.write(self.emu.getMemory.RAM[:].tobytes())
+                    f.write(self.emu._memory.RAM[:].tobytes())
                 _log.info(f"Memory dumped to {filename}")
                 return True
             except Exception as e:

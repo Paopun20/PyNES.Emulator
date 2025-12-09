@@ -1,11 +1,11 @@
 import pygame
-from typing import Final
+from typing import Final, Dict, List
 from logger import log as _log
 from util.config import load_config
 
 cfg = load_config()
 class Control(object):
-    NES_KEYS: Final[list[str]] = [
+    NES_KEYS: Final[List[str]] = [
         "A",
         "B",
         "Select",
@@ -16,7 +16,7 @@ class Control(object):
         "Right",
     ]
 
-    KEY_MAPPING: Final[dict[int, str]] = {
+    KEY_MAPPING: Final[Dict[int, str]] = {
         pygame.K_x: "A",
         pygame.K_z: "B",
         pygame.K_RSHIFT: "Select",
@@ -27,7 +27,7 @@ class Control(object):
         pygame.K_RIGHT: "Right",
     }
 
-    GAMEPAD_BUTTON_MAP: Final[dict[int, str]] = {
+    GAMEPAD_BUTTON_MAP: Final[Dict[int, str]] = {
         0: "A",  # Button A
         1: "B",  # Button B
         6: "Select",  # Back
@@ -40,9 +40,8 @@ class Control(object):
         pygame.init()
         pygame.joystick.init()
 
-        # สร้าง KEY_MAPPING จาก config
-        self.KEY_MAPPING: dict[int, str] = self._build_key_mapping()
-        self.GAMEPAD_BUTTON_MAP: dict[int, str] = {
+        self.KEY_MAPPING: Dict[int, str] = self._build_key_mapping()
+        self.GAMEPAD_BUTTON_MAP: Dict[int, str] = {
             0: "A",
             1: "B",
             6: "Select",
@@ -54,7 +53,7 @@ class Control(object):
         self.joysticks = {}
         self.init_all_joysticks()
 
-    def _build_key_mapping(self) -> dict[int, str]:
+    def _build_key_mapping(self) -> Dict[int, str]:
         mapping = {}
         cfg_map = cfg["keyboard"]
     

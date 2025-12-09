@@ -24,5 +24,3 @@ def hasGIL() -> Literal[-1, 0, 1]:
             return 0
         case None:
             return -1
-        case _:
-            return -1

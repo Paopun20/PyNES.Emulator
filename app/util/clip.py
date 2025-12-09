@@ -149,12 +149,8 @@ class Clip:
         finally:
             try:
                 win32clipboard.CloseClipboard()
-            except:
-                # If CloseClipboard fails, try to ensure it's closed
-                try:
-                    win32clipboard.CloseClipboard()
-                except:
-                    pass  # Ignore if already closed
+            except win32clipboard.error:
+                pass
 
     @staticmethod
     def _copy_macos(img: Image.Image) -> None:
