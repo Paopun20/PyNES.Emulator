@@ -1038,13 +1038,20 @@ def main() -> None:
                         emu_timer.resume()
                         run_event.set()
                     elif event.key == pygame.K_F12:
+                        run_event.clear()
+                        emu_timer.pause()
                         _log.info("Try to copy frame to clipboard")
                         try:
                             sprite.export()
                             PyClip.copy(sprite.export())
-                            _log.info("Clipboard copied")
-                        except Exception as e:
+                        except Exception as e: # on failure
                             _log.error(f"Clipboard failed: {e}", exc_info=_extract_exc_info(e))
+                        else: # only if successful
+                            _log.info("Clipboard copied")
+                        finally: # always
+                            emu_timer.resume()
+                            run_event.set()
+
                     elif show_debug:
                         if debug_mode_index == 4:
                             if event.key == pygame.K_F1:

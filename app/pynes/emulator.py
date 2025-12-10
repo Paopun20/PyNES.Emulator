@@ -197,6 +197,9 @@ class Emulator:
     """
     PyNES is an object-oriented NES emulator written in Python,
     aiming to replicate the behavior of the original hardware as accurately as possible.
+
+    This class is based on Object-Oriented Programming (OOP) principles.
+    It can run more than one instance at a time.
     """
 
     def __init__(self) -> None:
@@ -1407,10 +1410,10 @@ class Emulator:
                     self.Architecture.A = self.Architecture.Y
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0xBA:  # TSX
-                    self.Architecture.X = self.Architecture.StackPointer
+                    self.Architecture.X = Cb8U(self.Architecture.StackPointer)
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.X)
                 elif sub_opcode == 0x9A:  # TXS
-                    self.Architecture.StackPointer = self.Architecture.X
+                    self.Architecture.StackPointer = Cb16U(self.Architecture.X)
                 return self._make_end_execute_opcode()
 
             # STACK INSTRUCTIONS
@@ -2151,7 +2154,8 @@ class Emulator:
                 """LAS - AND memory with stack pointer, transfer to A, X, and SP"""
                 self._do_read_operands_AbsoluteAddressed_YIndexed()
                 value = self._read(self.addressBus) & self.Architecture.StackPointer
-                self.Architecture.A = self.Architecture.X = self.Architecture.StackPointer = value & 0xFF
+                self.Architecture.A = self.Architecture.X = Cb8U(value & 0xFF)
+                self.Architecture.StackPointer = Cb16U(value & 0xFF)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 return self._make_end_execute_opcode()
 

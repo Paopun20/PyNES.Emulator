@@ -12,19 +12,26 @@ from typing_extensions import deprecated
 class Cartridge:
     """
     Represents an NES cartridge loaded from an iNES ROM file.
-    
+
     This class handles parsing the iNES file format, extracting the PRG ROM,
     CHR ROM, trainer data, and header information including mapper ID and
     mirroring mode.
+
+    Notes:
+      - PRG ROM units: 16 KB blocks (0x4000)
+      - CHR ROM units: 8 KB blocks  (0x2000)
+      - Trainer presence: flags6 bit 2 (0x04)
+      - Mirroring: flags6 bit 0 (0 = horizontal, 1 = vertical)
+      - Mapper: high nibble from flags7 and low nibble from flags6
+      - TV system (iNES v1): header byte 9 (index 9) bit 0 -> 0=NTSC, 1=PAL
     """
-    
+
     HEADER_SIZE: Final[int] = 0x10  # 16 bytes
     TRAINER_SIZE: Final[int] = 0x200  # 512 bytes
+    MAGIC: Final[bytes] = b"NES\x1A"
 
     def __init__(self) -> None:
-        """
-        Initialize an empty cartridge with default values.
-        """
+        """Initialize an empty cartridge with default values."""
         self.file: str = ""
         self.HeaderedROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
         self.PRGROM: NDArray[np.uint8] = np.zeros(0, dtype=np.uint8)
@@ -34,9 +41,7 @@ class Cartridge:
         self.MirroringMode: int = 0  # 0=Horizontal, 1=Vertical
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of the cartridge.
-        """
+        """Return a string representation of the cartridge."""
         return (
             f"<Cartridge file={self.file!r} "
             f"PRG={len(self.PRGROM)} bytes "
@@ -47,37 +52,18 @@ class Cartridge:
             f"TVSystem={self.tv_system}>"
         )
 
-    def get_tv_system(self) -> str:
-        """
-        Determine if the ROM is NTSC or PAL based on the header.
-
-        Returns:
-            'NTSC', 'PAL', or 'Unknown' based on the TV system flag in the header.
-        """
-        if len(self.HeaderedROM) < 10:
-            return "Unknown"
-
-        # Bit 7 of byte 9 (index 8) indicates TV system
-        tv_system_flag = self.HeaderedROM[8] & 0x80
-
-        if tv_system_flag:
-            return "PAL"
-        else:
-            return "NTSC"
-
     @property
     def tv_system(self) -> str:
         """
         Property to get the TV system (NTSC/PAL) of the ROM.
-        
-        Returns:
-            'NTSC', 'PAL', or 'Unknown' based on the TV system flag in the header.
-        """
-        if len(self.HeaderedROM) < 10:
-            return "Unknown"
 
-        tv_system_flag = self.HeaderedROM[8] & 0x80
-        return "PAL" if tv_system_flag else "NTSC"
+        Uses header byte index 9 (iNES v1): bit 0 -> 0 = NTSC, 1 = PAL.
+        Returns 'NTSC', 'PAL', or 'Unknown'.
+        """
+        if len(self.HeaderedROM) <= 9:
+            return "Unknown"
+        tv_flag = int(self.HeaderedROM[9]) & 0x01
+        return "PAL" if tv_flag else "NTSC"
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Result["Cartridge", str]:
@@ -86,7 +72,7 @@ class Cartridge:
 
         Args:
             data: Raw bytes of the ROM file
-            
+
         Returns:
             Result containing either a Cartridge instance or an error string.
         """
@@ -96,57 +82,69 @@ class Cartridge:
         if len(data) < cls.HEADER_SIZE:
             return Failure(f"ROM too short: {len(data)} bytes, minimum {cls.HEADER_SIZE}")
 
-        if data[0:4] != b"NES\x1a":
-            return Failure(f"Invalid header magic: {data[0:4]}")
+        if data[0:4] != cls.MAGIC:
+            return Failure(f"Invalid header magic: {data[0:4]!r}")
 
+        # Convert to numpy array once for slicing/copying
+        arr = np.frombuffer(data, dtype=np.uint8)
         obj = cls()
-        obj.HeaderedROM = np.frombuffer(data, dtype=np.uint8)
+        obj.HeaderedROM = arr.copy()
 
-        prg_size = int(data[4]) * 0x4000  # PRG ROM size in 16KB units
-        chr_size = int(data[5]) * 0x2000  # CHR ROM size in 8KB units
-        flags6 = int(data[6])
-        flags7 = int(data[7])
+        # Read sizes and flags
+        prg_blocks = int(arr[4])
+        chr_blocks = int(arr[5])
+        prg_size = prg_blocks * 0x4000  # 16KB units
+        chr_size = chr_blocks * 0x2000  # 8KB units
+        flags6 = int(arr[6])
+        flags7 = int(arr[7])
 
-        if flags6 & 0b100 and len(data) < cls.HEADER_SIZE + cls.TRAINER_SIZE:
+        # Trainer presence: flags6 bit 2 (0x04)
+        trainer_present = bool(flags6 & 0x04)
+
+        # If trainer flag set, ensure file is at least header + trainer bytes
+        if trainer_present and len(arr) < cls.HEADER_SIZE + cls.TRAINER_SIZE:
             return Failure("Trainer flag set but ROM too small for trainer")
 
-        # Extract mapper ID from both flags 6 and 7
+        # Mapper ID: high nibble from flags7, low nibble from flags6
         mapper_low = (flags6 >> 4) & 0x0F
         mapper_high = (flags7 >> 4) & 0x0F
         obj.MapperID = (mapper_high << 4) | mapper_low
 
-        # Extract mirroring mode (bit 0 of flags 6)
+        # Mirroring mode: bit 0 of flags6
         obj.MirroringMode = flags6 & 0x01
+
         offset = cls.HEADER_SIZE
 
-        # Extract trainer data if present (bit 2 of flags 6)
-        if flags6 & 0b100:
+        # Extract trainer if present
+        if trainer_present:
             trainer_end = offset + cls.TRAINER_SIZE
-            if trainer_end > len(data):
+            if trainer_end > len(arr):
                 return Failure("Trainer exceeds ROM length")
-            obj.Trainer = obj.HeaderedROM[offset:trainer_end].copy()
+            obj.Trainer = arr[offset:trainer_end].copy()
             offset = trainer_end
 
         # Extract PRG ROM
         prg_end = offset + prg_size
-        if prg_end > len(data):
-            return Failure(f"PRG ROM exceeds file length ({prg_end} > {len(data)})")
-        obj.PRGROM = obj.HeaderedROM[offset:prg_end].copy()
+        if prg_end > len(arr):
+            return Failure(f"PRG ROM exceeds file length ({prg_end} > {len(arr)})")
+        obj.PRGROM = arr[offset:prg_end].copy()
         offset = prg_end
 
-        # Extract CHR ROM
+        # Extract CHR ROM (may be zero-length: CHR RAM used by mapper)
         if chr_size == 0:
-            # Some games have no CHR ROM, so create a default one
-            obj.CHRROM = np.zeros(0x2000, dtype=np.uint8)
+            # No CHR ROM in file: leave CHRROM empty (mapper/PPU should provide CHR RAM)
+            obj.CHRROM = np.zeros(0, dtype=np.uint8)
         else:
             chr_end = offset + chr_size
-            if chr_end > len(data):
-                return Failure(f"CHR ROM exceeds file length ({chr_end} > {len(data)})")
-            obj.CHRROM = obj.HeaderedROM[offset:chr_end].copy()
+            if chr_end > len(arr):
+                return Failure(f"CHR ROM exceeds file length ({chr_end} > {len(arr)})")
+            obj.CHRROM = arr[offset:chr_end].copy()
+            offset = chr_end
 
-        # Log a warning if there are extra bytes beyond expected size
-        if len(data) > offset + chr_size:
-            extra_bytes = len(data) - (offset + chr_size)
+        # Log warning if there are extra bytes beyond expected size
+        expected_end = offset
+        if len(arr) > expected_end:
+            extra_bytes = len(arr) - expected_end
             log.warning(f"Extra {extra_bytes} bytes at end of ROM ignored")
 
         return Success(obj)
@@ -158,7 +156,7 @@ class Cartridge:
 
         Args:
             filepath: Path to the file to check
-            
+
         Returns:
             A tuple of (is_valid, error_message) where is_valid is a boolean
             indicating if the file is valid, and error_message is None if valid
@@ -183,7 +181,7 @@ class Cartridge:
 
         Args:
             filepath: Path to the ROM file to load
-            
+
         Returns:
             Result containing either a Cartridge instance or an error string.
         """
@@ -200,40 +198,53 @@ class Cartridge:
             return cart
 
         return result.map(attach_file)
-    
+
     def get_byte(self, address: int) -> int:
         """
-        Get a byte from the cartridge's memory.
+        Read a single byte from the cartridge memory.
 
-        Args:
-            address: Memory address to read from.
+        This method supports two address spaces commonly used when emulating:
+          - PPU pattern space: 0x0000 - 0x1FFF -> CHR ROM/RAM
+          - CPU PRG space:     0x8000 - 0xFFFF -> PRG ROM banks
 
-        Returns:
-            The byte at the specified address.
+        Raises:
+            IndexError if the requested address is out-of-range for the available ROM.
         """
-        if address < 0x8000:
-            return self.CHRROM[address]
-        else:
-            return self.PRGROM[address - 0x8000]
+        # PPU pattern table read (CHR)
+        if 0x0000 <= address <= 0x1FFF:
+            if len(self.CHRROM) == 0:
+                raise IndexError("No CHR ROM present (CHR is RAM or unavailable)")
+            if address >= len(self.CHRROM):
+                raise IndexError(f"CHR ROM index out of range: {address} >= {len(self.CHRROM)}")
+            return int(self.CHRROM[address])
+
+        # PRG ROM read via CPU (mapped at 0x8000 - 0xFFFF)
+        if 0x8000 <= address <= 0xFFFF:
+            cpu_index = address - 0x8000
+            if cpu_index >= len(self.PRGROM):
+                raise IndexError(f"PRG ROM index out of range: {cpu_index} >= {len(self.PRGROM)}")
+            return int(self.PRGROM[cpu_index])
+
+        # Address not managed by cartridge (e.g. RAM, IO); raise for clarity
+        raise IndexError(f"Address {hex(address)} not handled by Cartridge.get_byte")
 
     def get_word(self, address: int) -> int:
         """
-        Get a word (2 bytes) from the cartridge's memory.
+        Read a 16-bit little-endian word from cartridge memory.
 
-        Args:
-            address: Memory address to read from.
-
-        Returns:
-            The word at the specified address.
+        This reads two consecutive bytes: low byte at `address`, high byte at `address+1`.
+        It will raise IndexError if either byte read is out-of-range.
         """
-        return self.get_byte(address) | (self.get_byte(address + 1) << 8)
+        low = self.get_byte(address)
+        high = self.get_byte(address + 1)
+        return low | (high << 8)
 
     @property
     @deprecated("Use .PRGROM instead of .ROM")
     def ROM(self) -> NDArray[np.uint8]:
         """
         Deprecated property for accessing PRG ROM.
-        
+
         Returns:
             The PRG ROM data array.
         """
