@@ -128,7 +128,7 @@ class Architecture:
     Y: Cb8U = Cb8U(0)
     Cycles: int = 0
     Halted: bool = False
-    StackPointer: Cb16U = Cb8U(0)
+    StackPointer: Cb16U = Cb16U(0)
     ProgramCounter: Cb16U = Cb16U(0)
     OpCode: int = 0
     Bus: int = 0
@@ -137,6 +137,8 @@ class Architecture:
     page_boundary_crossed_just_happened: bool = False
     Bus_latch_timer: Timer = Timer()
     flags: Flags = field(default_factory=Flags)
+    PendingsTask: PendingsTask = field(default_factory=PendingsTask)
+    DoTask: DoTask = field(default_factory=DoTask)
 
 
 @dataclass
@@ -192,6 +194,35 @@ class _HelperTool:
         """Helper function to flip the bits of a byte."""
         # Example: 0b11001010 -> 0b01010011
         return int(format(b, "08b")[::-1], 2)
+
+@dataclass
+class Pulse:
+    duty_cycle: float = 0.5
+    frequency: float = 440.0
+    volume: float = 1.0
+
+@dataclass
+class Triangle:
+    frequency: float = 440.0
+    linear_counter: int = 0
+
+@dataclass
+class Noise:
+    frequency: float = 440.0
+    envelope: float = 1.0
+
+@dataclass
+class DMC:
+    sample_address: int = 0xC000
+    sample_length: int = 0
+
+@dataclass
+class APU:
+    pulse1: Pulse = field(default_factory=Pulse)
+    pulse2: Pulse = field(default_factory=Pulse)
+    triangle: Triangle = field(default_factory=Triangle)
+    noise: Noise = field(default_factory=Noise)
+    dmc: DMC = field(default_factory=DMC)
 
 class Emulator:
     """
@@ -257,8 +288,6 @@ class Emulator:
 
         self.NMI: NMI = NMI()
         self.IRQ: IRQ = IRQ()
-        self.DoTask: DoTask = DoTask()
-        self.PendingsTask: PendingsTask = PendingsTask()
 
         self._ntsc_signal_phase: int = 0  # Current phase of the NTSC colorburst (0-11)
         self._ntsc_samples: List[float] = [0.0] * (
@@ -933,16 +962,16 @@ class Emulator:
         self.NMI.PreviousPinsSignal = self.NMI.PinsSignal
         self.NMI.PinsSignal = self.NMI.Line
         if self.NMI.PinsSignal and not self.NMI.PreviousPinsSignal:
-            self.DoTask.NMI = True
-        self.DoTask.IRQ = self.IRQ.Line and not self.Architecture.flags.InterruptDisable
+            self.Architecture.DoTask.NMI = True
+        self.Architecture.DoTask.IRQ = self.IRQ.Line and not self.Architecture.flags.InterruptDisable
 
     def _do_poll_interrupts_with_cartridge_disable_IRQ(self) -> None:
         self.NMI.PreviousPinsSignal = self.NMI.PinsSignal
         self.NMI.PinsSignal = self.NMI.Line
         if self.NMI.PinsSignal and not self.NMI.PreviousPinsSignal:
-            self.DoTask.NMI = True
-        if not self.DoTask.IRQ:
-            self.DoTask.IRQ = self.IRQ.Line and not self.Architecture.flags.InterruptDisable
+            self.Architecture.DoTask.NMI = True
+        if not self.Architecture.DoTask.IRQ:
+            self.Architecture.DoTask.IRQ = self.IRQ.Line and not self.Architecture.flags.InterruptDisable
 
     def _do_branch(self, condition: bool) -> None:
         """Handle branch instruction."""
@@ -998,10 +1027,8 @@ class Emulator:
         self.Architecture.Bus_latch_timer.reset()
         self.Architecture = Architecture(Bus_latch_timer=self.Architecture.Bus_latch_timer)
         self.Architecture.flags = Flags(InterruptDisable=True)
-        self.DoTask = DoTask()
         self.IRQ = IRQ()
         self.NMI = NMI()
-        self.PendingsTask = PendingsTask()
         self.Architecture.Cycles = 0
 
         # Read reset vector
@@ -1145,8 +1172,8 @@ class Emulator:
             return
 
         # Check for IRQ
-        if self.PendingsTask.IRQ and not self.Architecture.flags.InterruptDisable:
-            self.PendingsTask.IRQ = False
+        if self.Architecture.PendingsTask.IRQ and not self.Architecture.flags.InterruptDisable:
+            self.Architecture.PendingsTask.IRQ = False
             self._do_run_IRQ()
             return
 
@@ -1207,7 +1234,7 @@ class Emulator:
         match self.Architecture.OpCode:
             # CONTROL FLOW
             case 0x00:  # BRK
-                self.PendingsTask.IRQ = True
+                self.Architecture.PendingsTask.IRQ = True
                 self._read(self.Architecture.ProgramCounter)
                 self.Architecture.ProgramCounter += 1
                 self._do_push(self.Architecture.ProgramCounter >> 8)
@@ -1282,69 +1309,69 @@ class Emulator:
             # LOAD INSTRUCTIONS - LDA
             case 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 as sub_opcode:
                 if sub_opcode == 0xA9:  # LDA Immediate
-                    self.Architecture.A = self._read(self.Architecture.ProgramCounter)
+                    self.Architecture.A = Cb8U(self._read(self.Architecture.ProgramCounter))
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA5:  # LDA Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.A = self._read(self.addressBus)
+                    self.Architecture.A = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xB5:  # LDA Zero Page,X
                     self._do_read_operands_ZeroPage_XIndexed()
-                    self.Architecture.A = self._read(self.addressBus)
+                    self.Architecture.A = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xAD:  # LDA Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.A = self._read(self.addressBus)
+                    self.Architecture.A = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xBD:  # LDA Absolute,X
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
-                    self.Architecture.A = self._read(self.addressBus)
+                    self.Architecture.A = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xB9:  # LDA Absolute,Y
                     self._do_read_operands_AbsoluteAddressed_YIndexed()
-                    self.Architecture.A = self._read(self.addressBus)
+                    self.Architecture.A = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xA1:  # LDA (Indirect,X)
                     self._do_read_operands_IndirectAddressed_XIndexed()
-                    self.Architecture.A = self._read(self.addressBus)
+                    self.Architecture.A = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xB1:  # LDA (Indirect),Y
                     self._do_read_operands_IndirectAddressed_YIndexed()
-                    self.Architecture.A = self._read(self.addressBus)
+                    self.Architecture.A = Cb8U(self._read(self.addressBus))
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 return self._make_end_execute_opcode()
 
             # LOAD INSTRUCTIONS - LDX
             case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE as sub_opcode:
                 if sub_opcode == 0xA2:  # LDX Immediate
-                    self.Architecture.X = self._read(self.Architecture.ProgramCounter)
+                    self.Architecture.X = Cb8U(self._read(self.Architecture.ProgramCounter))
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA6:  # LDX Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.X = self._read(self.addressBus)
+                    self.Architecture.X = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xB6:  # LDX Zero Page,Y
                     self._do_read_operands_ZeroPage_YIndexed()
-                    self.Architecture.X = self._read(self.addressBus)
+                    self.Architecture.X = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xAE:  # LDX Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.X = self._read(self.addressBus)
+                    self.Architecture.X = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xBE:  # LDX Absolute,Y
                     self._do_read_operands_AbsoluteAddressed_YIndexed()
-                    self.Architecture.X = self._read(self.addressBus)
+                    self.Architecture.X = Cb8U(self._read(self.addressBus))
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.X)
                 return self._make_end_execute_opcode()
 
             # LOAD INSTRUCTIONS - LDY
             case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC as sub_opcode:
                 if sub_opcode == 0xA0:  # LDY Immediate
-                    self.Architecture.Y = self._read(self.Architecture.ProgramCounter)
+                    self.Architecture.Y = Cb8U(self._read(self.Architecture.ProgramCounter))
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA4:  # LDY Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.Y = self._read(self.addressBus)
+                    self.Architecture.Y = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xB4:  # LDY Zero Page,X
                     self._do_read_operands_ZeroPage_XIndexed()
-                    self.Architecture.Y = self._read(self.addressBus)
+                    self.Architecture.Y = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xAC:  # LDY Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.Y = self._read(self.addressBus)
+                    self.Architecture.Y = Cb8U(self._read(self.addressBus))
                 elif sub_opcode == 0xBC:  # LDY Absolute,X
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
-                    self.Architecture.Y = self._read(self.addressBus)
+                    self.Architecture.Y = Cb8U(self._read(self.addressBus))
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.Y)
                 return self._make_end_execute_opcode()
 
@@ -1421,7 +1448,7 @@ class Emulator:
                 if sub_opcode == 0x48:  # PHA
                     self._do_push(self.Architecture.A)
                 elif sub_opcode == 0x68:  # PLA
-                    self.Architecture.A = self._do_pop()
+                    self.Architecture.A = Cb8U(self._do_pop())
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0x08:  # PHP
                     self._do_push(self._get_processor_status() | 0x10)
@@ -2145,7 +2172,7 @@ class Emulator:
             case 0x9B:  # TAS/SHS - Transfer A & X to SP, store in memory
                 """TAS/SHS - Transfer A AND X to SP, then store SP AND (H+1)"""
                 self._do_read_operands_AbsoluteAddressed_YIndexed()
-                self.Architecture.StackPointer = self.Architecture.A & self.Architecture.X
+                self.Architecture.StackPointer = Cb16U(self.Architecture.A & self.Architecture.X)
                 hb1 = ((self.addressBus >> 8) + 1) & 0xFF
                 self._write(self.addressBus, (self.Architecture.StackPointer & hb1) & 0xFF)
                 return self._make_end_execute_opcode()

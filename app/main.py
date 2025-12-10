@@ -984,93 +984,99 @@ def main() -> None:
     maxfps = cfg["general"]["fps"]
 
     while running:
-        events = pygame.event.get()
-        user_input.update(events)
-        if len(events) != 0:
+        if len(events := pygame.event.get()) != 0:
+            user_input.update(events)
             for event in events:
-                if event.type == pygame.QUIT:
-                    running = False
-                    break
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
+                match event.type:
+                    case pygame.QUIT:
                         running = False
-                    elif event.key == pygame.K_p:
-                        paused = not paused
-                        if paused:
-                            run_event.clear()
-                            emu_timer.pause()
-                        else:
-                            run_event.set()
-                            emu_timer.resume()
-                        _log.info(f"{'Paused' if paused else 'Resumed'}")
-                    elif event.key == pygame.K_F10 and paused:
-                        run_event.set()
-                        run_event.clear()
-                        _log.info("Single step executed")
-                    elif event.key == pygame.K_F5:
-                        show_debug = not show_debug
-                        debug_overlay.prev_lines = None
-                        _log.info(f"Debug {'ON' if show_debug else 'OFF'}")
-                    elif event.key == pygame.K_F6 and show_debug:
-                        debug_mode_index = (debug_mode_index - 1) % 6
-                    elif event.key == pygame.K_F7 and show_debug:
-                        debug_mode_index = (debug_mode_index + 1) % 6
-                    elif event.key == pygame.K_F9 and show_debug:
-                        _is_yappi_enabled = not _is_yappi_enabled
-                        if _is_yappi_enabled:
-                            yappi.start()
-                            _log.info("Yappi profiler started")
-                        else:
-                            yappi.stop()
-                            yappi.clear_stats()
-                            _log.info("Yappi profiler stopped")
-                    elif event.key == pygame.K_r:
-                        nes_emu.Reset()
-                        emu_timer.reset()
-                        _log.info("Emulator reset")
-                    elif event.key == pygame.K_m:
-                        run_event.clear()
-                        emu_timer.pause()
-                        try:
-                            mod_picker()
-                        except Exception as e:
-                            _log.error("mod_picker", exc_info=_extract_exc_info(e))
-                        emu_timer.resume()
-                        run_event.set()
-                    elif event.key == pygame.K_F12:
-                        run_event.clear()
-                        emu_timer.pause()
-                        _log.info("Try to copy frame to clipboard")
-                        try:
-                            sprite.export()
-                            PyClip.copy(sprite.export())
-                        except Exception as e: # on failure
-                            _log.error(f"Clipboard failed: {e}", exc_info=_extract_exc_info(e))
-                        else: # only if successful
-                            _log.info("Clipboard copied")
-                        finally: # always
-                            emu_timer.resume()
-                            run_event.set()
-
-                    elif show_debug:
-                        if debug_mode_index == 4:
-                            if event.key == pygame.K_F1:
-                                debug_state.memory_view_start = max(0, debug_state.memory_view_start - 0x100)
-                            elif event.key == pygame.K_F2:
-                                debug_state.memory_view_start = min(0x700, debug_state.memory_view_start + 0x100)
-                            elif event.key == pygame.K_F3:
-                                dump_path = filedialog.asksaveasfilename(
-                                    defaultextension=".bin",
-                                    filetypes=[("Binary files", "*.bin")],
-                                    title="Save Memory Dump",
-                                )
-                                if dump_path and debug_state.dump_memory(dump_path):
-                                    messagebox.showinfo("Success", f"Memory dumped to:\n{dump_path}")
-                        elif debug_mode_index == 5:
-                            if event.key == pygame.K_F1:
-                                debug_state.disasm_start = max(0x8000, debug_state.disasm_start - 0x30)
-                            elif event.key == pygame.K_F2:
-                                debug_state.disasm_start = min(0xFFD0, debug_state.disasm_start + 0x30)
+                        break
+                    case pygame.KEYDOWN:
+                        match event.key:
+                            case pygame.K_ESCAPE:
+                                running = False
+                            case pygame.K_p:
+                                paused = not paused
+                                if paused:
+                                    run_event.clear()
+                                    emu_timer.pause()
+                                else:
+                                    run_event.set()
+                                    emu_timer.resume()
+                                _log.info(f"{'Paused' if paused else 'Resumed'}")
+                            case pygame.K_F10:
+                                if paused:
+                                    run_event.set()
+                                    run_event.clear()
+                                    _log.info("Single step executed")
+                            case pygame.K_F5:
+                                show_debug = not show_debug
+                                debug_overlay.prev_lines = None
+                                _log.info(f"Debug {'ON' if show_debug else 'OFF'}")
+                            case pygame.K_F6:
+                                if show_debug:
+                                    debug_mode_index = (debug_mode_index - 1) % 6
+                            case pygame.K_F7:
+                                if show_debug:
+                                    debug_mode_index = (debug_mode_index + 1) % 6
+                            case pygame.K_F9:
+                                if show_debug:
+                                    _is_yappi_enabled = not _is_yappi_enabled
+                                    if _is_yappi_enabled:
+                                        yappi.start()
+                                        _log.info("Yappi profiler started")
+                                    else:
+                                        yappi.stop()
+                                        yappi.clear_stats()
+                                        _log.info("Yappi profiler stopped")
+                            case pygame.K_r:
+                                nes_emu.Reset()
+                                emu_timer.reset()
+                                _log.info("Emulator reset")
+                            case pygame.K_m:
+                                run_event.clear()
+                                emu_timer.pause()
+                                try:
+                                    mod_picker()
+                                except Exception as e:
+                                    _log.error("mod_picker", exc_info=_extract_exc_info(e))
+                                emu_timer.resume()
+                                run_event.set()
+                            case pygame.K_F12:
+                                run_event.clear()
+                                emu_timer.pause()
+                                try:
+                                    sprite.export()
+                                    PyClip.copy(sprite.export())
+                                except Exception as e: # on failure
+                                    _log.error(f"Clipboard failed: {e}", exc_info=_extract_exc_info(e))
+                                else: # only if successful
+                                    _log.info("Clipboard copied")
+                                finally: # always
+                                    emu_timer.resume()
+                                    run_event.set()
+                            case pygame.K_F1 | pygame.K_F2 | pygame.K_F3 as key:
+                                match key:
+                                    case pygame.K_F1 | pygame.K_F2 | pygame.K_F3 as key:
+                                        if debug_mode_index == 4:
+                                            if key == pygame.K_F1:
+                                                debug_state.memory_view_start = max(0, debug_state.memory_view_start - 0x100)
+                                            elif key == pygame.K_F2:
+                                                debug_state.memory_view_start = min(0x700, debug_state.memory_view_start + 0x100)
+                                            elif key == pygame.K_F3:
+                                                dump_path = filedialog.asksaveasfilename(
+                                                    defaultextension=".bin",
+                                                    filetypes=[("Binary files", "*.bin")],
+                                                    title="Save Memory Dump",
+                                                )
+                                                if dump_path and debug_state.dump_memory(dump_path):
+                                                    messagebox.showinfo("Success", f"Memory dumped to:\n{dump_path}")
+                                    case pygame.K_F1 | pygame.K_F2 as key:
+                                        if debug_mode_index == 5:
+                                            if key == pygame.K_F1:
+                                                debug_state.disasm_start = max(0x8000, debug_state.disasm_start - 0x30)
+                                            elif key == pygame.K_F2:
+                                                debug_state.disasm_start = min(0xFFD0, debug_state.disasm_start + 0x30)
 
         if frame_ready:
             with frame_lock:
@@ -1099,6 +1105,7 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         _log.info("Interrupted by user (Ctrl+C)")
+        run_event.set()
     except Exception as e:
         _log.error("Unhandled exception", exc_info=_extract_exc_info(e))
 
