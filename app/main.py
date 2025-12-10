@@ -17,7 +17,6 @@ import numpy as np
 import psutil
 import pygame
 import yappi
-
 from __version__ import __version_string__ as __version__
 from api.discord import Presence
 from backend.Control import Control
@@ -64,6 +63,7 @@ presence: Optional[Presence] = None
 hwnd: Optional[int] = None
 pyWindow: Optional[Any] = None
 process: Optional[psutil.Process] = None
+
 
 def _platform_safe_cleanup() -> None:
     """Platform-aware resource cleanup"""
@@ -170,19 +170,20 @@ def _shutdown_threads() -> None:
                 else:
                     remaining.append(thread)
 
+
 E = TypeVar("E", bound=BaseException)
+
 
 def _extract_exc_info(e: E) -> Tuple[Type[E], E, Optional[TracebackType]]:
     return (type(e), e, e.__traceback__)
-    
+
+
 def main() -> None:
     global running, _thread_list, debug_overlay, sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow, process
 
     # Load config
     cfg = load_config()
     install(console=console)
-    if sys.version_info < (3, 13):
-        raise RuntimeError("Python 3.13 or higher is required to run PyNES.")
     _log.info("Starting PyNES Emulator")
     _log.info(f"load config: {cfg}")
 
@@ -1048,11 +1049,11 @@ def main() -> None:
                                 try:
                                     sprite.export()
                                     PyClip.copy(sprite.export())
-                                except Exception as e: # on failure
+                                except Exception as e:  # on failure
                                     _log.error(f"Clipboard failed: {e}", exc_info=_extract_exc_info(e))
-                                else: # only if successful
+                                else:  # only if successful
                                     _log.info("Clipboard copied")
-                                finally: # always
+                                finally:  # always
                                     emu_timer.resume()
                                     run_event.set()
                             case pygame.K_F1 | pygame.K_F2 | pygame.K_F3 as key:
@@ -1060,9 +1061,13 @@ def main() -> None:
                                     case pygame.K_F1 | pygame.K_F2 | pygame.K_F3 as key:
                                         if debug_mode_index == 4:
                                             if key == pygame.K_F1:
-                                                debug_state.memory_view_start = max(0, debug_state.memory_view_start - 0x100)
+                                                debug_state.memory_view_start = max(
+                                                    0, debug_state.memory_view_start - 0x100
+                                                )
                                             elif key == pygame.K_F2:
-                                                debug_state.memory_view_start = min(0x700, debug_state.memory_view_start + 0x100)
+                                                debug_state.memory_view_start = min(
+                                                    0x700, debug_state.memory_view_start + 0x100
+                                                )
                                             elif key == pygame.K_F3:
                                                 dump_path = filedialog.asksaveasfilename(
                                                     defaultextension=".bin",
@@ -1101,6 +1106,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if tuple(map(int, platform.python_version_tuple())) < (3, 13, 0):
+        raise RuntimeError("Python 3.13 or higher is required to run PyNES.")
+
     try:
         main()
     except KeyboardInterrupt:

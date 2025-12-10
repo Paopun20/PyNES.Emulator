@@ -2,53 +2,52 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Final, Union
+from typing import Final, Union, List, Tuple
 
 from rich.console import Console
 from rich.logging import RichHandler
 
 console: Final[Console] = Console()
 
-
 log_root: Final[Path] = Path("log").resolve()
 log_root.mkdir(exist_ok=True)
 
 
 class PynesFileHandler(logging.Handler):
-    def __init__(self, file_name: Union[str, Path]):
+    def __init__(self, file_name: Union[str, Path]) -> None:
         super().__init__()
-        self._file_name = Path(file_name)
-        self._log_hold = []
+        self._file_name: Path = Path(file_name)
+        self._log_hold: List[Tuple[logging.LogRecord, Exception]] = []
         self._file = open(self._file_name, "a", encoding="utf-8")
 
-    def _write_log_entry(self, log_entry):
+    def _write_log_entry(self, log_entry: str) -> None:
         with open(self._file_name, "a", encoding="utf-8") as f:
             f.write(log_entry + "\n")
 
-    def emit(self, record: logging.LogRecord):
-        log_entry = self.format(record)
+    def emit(self, record: logging.LogRecord) -> None:
+        log_entry: str = self.format(record)
 
         self.acquire()
         try:
             if self._log_hold:
-                still_failed = []
+                still_failed: List[Tuple[logging.LogRecord, Exception]] = []
                 for old_record, old_exception in self._log_hold:
                     try:
-                        old_entry = self.format(old_record)
+                        old_entry: str = self.format(old_record)
                         self._write_log_entry(old_entry)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         still_failed.append((old_record, e))
-                self._log_hold = still_failed  # store only the ones still failing
+                self._log_hold = still_failed
 
             try:
                 self._write_log_entry(log_entry)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self._log_hold.append((record, e))
 
         finally:
             self.release()
 
-    def close(self):
+    def close(self) -> None:
         try:
             if self._file:
                 self._file.close()
@@ -57,7 +56,6 @@ class PynesFileHandler(logging.Handler):
 
 
 debug_mode: Final[bool] = "--debug" in sys.argv or "--realdebug" in sys.argv
-
 level: Final[int] = logging.DEBUG if debug_mode else logging.INFO
 time_format: Final[str] = "%Y-%m-%d %H:%M:%S"
 
@@ -80,4 +78,5 @@ logging.basicConfig(
         PynesFileHandler(log_root / f"pynes_{get_time()}.log"),
     ],
 )
+
 log: Final[logging.Logger] = logging.getLogger("PyNES")
