@@ -5,6 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
+*.dll
 
 # Distribution / packaging
 .Python
@@ -87,7 +88,7 @@ ipython_config.py
 #Pipfile.lock
 
 # UV
-#uv.lock
+uv.lock
 
 # poetry
 #poetry.lock
@@ -153,9 +154,6 @@ cython_debug/
 # Abstra
 .abstra/
 
-# VS Code
-# .vscode/
-
 # Ruff
 .ruff_cache/
 
@@ -171,7 +169,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# 100th Coin's ROM Test (Private)
+# 100th Coin's ROM Test
 __PatreonRoms/*
 
 # Don't share these test ROM files
@@ -181,9 +179,6 @@ test_nes_files/*
 __pycache__/
 *.pyc
 
-# Additional build dirs
-build/*
-dist/*
 debug/*
 reference/*
 
@@ -192,17 +187,11 @@ reference/*
 *.pyd
 
 # Rust build
-app/rust/*/target/
-app/rust/*/Cargo.lock
+app/extension/rust/*/target/
+app/extension/rust/*/Cargo.lock
 
 # Logs & misc
 *.log
 *.bak
 *.backup
 *.egg-info
-
-# venv override
-.venv/*
-
-# Private environment
-.env

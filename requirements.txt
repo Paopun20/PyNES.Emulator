@@ -18,6 +18,7 @@ moderngl # modern OpenGL wrapper
 
 # data processing
 numpy # numerical computing
+bitarray # bit array manipulation
 
 # debug
 psutil # process and system utilities

@@ -185,7 +185,6 @@ def main() -> None:
     cfg = load_config()
     install(console=console)
     _log.info("Starting PyNES Emulator")
-    _log.info(f"load config: {cfg}")
 
     process = psutil.Process(os.getpid())
 
@@ -640,6 +639,7 @@ def main() -> None:
                 debug_info += [
                     f"Process CPU: {cpu_monitor.get_all_cpu_percent():.2f}%" if cpu_monitor else "CPU monitor N/A",
                     f"Memory use: {process.memory_percent():.2f}%" if process else "Memory N/A",
+                    f"Emulator memory use: {sys.getsizeof(nes_emu)} bytes"
                 ]
                 if gpu_monitor and gpu_monitor.is_available():
                     debug_info.append(
