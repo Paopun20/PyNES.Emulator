@@ -472,7 +472,7 @@ def main() -> None:
         )
 
     nes_emu.cartridge = result.unwrap()
-    nes_emu.debug.Logging = True
+    # nes_emu.debug.Logging = True
     nes_emu.debug.HaltOn.UnknownOpcode = True
     _log.info(f"Loaded: {Path(nes_path).name}")
 
@@ -628,12 +628,15 @@ def main() -> None:
                     f"{'C' if nes_emu.Architecture.flags.Carry else '-'}"
                     f"{'U' if nes_emu.Architecture.flags.Unused else '-'}",
                 ]
-                debug_info.append("Latest Log (Latest -> Oldest, only 10):")
-                if len(nes_emu.tracelog) > 0:
-                    last = list(islice(nes_emu.tracelog, max(len(nes_emu.tracelog) - 10, 0), None))
-                    debug_info.extend(last)
+                if nes_emu.debug.Logging:
+                    debug_info.append("Latest Log (Latest -> Oldest, only 10):")
+                    if len(nes_emu.tracelog) > 0:
+                        last = list(islice(nes_emu.tracelog, max(len(nes_emu.tracelog) - 10, 0), None))
+                        debug_info.extend(last)
+                    else:
+                        debug_info.append("No trace log entries")
                 else:
-                    debug_info.append("No trace log entries")
+                    debug_info.append("I don't know what to write this disable txt for nes_emu.debug.Logging = False")
             case 1:
                 thread_cpu_percent = cpu_monitor.get_cpu_percents() if cpu_monitor else {}
                 debug_info += [
@@ -664,6 +667,10 @@ def main() -> None:
                     "",
                     f"GIL Status: {GIL_status}",
                 ]
+                if tuple(map(int, platform.python_version_tuple())) >= (3, 14, 0):
+                    debug_info.append(
+                        f"JIT Status: {getattr(getattr(sys, '_jit', None), 'is_active', lambda: 'UNAVAILABLE')()}"
+                    )
             case 3:
                 if _is_yappi_enabled:
                     tstats = yappi.get_thread_stats()

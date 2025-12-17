@@ -2,5 +2,5 @@
 dev.py
 
 # this is not for production
-server.py
+pysocket/*
 wstoroblox.py
