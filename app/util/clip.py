@@ -1,200 +1,122 @@
-
-import sys
 import io
 import os
+import sys
 import subprocess
-from typing import Union
+import tempfile
+import shutil
+from typing import Tuple, Optional
 import numpy as np
 from PIL import Image
 
-
-class ClipboardError(Exception):
-    """Custom exception for clipboard operations."""
+class ClipboardError(BaseException):
     pass
 
 class Clip:
+    TIMEOUT: int = 10
+    MAX_IMAGE_SIZE: int = 100 * 1024 * 1024
+    TOOLS: list[str] = ["wl-copy", "xclip", "xsel"]
+
     @staticmethod
-    def copy(arr: np.ndarray) -> None:
-        """
-        Copy a NumPy array image to the system clipboard.
-        Works on Windows, macOS, and Linux (xclip required on Linux).
-        
-        Args:
-            arr: NumPy array representing an image. Can be:
-                - uint8: values in [0, 255]
-                - float32/float64: values in [0.0, 1.0]
-                - Shape: (H, W), (H, W, 3), or (H, W, 4)
-        
-        Raises:
-            ClipboardError: If clipboard operation fails
-            ImportError: If required dependencies are missing
-            NotImplementedError: If OS is not supported
-        """
-        # Validate input
+    def copy(arr: np.ndarray, bg: Tuple[int, int, int] = (255, 255, 255)) -> None:
         if not isinstance(arr, np.ndarray):
-            raise TypeError(f"Expected np.ndarray, got {type(arr)}")
-
+            raise TypeError("Expected np.ndarray")
         if arr.ndim not in (2, 3):
-            raise ValueError(f"Array must be 2D or 3D, got shape {arr.shape}")
+            raise ValueError(f"Invalid shape: {arr.shape}")
+        if arr.nbytes > Clip.MAX_IMAGE_SIZE:
+            raise ValueError("Array too large")
 
-        # Normalize array to uint8
-        normalized_arr = Clip._normalize_array(arr)
-
-        # Convert to PIL Image
-        img = Image.fromarray(normalized_arr)
-
-        # Platform-specific clipboard operations
+        img: Image.Image = Image.fromarray(Clip._to_uint8(arr))
         try:
             if sys.platform.startswith("win"):
-                Clip._copy_windows(img)
+                Clip._win(img, bg)
             elif sys.platform == "darwin":
-                Clip._copy_macos(img)
+                Clip._mac(img)
             elif sys.platform.startswith("linux"):
-                Clip._copy_linux(img)
+                Clip._linux(img)
             else:
-                raise NotImplementedError(f"Unsupported OS: {sys.platform}")
+                raise NotImplementedError
         except Exception as e:
-            raise ClipboardError(f"Failed to copy image to clipboard: {e}") from e
+            raise ClipboardError(f"Failed to copy to clipboard: {e}")
 
     @staticmethod
-    def _normalize_array(arr: np.ndarray) -> np.ndarray:
-        """
-        Normalize array to uint8 format suitable for PIL Image.
-        
-        Args:
-            arr: Input array
-            
-        Returns:
-            Normalized uint8 array
-        """
-        # Handle float arrays (assuming range [0.0, 1.0])
+    def _to_uint8(arr: np.ndarray) -> np.ndarray:
+        if arr.size == 0:
+            raise ValueError("Empty array")
         if arr.dtype in (np.float32, np.float64):
-            arr = np.clip(arr, 0.0, 1.0)
-            arr = (arr * 255).astype(np.uint8)
-        elif arr.dtype != np.uint8:
-            # Convert other integer types to uint8
-            arr = np.clip(arr, 0, 255).astype(np.uint8)
+            arr = np.clip(arr, 0, 1) * 255
+        return np.clip(arr, 0, 255).astype(np.uint8)
 
-        return arr
-
+    # Windows
     @staticmethod
-    def _copy_windows(img: Image.Image) -> None:
-        """
-        Copy image to clipboard on Windows.
-        
-        Args:
-            img: PIL Image object
-            
-        Raises:
-            ImportError: If pywin32 is not installed
-        """
+    def _win(img: Image.Image, bg: Tuple[int, int, int]) -> None:
         try:
-            import win32clipboard
+            import win32clipboard  # type: ignore
         except ImportError:
-            raise ImportError(
-                "pywin32 is required on Windows. Install with: pip install pywin32"
-            )
+            raise ImportError("Install pywin32")
 
-        # Convert to RGB for Windows clipboard (BMP format doesn't support alpha)
-        if img.mode == "RGBA":
-            # Create white background for transparency
-            background = Image.new("RGB", img.size, (255, 255, 255))
-            background.paste(img, mask=img.split()[3])  # Use alpha channel as mask
-            img = background
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
+        if img.mode != "RGB":
+            base: Image.Image = Image.new("RGB", img.size, bg)
+            if "A" in img.getbands():
+                base.paste(img, mask=img.split()[-1])
+            else:
+                base.paste(img)
+            img = base
 
-        # Save as BMP and strip header
-        output = io.BytesIO()
-        img.save(output, "BMP")
-        data = output.getvalue()[14:]  # BMP file header is 14 bytes
-        output.close()
+        bio = io.BytesIO()
+        img.save(bio, "BMP")
+        data: bytes = bio.getvalue()[14:]
 
-        # Copy to clipboard
-        try:
-            win32clipboard.OpenClipboard()
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
-        finally:
-            win32clipboard.CloseClipboard()
+        win32clipboard.OpenClipboard()
+        win32clipboard.EmptyClipboard()
+        win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
+        win32clipboard.CloseClipboard()
 
+    # macOS
     @staticmethod
-    def _copy_macos(img: Image.Image) -> None:
-        """
-        Copy image to clipboard on macOS.
-        
-        Args:
-            img: PIL Image object
-        """
-        output = io.BytesIO()
-        img.save(output, format="PNG")
-        png_data = output.getvalue()
-        output.close()
+    def _mac(img: Image.Image) -> None:
+        bio = io.BytesIO()
+        img.save(bio, format="PNG")
+        data: bytes = bio.getvalue()
 
-        # Write to temporary file
-        tmp_path = "/tmp/tmp_clip.png"
-        try:
-            with open(tmp_path, "wb") as f:
-                f.write(png_data)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            f.write(data)
+            path: str = f.name
 
-            # Use osascript to copy to clipboard
-            result = subprocess.run(
-                [
-                    "osascript", "-e",
-                    f'set the clipboard to (read (POSIX file "{tmp_path}") as PNG picture)'
-                ],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+        esc: str = path.replace('"', '\\"')
+        cmd: list[str] = ["osascript", "-e", f'set the clipboard to (read (POSIX file "{esc}") as «class PNGf»)']
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=Clip.TIMEOUT)
 
-            if result.returncode != 0:
-                raise RuntimeError(f"osascript failed: {result.stderr}")
-        finally:
-            # Clean up temporary file
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+        os.remove(path)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
 
+    # Linux
     @staticmethod
-    def _copy_linux(img: Image.Image) -> None:
-        """
-        Copy image to clipboard on Linux using xclip.
-        
-        Args:
-            img: PIL Image object
-            
-        Raises:
-            RuntimeError: If xclip is not installed
-        """
-        # Check if xclip is available
-        which_result = subprocess.run(
-            ["which", "xclip"],
-            capture_output=True,
-            timeout=2
-        )
+    def _linux(img: Image.Image) -> None:
+        bio = io.BytesIO()
+        img.save(bio, format="PNG")
+        data: bytes = bio.getvalue()
 
-        if which_result.returncode != 0:
-            raise RuntimeError(
-                "xclip is required on Linux. Install with: sudo apt-get install xclip"
-            )
+        tool: Optional[str] = next((t for t in Clip.TOOLS if shutil.which(t)), None)
+        if not tool:
+            raise RuntimeError("Install wl-copy, xclip, or xsel")
 
-        # Convert to PNG
-        output = io.BytesIO()
-        img.save(output, format="PNG")
-        png_data = output.getvalue()
-        output.close()
+        if tool == "wl-copy":
+            proc = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE)
+        elif tool == "xclip":
+            proc = subprocess.Popen(["xclip", "-selection", "clipboard", "-t", "image/png", "-i"], stdin=subprocess.PIPE)
+        elif tool == "xsel":
+            proc = subprocess.Popen(["xsel", "--clipboard", "--input"], stdin=subprocess.PIPE)
+        elif tool == "xsel":
+            proc = subprocess.Popen(["xsel", "--clipboard", "--input"], stdin=subprocess.PIPE)
+        else:
+            raise RuntimeError(f"Unsupported tool: {tool}")
 
-        # Pipe to xclip
-        proc = subprocess.Popen(
-            ["xclip", "-selection", "clipboard", "-t", "image/png", "-i"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-
-        stdout, stderr = proc.communicate(input=png_data, timeout=5)
+        try:
+            proc.communicate(data, timeout=Clip.TIMEOUT)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise RuntimeError(f"{tool} timed out")
 
         if proc.returncode != 0:
-            raise RuntimeError(f"xclip failed: {stderr.decode()}")
+            raise RuntimeError(f"{tool} failed")

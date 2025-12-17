@@ -4,6 +4,7 @@ GPU Monitor for PyNES using GPUtil library.
 
 import GPUtil
 
+
 class GPUMonitor:
     """
     Monitors GPU usage using GPUtil.

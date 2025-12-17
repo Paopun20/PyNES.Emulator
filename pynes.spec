@@ -75,7 +75,6 @@ for pkg in req_packages:
 
 datas_pynes = [(f, "pynes/" + os.path.basename(f)) for f in glob.glob("app/pynes/*")]
 datas_all += datas_pynes
-datas_all += [("app/icon.ico", ".")]
 
 a = Analysis(
     ["app/main.py"],
@@ -83,7 +82,7 @@ a = Analysis(
     binaries=binaries_all,
     datas=datas_all,
     hiddenimports=hidden_all,
-    excludes=["unittest","test", "pydoc"],
+    excludes=["unittest","test", "pydoc", "mypy", "mypy-extensions"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -107,8 +106,8 @@ exe = EXE(
     debug=False,
     strip=True,
     upx=True,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=True,
-    icon="app/icon.ico",
+    icon="icon.ico",
 )

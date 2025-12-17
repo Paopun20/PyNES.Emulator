@@ -1,4 +1,4 @@
-from objects.shadercass import Shader
+from objects.shaderclass import Shader
 
 @Shader("Jello Madness shader: everything wobbles, stretches, and spins in rainbow chaos.", "Paopaodev")
 class jello_madness:

@@ -2,6 +2,7 @@
 maturin # Rust
 cython # Cython
 setuptools-rust # Rust build
+pybind11 # C++ bindings
 
 # game development
 pygame-ce # community edition of pygame
@@ -17,6 +18,7 @@ moderngl # modern OpenGL wrapper
 
 # data processing
 numpy # numerical computing
+bitarray # bit array manipulation
 
 # debug
 psutil # process and system utilities
@@ -26,9 +28,6 @@ GPUtil # GPU monitoring (supports both NVIDIA and AMD GPUs)
 
 # Windows specific
 pywin32;platform_system=="Windows" # Windows API
-
-# type checking
-mypy # types-requests # for mypy to check requests library
 
 # ui tkinter
 customtkinter
@@ -47,3 +46,6 @@ pillow
 
 # build exe tool
 pyinstaller
+
+# yappi
+yappi

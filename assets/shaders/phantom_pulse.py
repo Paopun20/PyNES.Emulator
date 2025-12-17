@@ -1,4 +1,4 @@
-from objects.shadercass import Shader
+from objects.shaderclass import Shader
 
 @Shader("Phantom Pulse Effect", "Paopaodev")
 class phantom_pulse:

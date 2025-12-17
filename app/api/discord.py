@@ -1,17 +1,13 @@
-from pypresence import Presence as DiscordPresence
-import time
 import threading
-from typing import Optional, Any
-from types import TracebackType
+import time
+from typing import Any, Optional
+
+from logger import log as _log
+from pypresence import Presence as DiscordPresence  # type: ignore
 
 
 class Presence:
-    def __init__(
-        self, 
-        client_id: int, 
-        auto_update: bool = True, 
-        update_interval: int = 15
-    ) -> None:
+    def __init__(self, client_id: int, auto_update: bool = True, update_interval: int = 15) -> None:
         self.client_id: int = client_id
         self.rpc: Optional[DiscordPresence] = None
         self.start_time: float = 0.0
@@ -26,7 +22,7 @@ class Presence:
     def connected(self) -> bool:
         with self._lock:
             return self._connected
-    
+
     @connected.setter
     def connected(self, value: bool) -> None:
         with self._lock:
@@ -42,9 +38,7 @@ class Presence:
             if self.auto_update:
                 self._stop_event.clear()
                 self._thread = threading.Thread(
-                    name="discord_rpc_background_update",
-                    target=self._background_update,
-                    daemon=True
+                    name="discord_rpc_background_update", target=self._background_update, daemon=True
                 )
                 self._thread.start()
 
@@ -52,7 +46,7 @@ class Presence:
             return True
 
         except Exception as e:
-            print(f"❌ Failed to connect to Discord RPC: {e}")
+            _log.error(f"❌ Failed to connect to Discord RPC: {e}")
             self.connected = False
             return False
 
@@ -65,10 +59,10 @@ class Presence:
                 try:
                     self.rpc.update(start=self.start_time)
                 except Exception as e:
-                    print(f"Background update failed: {e}")
+                    _log.error(f"Background update failed: {e}")
                     self._connected = False
                     break
-            
+
             # Wait outside the lock to allow other operations
             self._stop_event.wait(self.update_interval)
 
@@ -76,16 +70,16 @@ class Presence:
         """Update presence with all supported RPC fields."""
         with self._lock:
             if not self._connected or self.rpc is None:
-                print("Not connected. Call connect() first.")
+                _log.error("Not connected. Call connect() first.")
                 return
-        
-            if 'start' not in kwargs:
-                kwargs['start'] = self.start_time
+
+            if "start" not in kwargs:
+                kwargs["start"] = self.start_time
 
             try:
                 self.rpc.update(**kwargs)
             except Exception as e:
-                print(f"Failed to update Discord RPC: {e}")
+                _log.error(f"Failed to update Discord RPC: {e}")
                 self._connected = False
 
     def clear(self) -> None:
@@ -96,17 +90,17 @@ class Presence:
             try:
                 self.rpc.clear()
             except Exception as e:
-                print(f"Failed to clear Discord RPC: {e}")
+                _log.error(f"Failed to clear Discord RPC: {e}")
 
     def close(self) -> None:
         """Disconnect from Discord RPC and stop background thread."""
         # Signal stop first (outside lock to avoid deadlock)
         self._stop_event.set()
-        
+
         # Wait for thread to finish
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
-        
+
         # Now safely disconnect
         with self._lock:
             if self._connected and self.rpc is not None:

@@ -1,7 +1,7 @@
 import functools
 from collections import OrderedDict
 from collections.abc import Hashable
-from typing import Literal, Callable, Optional
+from typing import Callable, Literal, Optional
 
 
 def memoize(maxsize: Optional[int] = None, policy: Optional[Literal["lru", "fifo"]] = "lru") -> Callable:

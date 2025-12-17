@@ -1,10 +1,11 @@
-from xmlrpc.client import Boolean
+from typing import Final, List, Tuple, TypeAlias
+
 import moderngl
 import numpy as np
-from numpy.typing import NDArray
-from typing import Any, Final, TypeAlias, List, Tuple
-from objects.shadercass import Shader, ShaderVariable, ShaderType
 from logger import log
+from numpy.typing import NDArray
+from objects.shaderclass import Shader, ShaderType, ShaderVariable
+
 
 # --- Shader defaults ---
 @Shader("Default fragment shader for rendering", "Build-in Shader", ShaderType.FRAGMENT)
@@ -18,6 +19,7 @@ class DEFAULT_FRAGMENT_SHADER:
         fragColor = texture(u_tex, v_uv);
     }
     """
+
 
 VERTEX_SHADER: Final[str] = """
 #version 330
@@ -151,7 +153,6 @@ class RenderSprite:
             # log.warning(f"Uniform {name} not found in shader, ignoring.")
             return
 
-        # Fixed: Check for actual types instead of type aliases
         if isinstance(value, (float, int, np.ndarray)):
             self.program[name] = value
         else:
@@ -193,13 +194,13 @@ class RenderSprite:
 
     def destroy(self) -> None:
         """Release all GPU resources."""
-        if hasattr(self, 'vao') and self.vao:
+        if hasattr(self, "vao") and self.vao:
             self.vao.release()
-        if hasattr(self, 'vbo') and self.vbo:
+        if hasattr(self, "vbo") and self.vbo:
             self.vbo.release()
-        if hasattr(self, 'ibo') and self.ibo:
+        if hasattr(self, "ibo") and self.ibo:
             self.ibo.release()
-        if hasattr(self, 'texture') and self.texture:
+        if hasattr(self, "texture") and self.texture:
             self.texture.release()
-        if hasattr(self, 'program') and self.program:
+        if hasattr(self, "program") and self.program:
             self.program.release()

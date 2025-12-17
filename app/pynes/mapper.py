@@ -5,9 +5,10 @@
 # - Mapper003 (CNROM)
 # - Mapper004 (MMC3)
 
+from typing import Optional
+
 import numpy as np
 from numpy.typing import NDArray
-from typing import Optional
 
 
 # Utilities
@@ -15,93 +16,56 @@ def mask8(value: int) -> int:
     """Mask to 8-bit value"""
     return int(value) & 0xFF
 
+
 def clamp_bank_index(bank: int, num_banks: int) -> int:
     """Clamp bank index to valid range with proper wrapping"""
-    if num_banks <= 0:
-        return 0
-    return int(bank) % num_banks
+    return 0 if num_banks <= 0 else int(bank) % num_banks
 
 
 # Base Mapper
 class Mapper:
-    """
-    Base class for NES mappers.
-    Implementations should override cpu_read/cpu_write/ppu_read/ppu_write and reset.
-    """
-
     def __init__(self, prg_rom_chunks: int, chr_rom_chunks: int, *, open_bus: Optional[int] = 0) -> None:
-        self.prg_rom_chunks: int = int(prg_rom_chunks)
-        self.chr_rom_chunks: int = int(chr_rom_chunks)
-        # open_bus value returned for unmapped reads; some games rely on open-bus
-        self.open_bus: int = 0 if open_bus is None else mask8(open_bus)
+        self.prg_rom_chunks = prg_rom_chunks
+        self.chr_rom_chunks = chr_rom_chunks
+        self.open_bus = mask8(open_bus or 0)
 
-    def cpu_read(self, addr: int) -> int:
-        raise NotImplementedError
-
-    def cpu_write(self, addr: int, value: int) -> None:
-        raise NotImplementedError
-
-    def ppu_read(self, addr: int) -> int:
-        raise NotImplementedError
-
-    def ppu_write(self, addr: int, value: int) -> None:
-        raise NotImplementedError
-
-    def reset(self) -> None:
-        pass
-
+    def cpu_read(self, addr: int) -> int: raise NotImplementedError
+    def cpu_write(self, addr: int, value: int) -> None: raise NotImplementedError
+    def ppu_read(self, addr: int) -> int: raise NotImplementedError
+    def ppu_write(self, addr: int, value: int) -> None: raise NotImplementedError
+    def reset(self) -> None: raise NotImplementedError
+    def get_mirroring(self) -> int: raise NotImplementedError
 
 # Mapper 000 (NROM)
 class Mapper000(Mapper):
-    """NROM — No bank switching. PRG: 16KB or 32KB. CHR: 8KB or CHR-RAM."""
-
-    def __init__(
-        self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0
-    ) -> None:
+    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0) -> None:
         prg_chunks = max(1, len(prg_rom) // 0x4000)
         chr_chunks = max(1, len(chr_rom) // 0x2000)
         super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
-        self.prg_rom: NDArray[np.uint8] = prg_rom
-        self.chr_rom: NDArray[np.uint8] = chr_rom
-        self.mirroring: int = int(mirroring)
-        self.prg_size: int = len(self.prg_rom)
-        self.chr_size: int = len(self.chr_rom)
-        # Detect CHR-RAM if chr_rom was passed as zero-length or all zeros
+        self.prg_rom = prg_rom
+        self.chr_rom = chr_rom
+        self.mirroring = int(mirroring)
+        self.prg_size = len(prg_rom)
+        self.chr_size = len(chr_rom)
         self.has_chr_ram = self.chr_size == 0
-        if self.has_chr_ram:
-            self.chr_ram = np.zeros(0x2000, dtype=np.uint8)  # 8KB CHR-RAM fallback
+        if self.has_chr_ram: self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
 
     def cpu_read(self, addr: int) -> int:
-        # PRG area $8000-$FFFF
-        if 0x8000 <= addr <= 0xFFFF and self.prg_size > 0:
-            if self.prg_size == 0x4000:  # 16KB mirrored
-                offset = (addr - 0x8000) & 0x3FFF
-            else:
-                offset = (addr - 0x8000) & (self.prg_size - 1)
+        if 0x8000 <= addr <= 0xFFFF:
+            offset = (addr - 0x8000) & (0x3FFF if self.prg_size == 0x4000 else self.prg_size - 1)
             return int(self.prg_rom[offset])
         return self.open_bus
 
-    def cpu_write(self, addr: int, value: int) -> None:
-        # NROM typically has no PRG-RAM; nothing to do.
-        return None
-
+    def cpu_write(self, addr: int, value: int) -> None: return None
     def ppu_read(self, addr: int) -> int:
         if 0x0000 <= addr <= 0x1FFF:
-            if self.has_chr_ram:
-                return int(self.chr_ram[addr & 0x1FFF])
-            if self.chr_size > 0:
-                offset = addr & (self.chr_size - 1)
-                return int(self.chr_rom[offset])
+            if self.has_chr_ram: return int(self.chr_ram[addr & 0x1FFF])
+            return int(self.chr_rom[addr & (self.chr_size - 1)])
         return self.open_bus
-
     def ppu_write(self, addr: int, value: int) -> None:
-        if 0x0000 <= addr <= 0x1FFF and self.has_chr_ram:
-            self.chr_ram[addr & 0x1FFF] = mask8(value)
-
-    def reset(self) -> None:
-        # Nothing to reset for NROM
-        return None
-
+        if 0x0000 <= addr <= 0x1FFF and self.has_chr_ram: self.chr_ram[addr & 0x1FFF] = mask8(value)
+    def reset(self) -> None: return None
+    def get_mirroring(self) -> int: return self.mirroring
 
 # Mapper 001 (MMC1)
 class Mapper001(Mapper):
@@ -272,12 +236,12 @@ class Mapper001(Mapper):
 
     def reset(self) -> None:
         self.control = 0x0C
-        self.chr_bank_0 = 0
-        self.chr_bank_1 = 0
-        self.prg_bank = 0
+        self.chr_bank_0 = self.chr_bank_1 = self.prg_bank = self.write_count = 0
         self.shift_register = 0x10
-        self.write_count = 0
         self._update_banks()
+
+    def get_mirroring(self) -> int:
+        return self.mirroring
 
 
 # Mapper 002 (UxROM)
@@ -331,6 +295,9 @@ class Mapper002(Mapper):
     def reset(self) -> None:
         self.prg_bank = 0
 
+    def get_mirroring(self) -> int:
+        return self.mirroring
+
 
 # Mapper 003 (CNROM)
 class Mapper003(Mapper):
@@ -378,9 +345,12 @@ class Mapper003(Mapper):
     def reset(self) -> None:
         self.chr_bank = 0
 
+    def get_mirroring(self) -> int:
+        return self.mirroring
+
 
 # Mapper 004 (MMC3)
-class Mapper004:
+class Mapper004(Mapper):
     """MMC3 (Mapper 004):
     - Supports 8 x 1KB CHR banks and 4 x 8KB PRG banks
     - Bank select register at $8000/$8001
@@ -397,6 +367,10 @@ class Mapper004:
         has_prg_ram: bool = True,
         open_bus: Optional[int] = 0,
     ) -> None:
+        prg_chunks = max(1, len(prg_rom) // 0x4000)
+        chr_chunks = max(1, len(chr_rom) // 0x2000)
+        super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
+
         self.prg_rom = prg_rom
         self.prg_size = len(self.prg_rom)
         self.chr_rom = chr_rom if len(chr_rom) > 0 else np.zeros(0x2000, dtype=np.uint8)
@@ -442,7 +416,7 @@ class Mapper004:
 
         # Calculate number of banks
         num_prg_banks_8kb = max(1, self.prg_size // 0x2000)
-        
+
         # For CHR: use actual size if we have CHR ROM, otherwise use CHR RAM size
         if self.chr_size > 0:
             num_chr_1kb = max(1, self.chr_size // 0x400)
@@ -520,7 +494,7 @@ class Mapper004:
             bank_index = ((addr - 0x8000) >> 13) & 0x03  # which 8KB bank (0..3)
             offset = addr & 0x1FFF
             bank_base = int(self.prg_banks[bank_index])
-            
+
             # Bounds check
             prg_addr = (bank_base + offset) % self.prg_size
             return int(self.prg_rom[prg_addr])
@@ -540,39 +514,38 @@ class Mapper004:
         # MMC3 registers ($8000-$FFFF)
         # Use addr & 0xE001 to decode registers
         reg = addr & 0xE001
-        
+
         if reg == 0x8000:
             # Bank select (even addresses)
             self.bank_select = value
             self._update_banks()
-            
+
         elif reg == 0x8001:
             # Bank data (odd addresses)
             idx = int(self.bank_select & 0x07)
             self.bank_registers[idx] = value
             self._update_banks()
-            
+
         elif reg == 0xA000:
             # Mirroring control
             self.mirror_mode = value & 0x01
-            
+
         elif reg == 0xA001:
             # PRG RAM protect (not implemented)
             pass
-            
+
         elif reg == 0xC000:
             # IRQ latch
             self.irq_reload = value
-            
+
         elif reg == 0xC001:
             # IRQ reload - clears counter immediately
             self.irq_counter = 0
-            
+
         elif reg == 0xE000:
             # IRQ disable
-            self.irq_enabled = False
-            self.irq_pending = False
-            
+            self.irq_enabled = self.irq_pending = False
+
         elif reg == 0xE001:
             # IRQ enable
             self.irq_enabled = True
@@ -585,7 +558,7 @@ class Mapper004:
             bank_index = (addr >> 10) & 0x07
             offset = addr & 0x3FF
             bank_base = int(self.chr_banks[bank_index])
-            
+
             # Read from CHR ROM or CHR RAM
             if self.chr_size > 0:
                 chr_addr = bank_base + offset
@@ -596,7 +569,7 @@ class Mapper004:
             elif self.chr_ram is not None:
                 chr_addr = (bank_base + offset) & 0x1FFF
                 return int(self.chr_ram[chr_addr])
-            
+
         return self.open_bus
 
     def ppu_write(self, addr: int, value: int) -> None:
@@ -625,7 +598,7 @@ class Mapper004:
             # A12 is high - check for filtered rising edge
             if (not self.a12_was_high) and (self.a12_low_count >= 3):
                 self._clock_irq_counter()
-            
+
             # Reset for next cycle
             self.a12_low_count = 0
             self.a12_was_high = True
@@ -650,12 +623,8 @@ class Mapper004:
         self.chr_banks[:] = 0
         self.prg_banks[:] = 0
         self.mirror_mode = int(self.mirroring)
-        self.irq_counter = 0
-        self.irq_reload = 0
-        self.irq_enabled = False
-        self.irq_pending = False
-        self.a12_was_high = False
-        self.a12_low_count = 0
+        self.irq_counter = self.irq_reload = self.a12_low_count = 0
+        self.irq_enabled = self.irq_pending = self.a12_was_high = False
         self._update_banks()
 
     def get_mirroring(self) -> int:

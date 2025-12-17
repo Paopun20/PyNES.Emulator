@@ -2,6 +2,7 @@ import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 from typing import Optional, Type
 
+
 class ProcessPoolManager:
     def __init__(self) -> None:
         self.executor: Optional[ProcessPoolExecutor] = None
@@ -11,10 +12,7 @@ class ProcessPoolManager:
         return self.executor
 
     def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[object]
+        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[object]
     ) -> None:
         if self.executor:
             self.executor.shutdown(wait=True)

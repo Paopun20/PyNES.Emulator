@@ -1,12 +1,11 @@
 import pygame
-from rich.console import Console
-from typing import Final
+from typing import Final, Dict, List
+from logger import log as _log
+from util.config import load_config
 
-console = Console()
-
-
+cfg = load_config()
 class Control(object):
-    NES_KEYS: Final[list[str]] = [
+    NES_KEYS: Final[List[str]] = [
         "A",
         "B",
         "Select",
@@ -17,7 +16,7 @@ class Control(object):
         "Right",
     ]
 
-    KEY_MAPPING: Final[dict[int, str]] = {
+    KEY_MAPPING: Final[Dict[int, str]] = {
         pygame.K_x: "A",
         pygame.K_z: "B",
         pygame.K_RSHIFT: "Select",
@@ -28,7 +27,7 @@ class Control(object):
         pygame.K_RIGHT: "Right",
     }
 
-    GAMEPAD_BUTTON_MAP: Final[dict[int, str]] = {
+    GAMEPAD_BUTTON_MAP: Final[Dict[int, str]] = {
         0: "A",  # Button A
         1: "B",  # Button B
         6: "Select",  # Back
@@ -41,10 +40,50 @@ class Control(object):
         pygame.init()
         pygame.joystick.init()
 
+        self.KEY_MAPPING: Dict[int, str] = self._build_key_mapping()
+        self.GAMEPAD_BUTTON_MAP: Dict[int, str] = {
+            0: "A",
+            1: "B",
+            6: "Select",
+            7: "Start",
+        }
+
         self.state = {k: False for k in self.NES_KEYS}
         self._prev_state = self.state.copy()
         self.joysticks = {}
         self.init_all_joysticks()
+
+    def _build_key_mapping(self) -> Dict[int, str]:
+        mapping = {}
+        cfg_map = cfg["keyboard"]
+    
+        NORMALIZE = {
+            "A": "A",
+            "B": "B",
+            "START": "Start",
+            "SELECT": "Select",
+            "ARROW_UP": "Up",
+            "ARROW_DOWN": "Down",
+            "ARROW_LEFT": "Left",
+            "ARROW_RIGHT": "Right",
+        }
+    
+        for nes_key in NORMALIZE:
+            py_key_name = cfg_map.get(nes_key, nes_key).lower()
+            try:
+                if py_key_name == "enter":
+                    py_key_name = "RETURN"
+    
+                py_key_name = py_key_name.lower() if len(py_key_name) == 1 else py_key_name.upper()
+                py_key = getattr(pygame, f"K_{py_key_name}")
+            except AttributeError:
+                _log.warning(f"Invalid key '{py_key_name}' in config for {nes_key}")
+                continue
+    
+            state_key = NORMALIZE[nes_key]
+            mapping[py_key] = state_key
+    
+        return mapping
 
     def init_all_joysticks(self) -> None:
         """Initialize all connected joysticks"""
@@ -52,16 +91,12 @@ class Control(object):
         for i in range(pygame.joystick.get_count()):
             try:
                 js = pygame.joystick.Joystick(i)
-                js.init()
+                # js.init()
                 js_id = js.get_instance_id() if hasattr(js, "get_instance_id") else i
                 self.joysticks[js_id] = js
-                console.print(
-                    f"[green]Detected controller:[/green] {js.get_name()} (id={js.get_id()})"
-                )
+                _log.info(f"Joystick {js_id} initialized")
             except Exception as e:
-                console.print(
-                    f"[yellow]Joystick init failed for index {i}: {e}[/yellow]"
-                )
+                _log.error(f"Failed to initialize joystick {i}: {e}")
 
     def update(self, events: list[pygame.event.Event]) -> None:
         """Update controller state based on pygame events"""

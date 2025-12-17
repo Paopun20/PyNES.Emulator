@@ -1,6 +1,8 @@
-import numpy as np
 import math
+
+import numpy as np
 from objects.RenderSprite import RenderSprite
+
 
 class Graph(RenderSprite):
     def __init__(self, ctx, width=400, height=300, scale=3):
@@ -52,7 +54,7 @@ class Graph(RenderSprite):
             ys.append(y)
 
         for i in range(1, n):
-            self._draw_line(xs[i-1], ys[i-1], xs[i], ys[i], color, line_width)
+            self._draw_line(xs[i - 1], ys[i - 1], xs[i], ys[i], color, line_width)
 
     def plot_function(self, func, x_min=-10, x_max=10, samples=200, color=(255, 0, 0)):
         xs = np.linspace(x_min, x_max, samples)
