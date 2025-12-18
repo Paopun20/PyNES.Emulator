@@ -3,7 +3,7 @@ certifi==2025.11.12
 charset-normalizer==3.4.4
 colorama==0.4.6
 customtkinter==5.2.2
-cython==3.2.2
+cython==3.2.3
 darkdetect==0.8.0
 dearpygui==2.1.1
 glcontext==3.0.0
@@ -30,7 +30,7 @@ pygments==2.19.2
 pyinstaller==6.17.0
 pyinstaller-hooks-contrib==2025.10
 pypresence==4.6.1
-pytest==9.0.1
+pytest==9.0.2
 python-dotenv==1.2.1
 pywin32==311
 pywin32-ctypes==0.2.3
@@ -41,5 +41,5 @@ semantic-version==2.10.0
 setuptools==80.9.0
 setuptools-rust==1.12.0
 typing-extensions==4.15.0
-urllib3==2.5.0
+urllib3==2.6.2
 yappi==1.7.3
