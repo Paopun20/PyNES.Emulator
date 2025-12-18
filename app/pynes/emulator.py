@@ -6,10 +6,10 @@ from enum import Enum
 from string import Template
 
 # debugger
-from typing import Any, Callable, Dict, Final, List, Optional, Tuple, Type, final
+from typing import Any, Callable, Dict, Final, List, Optional, Tuple, Type
 
 import numpy as np
-from bitarray import bitarray # type: ignore
+from bitarray import bitarray  # type: ignore
 from logger import log as _logger
 from pynes.cartridge import Cartridge
 from pynes.classes.NESPalette import ntsc as ntsc_pel
@@ -42,54 +42,84 @@ class Flags:
     def __init__(self):
         self._bits = bitarray(9)
         self._bits.setall(0)
-    
-    def _g(self, i): return bool(self._bits[i])
-    def _s(self, i, v): self._bits[i] = v
-    
+
+    def _g(self, i):
+        return bool(self._bits[i])
+
+    def _s(self, i, v):
+        self._bits[i] = v
+
     @property
-    def Carry(self): return self._g(0)
+    def Carry(self):
+        return self._g(0)
+
     @Carry.setter
-    def Carry(self, v): self._s(0, v)
-    
+    def Carry(self, v):
+        self._s(0, v)
+
     @property
-    def Zero(self): return self._g(1)
+    def Zero(self):
+        return self._g(1)
+
     @Zero.setter
-    def Zero(self, v): self._s(1, v)
-    
+    def Zero(self, v):
+        self._s(1, v)
+
     @property
-    def InterruptDisable(self): return self._g(2)
+    def InterruptDisable(self):
+        return self._g(2)
+
     @InterruptDisable.setter
-    def InterruptDisable(self, v): self._s(2, v)
-    
+    def InterruptDisable(self, v):
+        self._s(2, v)
+
     @property
-    def Decimal(self): return self._g(3)
+    def Decimal(self):
+        return self._g(3)
+
     @Decimal.setter
-    def Decimal(self, v): self._s(3, v)
-    
+    def Decimal(self, v):
+        self._s(3, v)
+
     @property
-    def Overflow(self): return self._g(6)
+    def Overflow(self):
+        return self._g(6)
+
     @Overflow.setter
-    def Overflow(self, v): self._s(6, v)
-    
+    def Overflow(self, v):
+        self._s(6, v)
+
     @property
-    def Negative(self): return self._g(7)
+    def Negative(self):
+        return self._g(7)
+
     @Negative.setter
-    def Negative(self, v): self._s(7, v)
-    
+    def Negative(self, v):
+        self._s(7, v)
+
     @property
-    def Break(self): return self._g(8)
+    def Break(self):
+        return self._g(8)
+
     @Break.setter
-    def Break(self, v): self._s(8, v)
-    
+    def Break(self, v):
+        self._s(8, v)
+
     @property
-    def Unused(self): return self._g(5)
+    def Unused(self):
+        return self._g(5)
+
     @Unused.setter
-    def Unused(self, v): self._s(5, v)
-    
-    def to_byte(self): return int.from_bytes(self._bits.tobytes(), 'big')
-    def from_byte(self, v): 
+    def Unused(self, v):
+        self._s(5, v)
+
+    def to_byte(self):
+        return int.from_bytes(self._bits.tobytes(), "big")
+
+    def from_byte(self, v):
         self._bits = bitarray(bin(v)[2:].zfill(8))
         self._bits[5] = 1
+
 
 @dataclass
 class FPS:
@@ -138,7 +168,6 @@ class PendingsTask:
     BRK: bool = False
 
 
-@final
 class CurrentInstructionMode(Enum):
     """
     Current Instruction Mode
@@ -164,9 +193,9 @@ Cb16U = CByte[16, CSign.UNSIGNED]
 
 @dataclass
 class Architecture:
-    A: int = (0)
-    X: int = (0)
-    Y: int = (0)
+    A: int = 0
+    X: int = 0
+    Y: int = 0
     Cycles: int = 0
     Halted: bool = False
     StackPointer: Cb16U = Cb16U(0)
@@ -184,12 +213,8 @@ class Architecture:
 
 @dataclass
 class NameTable:
-    tiles: np.ndarray = field(
-        default_factory=lambda: np.zeros((30, 32), dtype=np.uint8)
-    )
-    attributes: np.ndarray = field(
-        default_factory=lambda: np.zeros((8, 8), dtype=np.uint8)
-    )
+    tiles: np.ndarray = field(default_factory=lambda: np.zeros((30, 32), dtype=np.uint8))
+    attributes: np.ndarray = field(default_factory=lambda: np.zeros((8, 8), dtype=np.uint8))
     zone: Tuple[int, int] = (0, 0)
 
     @property
@@ -199,8 +224,8 @@ class NameTable:
 
     def to_bytes(self) -> bytes:
         """Export full 1 KB NT block"""
-        return bytes(self.tiles.flatten().tolist() +
-                     self.attributes.flatten().tolist())
+        return bytes(self.tiles.flatten().tolist() + self.attributes.flatten().tolist())
+
 
 @dataclass
 class Sprite:
@@ -217,17 +242,19 @@ class PPUPendingWrites:
     value: int
     remaining_ppu_cycles: int
 
+
 @dataclass
 class EmulatorMemory:
     RAM: np.ndarray = field(default_factory=lambda: np.zeros(0x800, dtype=np.uint8))
     PRGROM: np.ndarray = field(default_factory=lambda: np.zeros(0x8000, dtype=np.uint8))
     CHRROM: np.ndarray = field(default_factory=lambda: np.zeros(0x2000, dtype=np.uint8))
 
-    def copy(self) -> 'EmulatorMemory':
+    def copy(self) -> "EmulatorMemory":
         """
         Create a copy of the emulator memory.
         """
         return EmulatorMemory(self.RAM.copy(), self.PRGROM.copy(), self.CHRROM.copy())
+
 
 class _HelperTool:
     @staticmethod
@@ -236,26 +263,31 @@ class _HelperTool:
         # Example: 0b11001010 -> 0b01010011
         return int(format(b, "08b")[::-1], 2)
 
+
 @dataclass
 class Pulse:
     duty_cycle: float = 0.5
     frequency: float = 440.0
     volume: float = 1.0
 
+
 @dataclass
 class Triangle:
     frequency: float = 440.0
     linear_counter: int = 0
+
 
 @dataclass
 class Noise:
     frequency: float = 440.0
     envelope: float = 1.0
 
+
 @dataclass
 class DMC:
     sample_address: int = 0xC000
     sample_length: int = 0
+
 
 @dataclass
 class APU:
@@ -264,6 +296,7 @@ class APU:
     triangle: Triangle = field(default_factory=Triangle)
     noise: Noise = field(default_factory=Noise)
     dmc: DMC = field(default_factory=DMC)
+
 
 class Emulator:
     """
@@ -1180,7 +1213,7 @@ class Emulator:
         if not self.Architecture.Halted:
             self._step()
         else:
-            pass # it is not possible to step cycle when halted
+            pass  # it is not possible to step cycle when halted
 
     def _do_run_IRQ(self) -> None:
         """Handle Interrupt Request."""
@@ -1219,7 +1252,7 @@ class Emulator:
             self._do_run_IRQ()
             return
 
-        if hasattr(self.mapper, "irq_pending") and self.mapper.irq_pending: # type: ignore
+        if hasattr(self.mapper, "irq_pending") and self.mapper.irq_pending:  # type: ignore
             if not self.Architecture.flags.InterruptDisable:
                 self.mapper.irq_pending = False  # type: ignore
                 self._do_run_IRQ()
@@ -1351,69 +1384,69 @@ class Emulator:
             # LOAD INSTRUCTIONS - LDA
             case 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 as sub_opcode:
                 if sub_opcode == 0xA9:  # LDA Immediate
-                    self.Architecture.A = (self._read(self.Architecture.ProgramCounter))
+                    self.Architecture.A = self._read(self.Architecture.ProgramCounter)
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA5:  # LDA Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xB5:  # LDA Zero Page,X
                     self._do_read_operands_ZeroPage_XIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xAD:  # LDA Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xBD:  # LDA Absolute,X
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xB9:  # LDA Absolute,Y
                     self._do_read_operands_AbsoluteAddressed_YIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xA1:  # LDA (Indirect,X)
                     self._do_read_operands_IndirectAddressed_XIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xB1:  # LDA (Indirect),Y
                     self._do_read_operands_IndirectAddressed_YIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 return self._make_end_execute_opcode()
 
             # LOAD INSTRUCTIONS - LDX
             case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE as sub_opcode:
                 if sub_opcode == 0xA2:  # LDX Immediate
-                    self.Architecture.X = (self._read(self.Architecture.ProgramCounter))
+                    self.Architecture.X = self._read(self.Architecture.ProgramCounter)
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA6:  # LDX Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.X = (self._read(self.addressBus))
+                    self.Architecture.X = self._read(self.addressBus)
                 elif sub_opcode == 0xB6:  # LDX Zero Page,Y
                     self._do_read_operands_ZeroPage_YIndexed()
-                    self.Architecture.X = (self._read(self.addressBus))
+                    self.Architecture.X = self._read(self.addressBus)
                 elif sub_opcode == 0xAE:  # LDX Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.X = (self._read(self.addressBus))
+                    self.Architecture.X = self._read(self.addressBus)
                 elif sub_opcode == 0xBE:  # LDX Absolute,Y
                     self._do_read_operands_AbsoluteAddressed_YIndexed()
-                    self.Architecture.X = (self._read(self.addressBus))
+                    self.Architecture.X = self._read(self.addressBus)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.X)
                 return self._make_end_execute_opcode()
 
             # LOAD INSTRUCTIONS - LDY
             case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC as sub_opcode:
                 if sub_opcode == 0xA0:  # LDY Immediate
-                    self.Architecture.Y = (self._read(self.Architecture.ProgramCounter))
+                    self.Architecture.Y = self._read(self.Architecture.ProgramCounter)
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA4:  # LDY Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.Y = (self._read(self.addressBus))
+                    self.Architecture.Y = self._read(self.addressBus)
                 elif sub_opcode == 0xB4:  # LDY Zero Page,X
                     self._do_read_operands_ZeroPage_XIndexed()
-                    self.Architecture.Y = (self._read(self.addressBus))
+                    self.Architecture.Y = self._read(self.addressBus)
                 elif sub_opcode == 0xAC:  # LDY Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.Y = (self._read(self.addressBus))
+                    self.Architecture.Y = self._read(self.addressBus)
                 elif sub_opcode == 0xBC:  # LDY Absolute,X
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
-                    self.Architecture.Y = (self._read(self.addressBus))
+                    self.Architecture.Y = self._read(self.addressBus)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.Y)
                 return self._make_end_execute_opcode()
 
@@ -1479,7 +1512,7 @@ class Emulator:
                     self.Architecture.A = self.Architecture.Y
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0xBA:  # TSX
-                    self.Architecture.X = (self.Architecture.StackPointer)
+                    self.Architecture.X = self.Architecture.StackPointer
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.X)
                 elif sub_opcode == 0x9A:  # TXS
                     self.Architecture.StackPointer = Cb16U(self.Architecture.X)
@@ -1490,7 +1523,7 @@ class Emulator:
                 if sub_opcode == 0x48:  # PHA
                     self._do_push(self.Architecture.A)
                 elif sub_opcode == 0x68:  # PLA
-                    self.Architecture.A = (self._do_pop())
+                    self.Architecture.A = self._do_pop()
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0x08:  # PHP
                     self._do_push(self._get_processor_status() | 0x10)
@@ -2223,7 +2256,7 @@ class Emulator:
                 """LAS - AND memory with stack pointer, transfer to A, X, and SP"""
                 self._do_read_operands_AbsoluteAddressed_YIndexed()
                 value = self._read(self.addressBus) & self.Architecture.StackPointer
-                self.Architecture.A = self.Architecture.X = (value & 0xFF)
+                self.Architecture.A = self.Architecture.X = value & 0xFF
                 self.Architecture.StackPointer = Cb16U(value & 0xFF)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 return self._make_end_execute_opcode()
@@ -2449,7 +2482,7 @@ class Emulator:
             # Call tick_a12 for MMC3
             if hasattr(self.mapper, "tick_a12"):
                 a12_state = bool(tile_addr & 0x1000)
-                self.mapper.tick_a12(a12_state) # type: ignore
+                self.mapper.tick_a12(a12_state)  # type: ignore
 
             if self.mapper and hasattr(self.mapper, "ppu_read"):
                 plane1 = self.mapper.ppu_read(tile_addr + tile_row)
@@ -2552,7 +2585,7 @@ class Emulator:
                     continue
                 if clip_left and sx < 8:
                     continue
-                
+
                 bg_pixel = self._bg_opaque_line[sx]
 
                 # Sprite 0 hit detection # it not working

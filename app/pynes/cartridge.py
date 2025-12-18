@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Final, Optional, Tuple, Union, final
+from typing import Final, Optional, Tuple, Union
 
 import numpy as np
 from logger import log
@@ -8,7 +8,6 @@ from returns.result import Failure, Result, Success
 from typing_extensions import deprecated
 
 
-@final
 class Cartridge:
     """
     Represents an NES cartridge loaded from an iNES ROM file.
@@ -28,7 +27,7 @@ class Cartridge:
 
     HEADER_SIZE: Final[int] = 0x10  # 16 bytes
     TRAINER_SIZE: Final[int] = 0x200  # 512 bytes
-    MAGIC: Final[bytes] = b"NES\x1A"
+    MAGIC: Final[bytes] = b"NES\x1a"
 
     def __init__(self) -> None:
         """Initialize an empty cartridge with default values."""
