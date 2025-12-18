@@ -288,6 +288,17 @@ def main() -> None:
     ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
     ctx.disable(moderngl.DEPTH_TEST)
     ctx.clear(0.0, 0.0, 0.0, 1.0)
+    
+    def detextbype(text_lines: List[str], width: int, height: int):
+        surf = pygame.Surface((width, height), pygame.SRCALPHA)
+        surf.fill((0, 0, 0, 180))
+        y_pos = int(1.5 * SCALE)
+        for line in text_lines:
+            surf.blit(font.render(line, True, (255, 255, 255)), (int(1.5 * SCALE), y_pos))
+            y_pos += int(5 * SCALE)
+        text_data = pygame.image.tobytes(surf, "RGBA", True)
+        return text_data
+        
 
     class DebugOverlay:
         def __init__(self, ctx: moderngl.Context, screen_w: int, screen_h: int) -> None:
@@ -709,7 +720,7 @@ def main() -> None:
         try:
             frame_rgb = np.ascontiguousarray(frame, dtype=np.uint8)
             ctx.clear()
-            sprite.update_frame(frame_rgb)  # type: ignore
+            sprite.update(frame_rgb)  # type: ignore
             sprite.draw()  # type: ignore
             draw_debug_overlay()
             pygame.display.flip()

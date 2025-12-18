@@ -1,4 +1,4 @@
-from typing import Final, List, Tuple, TypeAlias
+from typing import Final, List, Tuple, TypeAlias, Dict
 
 import moderngl
 import numpy as np
@@ -94,13 +94,16 @@ class RenderSprite:
         self.texture: moderngl.Texture = ctx.texture(
             (width, height), 3, data=np.zeros((height, width, 3), dtype=np.uint8).tobytes()
         )
-        self.texture.filter: Tuple[int, int] = (moderngl.NEAREST, moderngl.NEAREST)
+        self.texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
-    def update_frame(self, frame: NDArray[np.uint8]) -> None:
+    def update(self, frame: NDArray[np.uint8]) -> None:
         """Upload frame (h,w,3 uint8) to GPU."""
         if frame.shape != (self.height, self.width, 3):
             raise ValueError(f"Frame must be ({self.height},{self.width},3)")
         self.texture.write(frame.tobytes())
+    
+    def updateBype(self, frame: bytes):
+        self.texture.write(frame)
 
     def set_fragment_shader(self, shadercass: Shader) -> bool:
         old_program = self.program
