@@ -3,7 +3,7 @@ certifi==2025.11.12
 charset-normalizer==3.4.4
 colorama==0.4.6
 customtkinter==5.2.2
-cython==3.2.2
+cython==3.2.3
 darkdetect==0.8.0
 dearpygui==2.1.1
 glcontext==3.0.0
