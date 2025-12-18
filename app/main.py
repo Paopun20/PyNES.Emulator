@@ -55,7 +55,6 @@ running: bool = True
 _thread_list: deque[threading.Thread] = deque()
 
 # Resources (initialized in main, cleaned up globally)
-debug_overlay: Optional[Any] = None
 sprite: Optional[RenderSprite] = None
 cpu_monitor: Optional[ThreadCPUMonitor] = None
 gpu_monitor: Optional[GPUMonitor] = None
@@ -68,15 +67,7 @@ process: Optional[psutil.Process] = None
 def _platform_safe_cleanup() -> None:
     """Platform-aware resource cleanup"""
     _log.info("Starting cleanup")
-    global debug_overlay, sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow
-
-    # Release OpenGL resources
-    if debug_overlay is not None:
-        try:
-            debug_overlay.destroy()
-            _log.info("Debug overlay destroyed")
-        except Exception as e:
-            _log.error(f"Debug overlay cleanup failed: {e}", exc_info=_extract_exc_info(e))
+    global sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow
 
     if sprite is not None:
         try:
@@ -119,7 +110,6 @@ def _platform_safe_cleanup() -> None:
             _log.warning(f"Window destruction failed: {e}")
 
     # Clear references
-    debug_overlay = None
     sprite = None
     cpu_monitor = None
     gpu_monitor = None
@@ -179,7 +169,7 @@ def _extract_exc_info(e: E) -> Tuple[Type[E], E, Optional[TracebackType]]:
 
 
 def main() -> None:
-    global running, _thread_list, debug_overlay, sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow, process
+    global running, _thread_list, sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow, process
 
     # Load config
     cfg = load_config()
@@ -232,9 +222,11 @@ def main() -> None:
         _log.info("Starting Discord presence")
         presence.connect()
 
-    NES_WIDTH: int = 256
-    NES_HEIGHT: int = 240
     SCALE: int = cfg["general"]["scale"]
+    NES_WIDTH: int = 256
+    WIDTH: int = NES_WIDTH * SCALE
+    NES_HEIGHT: int = 240
+    HEIGHT: int = NES_HEIGHT * SCALE
 
     class CoreThread:
         def __enter__(self) -> "CoreThread":
@@ -252,7 +244,8 @@ def main() -> None:
     _log.info(f"Starting pygame community edition {pygame.__version__}")
     pygame.init()
     pygame.font.init()
-    font: pygame.font.Font = pygame.font.Font(font_path, 5 * SCALE)
+    FONT_SIZE: int = 5
+    font = pygame.font.Font(font_path, FONT_SIZE * SCALE)
 
     try:
         icon_surface: Optional[pygame.Surface] = pygame.image.load(icon_path)
@@ -260,7 +253,7 @@ def main() -> None:
         icon_surface = None
         _log.error("Failed to load icon", exc_info=_extract_exc_info(e))
 
-    _ = pygame.display.set_mode((NES_WIDTH * SCALE, NES_HEIGHT * SCALE), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE)  # type: ignore
+    _ = pygame.display.set_mode((WIDTH, HEIGHT), DOUBLEBUF | OPENGL | HWSURFACE | HWPALETTE)  # type: ignore
 
     try:
         pygame.display.gl_set_attribute(GL_SWAP_CONTROL, int(cfg["general"]["vsync"]))
@@ -288,127 +281,35 @@ def main() -> None:
     ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
     ctx.disable(moderngl.DEPTH_TEST)
     ctx.clear(0.0, 0.0, 0.0, 1.0)
-    
-    def detextbype(text_lines: List[str], width: int, height: int):
+
+    def detextbype(text_lines, width, height):
         surf = pygame.Surface((width, height), pygame.SRCALPHA)
-        surf.fill((0, 0, 0, 180))
-        y_pos = int(1.5 * SCALE)
+        surf.fill((0, 0, 0, 160))
+    
+        x = 4 * SCALE
+        y = 4 * SCALE
+    
         for line in text_lines:
-            surf.blit(font.render(line, True, (255, 255, 255)), (int(1.5 * SCALE), y_pos))
-            y_pos += int(5 * SCALE)
-        text_data = pygame.image.tobytes(surf, "RGBA", True)
-        return text_data
-        
-
-    class DebugOverlay:
-        def __init__(self, ctx: moderngl.Context, screen_w: int, screen_h: int) -> None:
-            self.ctx = ctx
-            self.screen_w = screen_w
-            self.screen_h = screen_h
-            self.texture = None
-            self.prev_lines = None
-            vertex_shader = """
-            #version 330 core
-            in vec2 in_pos;
-            in vec2 in_uv;
-            out vec2 v_uv;
-            uniform vec2 u_resolution;
-            uniform vec2 u_offset;
-            uniform vec2 u_size;
-            void main() {
-                vec2 pos = in_pos * u_size + u_offset;
-                vec2 ndc = (pos / u_resolution) * 2.0 - 1.0;
-                ndc.y = -ndc.y;
-                gl_Position = vec4(ndc, 0.0, 1.0);
-                v_uv = vec2(in_uv.x, 1.0 - in_uv.y);
-            }
-            """
-            fragment_shader = """
-            #version 330 core
-            in vec2 v_uv;
-            out vec4 fragColor;
-            uniform sampler2D u_texture;
-            void main() {
-                fragColor = texture(u_texture, v_uv);
-            }
-            """
-            self.program = ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
-            vertices = np.array(
-                [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    1.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                ],
-                dtype=np.float32,
+            text_surf = font.render(
+                line,
+                False,
+                (255, 255, 255),
             )
-            indices = np.array([0, 1, 2, 2, 3, 0], dtype=np.int32)
-            self.vbo = ctx.buffer(vertices.tobytes())
-            self.ibo = ctx.buffer(indices.tobytes())
-            self.vao = ctx.vertex_array(self.program, [(self.vbo, "2f 2f", "in_pos", "in_uv")], self.ibo)
-
-        def render_text_to_surface(self, text_lines: List[str], width: int, height: int) -> pygame.Surface:
-            surf = pygame.Surface((width, height), pygame.SRCALPHA)
-            surf.fill((0, 0, 0, 180))
-            y_pos = int(1.5 * SCALE)
-            for line in text_lines:
-                surf.blit(font.render(line, True, (255, 255, 255)), (int(1.5 * SCALE), y_pos))
-                y_pos += int(5 * SCALE)
-            return surf
-
-        def update(self, text_lines: List[str]) -> None:
-            if self.prev_lines == tuple(text_lines):
-                return
-            self.prev_lines = tuple(text_lines)
-            tex_h = len(text_lines) * (5 * SCALE) + 10
-            tex_w = self.screen_w
-            surf = self.render_text_to_surface(text_lines, tex_w, tex_h)
-            text_data = pygame.image.tobytes(surf, "RGBA", True)
-            if self.texture is None or self.texture.size != (tex_w, tex_h):
-                if self.texture:
-                    self.texture.release()
-                self.texture = self.ctx.texture((tex_w, tex_h), 4)
-                self.texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
-            self.texture.write(text_data)
-
-        def draw(self, offset: Tuple[int, int] = (0, 0)) -> None:
-            if self.texture is None:
-                return
-            tex_w, tex_h = self.texture.size
-            self.program["u_resolution"] = (self.screen_w, self.screen_h)
-            self.program["u_offset"] = offset
-            self.program["u_size"] = (tex_w, tex_h)
-            self.program["u_texture"] = 0
-            self.texture.use(0)
-            self.vao.render(moderngl.TRIANGLES)
-
-        def destroy(self) -> None:
-            if self.texture:
-                self.texture.release()
-            if hasattr(self, "vao"):
-                self.vao.release()
-            if hasattr(self, "vbo"):
-                self.vbo.release()
-            if hasattr(self, "ibo"):
-                self.ibo.release()
-            if hasattr(self, "program"):
-                self.program.release()
+            surf.blit(text_surf, (x, y))
+            y += font.get_height() + SCALE
+        
+        data = pygame.image.tobytes(surf, "RGBA", False)
+        assert len(data) == width * height * 4, f"Data size mismatch: {len(data)} != {width * height * 4}"
+        return data
 
     _log.info("Starting sprite renderer")
     sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
-    debug_overlay = DebugOverlay(ctx, NES_WIDTH * SCALE, NES_HEIGHT * SCALE)
+    debugtxt = RenderSprite(
+        ctx,
+        width=NES_WIDTH * SCALE,
+        height=NES_HEIGHT * SCALE,
+        scale=1,
+    )
 
     clock: pygame.time.Clock = pygame.time.Clock()
     _log.info("Starting emulator")
@@ -713,16 +614,24 @@ def main() -> None:
                 debug_mode_index %= 6
                 draw_debug_overlay()
                 return
-        debug_overlay.update(debug_info)  # type: ignore
-        debug_overlay.draw(offset=(0, 0))  # type: ignore
+        debugtxt.update_bytes(detextbype(debug_info, width=NES_WIDTH, height=NES_HEIGHT))
+    
+    def rgb_to_rgba(frame_rgb: NDArray[np.uint8]) -> NDArray[np.uint8]:
+        h, w, _ = frame_rgb.shape
+        frame_rgba = np.empty((h, w, 4), dtype=np.uint8)
+        frame_rgba[..., :3] = frame_rgb
+        frame_rgba[..., 3] = 255
+        return frame_rgba
 
     def render_frame(frame: NDArray[np.uint8]) -> None:
         try:
-            frame_rgb = np.ascontiguousarray(frame, dtype=np.uint8)
             ctx.clear()
-            sprite.update(frame_rgb)  # type: ignore
+            frame_rgba = rgb_to_rgba(np.ascontiguousarray(frame, dtype=np.uint8))
+            sprite.update(frame_rgba) # type: ignore
             sprite.draw()  # type: ignore
-            draw_debug_overlay()
+            if show_debug:
+                draw_debug_overlay()
+                debugtxt.draw(True)
             pygame.display.flip()
         except ValueError as e:
             _log.error("Error rendering frame", exc_info=_extract_exc_info(e))
@@ -1030,7 +939,7 @@ def main() -> None:
                                     _log.info("Single step executed")
                             case pygame.K_F5:
                                 show_debug = not show_debug
-                                debug_overlay.prev_lines = None
+                                debugtxt.draw()
                                 _log.info(f"Debug {'ON' if show_debug else 'OFF'}")
                             case pygame.K_F6:
                                 if show_debug:
