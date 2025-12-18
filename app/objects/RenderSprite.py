@@ -1,10 +1,10 @@
-from typing import Final, List, TypeAlias
+from typing import Final, TypeAlias
 
 import moderngl
 import numpy as np
 from logger import log
 from numpy.typing import NDArray
-from objects.shaderclass import Shader, ShaderType, ShaderVariable
+from objects.shaderclass import Shader, ShaderType
 
 
 # Shader defaults
@@ -37,6 +37,9 @@ void main() {
 }
 """
 
+# Module-level constants to avoid recreating arrays
+_QUAD_INDICES: Final[np.ndarray] = np.array([0, 1, 2, 2, 3, 0], dtype="i4")
+
 # GLSL-style type aliases
 vec2: TypeAlias = NDArray[np.float32]
 vec3: TypeAlias = NDArray[np.float32]
@@ -55,6 +58,7 @@ class RenderSprite:
         width: int = 256,
         height: int = 240,
         scale: int = 3,
+        fast_mode: bool = False,
     ):
         self.ctx = ctx
         self.width = width
@@ -67,27 +71,43 @@ class RenderSprite:
         self._shclass: Shader = DEFAULT_FRAGMENT_SHADER
         self.fragment_shader: str = DEFAULT_FRAGMENT_SHADER.code
 
+        # Cache for performance
+        self._expected_shape = (height, width, 4)
+        self._expected_bytes = width * height * 4
+        self._u_tex_set = False  # Track if u_tex uniform has been set
+        self.fast_mode = fast_mode  # Skip validation checks when True
+
         # Program
         self.program = ctx.program(
             vertex_shader=VERTEX_SHADER,
             fragment_shader=self.fragment_shader,
         )
 
-        # Geometry (screen quad)
+        # Geometry (screen quad) - create vertices specific to this sprite size
         vertices = np.array(
             [
-                0,     0,     0, 0,
-                self.W, 0,     1, 0,
-                self.W, self.H, 1, 1,
-                0,     self.H, 0, 1,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                float(self.W),
+                0.0,
+                1.0,
+                0.0,
+                float(self.W),
+                float(self.H),
+                1.0,
+                1.0,
+                0.0,
+                float(self.H),
+                0.0,
+                1.0,
             ],
             dtype="f4",
         )
 
-        indices = np.array([0, 1, 2, 2, 3, 0], dtype="i4")
-
         self.vbo = ctx.buffer(vertices.tobytes())
-        self.ibo = ctx.buffer(indices.tobytes())
+        self.ibo = ctx.buffer(_QUAD_INDICES.tobytes())
 
         self.vao = ctx.vertex_array(
             self.program,
@@ -111,23 +131,20 @@ class RenderSprite:
         )
 
         # Static uniforms
-        if "u_resolution" in self.program:
-            self.program["u_resolution"].value = (self.W, self.H)
+        self._set_uniform_direct("u_resolution", (self.W, self.H))
+        self._set_uniform_direct("u_tex", 0)
+        self._u_tex_set = True
 
     def update(self, frame: NDArray[np.uint8]) -> None:
         """Upload RGBA frame (h, w, 4)"""
-        if frame.shape != (self.height, self.width, 4):
-            raise ValueError(
-                f"Frame must be ({self.height}, {self.width}, 4)"
-            )
+        if not self.fast_mode and frame.shape != self._expected_shape:
+            raise ValueError(f"Frame must be {self._expected_shape}")
         self.texture.write(frame.tobytes())
 
     def update_bytes(self, data: bytes) -> None:
-        expected = self.width * self.height * 4
-        if len(data) != expected:
+        if not self.fast_mode and len(data) != self._expected_bytes:
             raise ValueError(
-                f"Invalid RGBA byte size: got {len(data)}, expected {expected} "
-                f"({self.width}x{self.height} RGBA)"
+                f"Invalid RGBA byte size: got {len(data)}, expected {self._expected_bytes} ({self.width}x{self.height} RGBA)"
             )
         self.texture.write(data)
 
@@ -160,8 +177,9 @@ class RenderSprite:
             self.fragment_shader = shaderclass.code
             self._shclass = shaderclass
 
-            if "u_resolution" in self.program:
-                self.program["u_resolution"].value = (self.W, self.H)
+            self._set_uniform_direct("u_resolution", (self.W, self.H))
+            self._set_uniform_direct("u_tex", 0)
+            self._u_tex_set = True
 
             return True
 
@@ -174,30 +192,38 @@ class RenderSprite:
             self.fragment_shader = old_shader
             return False
 
+    def _set_uniform_direct(self, name: str, value: float | int | tuple) -> None:
+        """Internal helper for setting uniforms without .value"""
+        if name in self.program:
+            self.program[name] = value
+
     def set_uniform(
         self,
         name: str,
         value: float | int | vec2 | vec3 | vec4 | mat2 | mat3 | mat4,
     ) -> None:
+        """Set a uniform value (for user shaders with dynamic uniforms)"""
         if name not in self.program:
             return
-        self.program[name] = value
+        self.program[name].value = value  # type: ignore
 
     def draw(self, isoverlay: bool = False) -> None:
         if not isoverlay:
             self.ctx.clear(0.0, 0.0, 0.0, 1.0)
 
-        if "u_tex" in self.program:
-            self.program["u_tex"].value = 0
-
+        # Bind texture to slot 0
         self.texture.use(location=0)
+
+        # Only set u_tex uniform if it hasn't been set yet (after shader change)
+        if not self._u_tex_set:
+            self._set_uniform_direct("u_tex", 0)
+            self._u_tex_set = True
+
         self.vao.render()
 
     def export(self) -> NDArray[np.uint8]:
         data = self.ctx.screen.read(components=4, dtype="f1")
-        frame = np.frombuffer(data, dtype=np.uint8).reshape(
-            self.H, self.W, 4
-        )
+        frame = np.frombuffer(data, dtype=np.uint8).reshape(self.H, self.W, 4)
         return np.flipud(frame)
 
     def destroy(self) -> None:
