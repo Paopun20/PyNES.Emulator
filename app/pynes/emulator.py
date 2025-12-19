@@ -213,18 +213,149 @@ class Architecture:
 
 @dataclass
 class NameTable:
+    """
+    Represents a NES PPU Nametable (960 bytes tiles + 64 bytes attributes = 1KB)
+
+    The NES has 4 nametable zones arranged in a 2x2 grid:
+    - Zone (0,0) at $2000-$23FF
+    - Zone (1,0) at $2400-$27FF
+    - Zone (0,1) at $2800-$2BFF
+    - Zone (1,1) at $2C00-$2FFF
+
+    Each nametable contains:
+    - 30 rows × 32 columns of tile indices (960 bytes)
+    - 8×8 attribute table (64 bytes) for palette selection
+    """
+
     tiles: np.ndarray = field(default_factory=lambda: np.zeros((30, 32), dtype=np.uint8))
     attributes: np.ndarray = field(default_factory=lambda: np.zeros((8, 8), dtype=np.uint8))
     zone: Tuple[int, int] = (0, 0)
 
     @property
     def ppu_address(self) -> int:
+        """Calculate the base PPU address for this nametable zone"""
         base = 0x2000
-        return base + (self.zone[1] * 0x400) + (self.zone[0] * 0x400)
+        return base + (self.zone[1] * 0x800) + (self.zone[0] * 0x400)
+
+    def get_tile(self, row: int, col: int) -> int:
+        """Get tile index at specific row/column"""
+        if 0 <= row < 30 and 0 <= col < 32:
+            return int(self.tiles[row, col])
+        return 0
+
+    def set_tile(self, row: int, col: int, tile_index: int) -> None:
+        """Set tile index at specific row/column"""
+        if 0 <= row < 30 and 0 <= col < 32:
+            self.tiles[row, col] = tile_index & 0xFF
+
+    def get_attribute(self, row: int, col: int) -> int:
+        """Get attribute byte for a 4×4 tile block"""
+        if 0 <= row < 8 and 0 <= col < 8:
+            return int(self.attributes[row, col])
+        return 0
+
+    def set_attribute(self, row: int, col: int, value: int) -> None:
+        """Set attribute byte for a 4×4 tile block"""
+        if 0 <= row < 8 and 0 <= col < 8:
+            self.attributes[row, col] = value & 0xFF
+
+    def get_palette_for_tile(self, tile_row: int, tile_col: int) -> int:
+        """
+        Get the 2-bit palette number for a specific tile position.
+        Each attribute byte controls 4×4 tiles (16 tiles total).
+        """
+        if not (0 <= tile_row < 30 and 0 <= tile_col < 32):
+            return 0
+
+        # Calculate which attribute byte controls this tile
+        attr_row = tile_row // 4
+        attr_col = tile_col // 4
+
+        # Calculate position within the 4×4 block
+        block_row = (tile_row % 4) // 2  # 0 or 1
+        block_col = (tile_col % 4) // 2  # 0 or 1
+
+        # Get the attribute byte
+        attr_byte = self.get_attribute(attr_row, attr_col)
+
+        # Extract the 2-bit palette (each attribute byte has 4 palettes)
+        shift = (block_row * 4) + (block_col * 2)
+        palette = (attr_byte >> shift) & 0x03
+
+        return palette
+
+    def set_palette_for_tile(self, tile_row: int, tile_col: int, palette: int) -> None:
+        """Set the 2-bit palette number for a specific tile position"""
+        if not (0 <= tile_row < 30 and 0 <= tile_col < 32):
+            return
+
+        palette = palette & 0x03
+
+        # Calculate which attribute byte controls this tile
+        attr_row = tile_row // 4
+        attr_col = tile_col // 4
+
+        # Calculate position within the 4×4 block
+        block_row = (tile_row % 4) // 2
+        block_col = (tile_col % 4) // 2
+
+        # Calculate bit shift
+        shift = (block_row * 4) + (block_col * 2)
+
+        # Update the attribute byte
+        attr_byte = self.get_attribute(attr_row, attr_col)
+        attr_byte &= ~(0x03 << shift)  # Clear the 2 bits
+        attr_byte |= palette << shift  # Set new palette
+        self.set_attribute(attr_row, attr_col, attr_byte)
+
+    def clear(self) -> None:
+        """Clear all tiles and attributes to zero"""
+        self.tiles.fill(0)
+        self.attributes.fill(0)
+
+    def fill_tiles(self, tile_index: int) -> None:
+        """Fill all tiles with a specific tile index"""
+        self.tiles.fill(tile_index & 0xFF)
+
+    def copy_from(self, other: "NameTable") -> None:
+        """Copy data from another NameTable"""
+        np.copyto(self.tiles, other.tiles)
+        np.copyto(self.attributes, other.attributes)
+        self.zone = other.zone
+
+    def from_bytes(self, data: bytes) -> None:
+        """Import nametable data from a 1KB byte array"""
+        if len(data) < 1024:
+            return
+
+        # First 960 bytes are tiles (30×32)
+        tile_data = np.frombuffer(data[:960], dtype=np.uint8)
+        self.tiles = tile_data.reshape((30, 32))
+
+        # Last 64 bytes are attributes (8×8)
+        attr_data = np.frombuffer(data[960:1024], dtype=np.uint8)
+        self.attributes = attr_data.reshape((8, 8))
 
     def to_bytes(self) -> bytes:
-        """Export full 1 KB NT block"""
-        return bytes(self.tiles.flatten().tolist() + self.attributes.flatten().tolist())
+        """Export full 1 KB nametable block (960 bytes tiles + 64 bytes attributes)"""
+        tile_bytes = self.tiles.flatten().tobytes()
+        attr_bytes = self.attributes.flatten().tobytes()
+        return tile_bytes + attr_bytes
+
+    def get_tile_address(self, row: int, col: int) -> int:
+        """Get PPU address for a specific tile"""
+        if 0 <= row < 30 and 0 <= col < 32:
+            return self.ppu_address + (row * 32) + col
+        return self.ppu_address
+
+    def get_attribute_address(self, row: int, col: int) -> int:
+        """Get PPU address for a specific attribute byte"""
+        if 0 <= row < 8 and 0 <= col < 8:
+            return self.ppu_address + 0x3C0 + (row * 8) + col
+        return self.ppu_address + 0x3C0
+
+    def __repr__(self) -> str:
+        return f"NameTable(zone={self.zone}, ppu_address=0x{self.ppu_address:04X})"
 
 
 @dataclass

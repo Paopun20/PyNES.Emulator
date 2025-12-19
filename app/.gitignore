@@ -1,5 +1,5 @@
 # this is on development
-dev.py
+dev.*
 
 # this is not for production
 pysocket/*
