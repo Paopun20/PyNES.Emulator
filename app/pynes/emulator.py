@@ -2593,8 +2593,11 @@ class Emulator:
             # Direct NES color code (already 0–63)
             color = palette_index & color_mask
 
-        rgb = self._NESPaletteToRGB(color)
-        self.FrameBuffer[self.Scanline, x] = rgb
+        if not np.array_equal(
+            self.FrameBuffer[self.Scanline, x],
+            rgb := self._NESPaletteToRGB(color)
+        ):
+            self.FrameBuffer[self.Scanline, x] = rgb
 
     def _set_bg_opaque_line(self, index: int, en: bool):
         if self._bg_opaque_line[index] != en:
