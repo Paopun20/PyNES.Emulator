@@ -130,8 +130,8 @@ jobs:
       # Install Python deps
       - name: Install Python dependencies
         run: |
-          uv pip install --system --upgrade pip
-          uv pip install --system --upgrade -r requirements.txt
+          uv pip install --upgrade pip
+          uv pip install --upgrade -r requirements.txt
 
       # Prepare macOS universal environment
       - name: Prepare macOS universal build env
