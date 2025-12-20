@@ -13,7 +13,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  python: 3.14.2
+  python: 3.14.2t
 
 jobs:
   build:
@@ -32,17 +32,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.python }}
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup UV
         uses: astral-sh/setup-uv@v7
         with:
+          python-version: ${{ env.python }}
           enable-cache: true
           cache-dependency-glob: "requirements.txt"
 
@@ -67,7 +63,7 @@ jobs:
       # UPX
       - name: Setup UPX
         if: matrix.os != 'macos-latest'
-        uses: crazy-max/ghaction-upx@v3
+        uses: crazy-max/ghaction-upx@v3.2.0
         with:
           install-only: true
 
