@@ -43,11 +43,15 @@ jobs:
           cache-dependency-glob: "requirements.txt"
 
       # Linux dependencies
-      - name: Install Linux GL Deps
+      - name: Install Linux Deps
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
             libx11-dev \
             libxext-dev \
             libxi-dev \
@@ -56,9 +60,15 @@ jobs:
             mesa-common-dev \
             libgl-dev \
             libglu1-mesa-dev \
-            xclip \
             libasound2-dev \
-            libpulse-dev
+            libpulse-dev \
+            pkg-config
+
+      - name: Install macOS Deps
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          brew install sdl2 sdl2_image sdl2_mixer sdl2_ttf pkg-config
 
       # UPX
       - name: Setup UPX
@@ -135,7 +145,7 @@ jobs:
       # Install Python deps
       - name: Install Python dependencies
         run: |
-          source .venv/bin/activate
+          
           uv pip install --upgrade pip
           uv pip install --upgrade -r requirements.txt
 
@@ -157,7 +167,7 @@ jobs:
       - name: Pre-check python files
         run: |
           set -o pipefail
-          source .venv/bin/activate
+          
           failed=0
           find app -type f -name "*.py" | while IFS= read -r file; do
               if uv run python -m py_compile "$file" &>/dev/null; then
@@ -176,7 +186,7 @@ jobs:
       - name: Build PyNES
         id: build
         run: |
-          source .venv/bin/activate
+          
           echo "build_success=false" >> $GITHUB_OUTPUT
           UPX_DIR="${{ steps.upx.outputs.upx_path }}"
           if uv run pyinstaller pynes.spec --clean --noconfirm ${UPX_DIR:+--upx-dir "$(dirname "$UPX_DIR")"}; then
