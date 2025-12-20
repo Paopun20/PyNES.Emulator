@@ -127,9 +127,15 @@ jobs:
             ${{ runner.os }}-build-${{ env.python }}-
             ${{ runner.os }}-build-
 
+      - name: Create venv
+        run: |
+          uv venv .venv
+          source .venv/bin/activate
+
       # Install Python deps
       - name: Install Python dependencies
         run: |
+          source .venv/bin/activate
           uv pip install --upgrade pip
           uv pip install --upgrade -r requirements.txt
 
@@ -151,6 +157,7 @@ jobs:
       - name: Pre-check python files
         run: |
           set -o pipefail
+          source .venv/bin/activate
           failed=0
           find app -type f -name "*.py" | while IFS= read -r file; do
               if uv run python -m py_compile "$file" &>/dev/null; then
@@ -169,6 +176,7 @@ jobs:
       - name: Build PyNES
         id: build
         run: |
+          source .venv/bin/activate
           echo "build_success=false" >> $GITHUB_OUTPUT
           UPX_DIR="${{ steps.upx.outputs.upx_path }}"
           if uv run pyinstaller pynes.spec --clean --noconfirm ${UPX_DIR:+--upx-dir "$(dirname "$UPX_DIR")"}; then
