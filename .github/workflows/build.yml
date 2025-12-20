@@ -142,7 +142,6 @@ jobs:
       - name: Create venv
         run: |
           uv venv .venv
-          echo "${{ runner.os }}"
           if [[ "${{ runner.os }}" == 'Windows' ]]; then
             source .venv/Scripts/activate
           else
