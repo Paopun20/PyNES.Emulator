@@ -141,14 +141,9 @@ jobs:
 
       - name: Create venv
         run: |
-          uv venv .venv
-          if [[ "${{ runner.os }}" == 'windows-latest' ]]; then
-            dir .venv/
-            source .venv/Scripts/activate
-          else
-            dir .venv/
-            source .venv/bin/activate
-          fi
+          $path = uv venv .venv | tail -n 1 | cut -d' ' -f3
+          $path = $path.Trim()
+          source $path
 
       # Install Python deps
       - name: Install Python dependencies
