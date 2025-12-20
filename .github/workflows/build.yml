@@ -52,14 +52,14 @@ jobs:
             libsdl2-image-dev \
             libsdl2-mixer-dev \
             libsdl2-ttf-dev \
+            libportmidi-dev \
+            libfreetype6-dev \
             libx11-dev \
             libxext-dev \
             libxi-dev \
             libxxf86vm-dev \
             libgl1-mesa-dev \
             mesa-common-dev \
-            libgl-dev \
-            libglu1-mesa-dev \
             libasound2-dev \
             libpulse-dev \
             pkg-config
@@ -68,7 +68,9 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew update
-          brew install sdl2 sdl2_image sdl2_mixer sdl2_ttf pkg-config
+          brew install \
+            sdl2 sdl2_image sdl2_mixer sdl2_ttf \
+            portmidi freetype pkg-config
 
       # UPX
       - name: Setup UPX
@@ -140,7 +142,11 @@ jobs:
       - name: Create venv
         run: |
           uv venv .venv
-          source .venv/bin/activate
+          if [[ "${{ runner.os }}" != 'windows-latest' ]]; then
+            source .venv/bin/activate
+          else
+            .venv/Scripts/activate
+          fi
 
       # Install Python deps
       - name: Install Python dependencies
