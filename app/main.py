@@ -676,20 +676,25 @@ def main() -> None:
     def subpro(_log) -> None:
         global running
         gen = nes_emu.step_Yield()
+
         while running:
-            if not run_event.is_set():
-                run_event.wait(5)
-                continue
+            run_event.wait()
             if not running:
                 break
+
             try:
                 next(gen)
+
+            except StopIteration:
+                _log.info("Emulator halted")
+                break
+
             except EmulatorError as e:
                 _log.error("Emulator Error", exc_info=_extract_exc_info(e))
                 if debug_mode:
                     raise
-                else:
-                    break
+                break
+
             except ExitException as e:
                 _log.error("Exit Exception", exc_info=_extract_exc_info(e))
                 break
