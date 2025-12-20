@@ -145,7 +145,7 @@ jobs:
           if [[ "${{ runner.os }}" != 'windows-latest' ]]; then
             source .venv/bin/activate
           else
-            source .venv/bin/activate
+            source .venv/Scripts/activate
           fi
 
       # Install Python deps
