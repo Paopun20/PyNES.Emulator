@@ -397,27 +397,63 @@ class _HelperTool:
 
 @dataclass
 class Pulse:
-    duty_cycle: float = 0.5
-    frequency: float = 440.0
-    volume: float = 1.0
+    timer: int = 0
+    duty_cycle: int = 0  # 0-3, selects duty cycle waveform
+    length_counter: int = 0
+    length_counter_reload: int = 0  # Value to reload length counter with
+    length_counter_reload_flag: bool = False  # Flag to reload on next half-frame clock
+    envelope_volume: int = 15
+    envelope_decay_level: int = 0
+    envelope_start_flag: bool = False
+    envelope_loop: bool = False
+    envelope_disable: bool = False
+    sweep_enabled: bool = False
+    sweep_period: int = 0
+    sweep_negate: bool = False
+    sweep_shift: int = 0
 
 
 @dataclass
 class Triangle:
-    frequency: float = 440.0
+    timer: int = 0
+    length_counter: int = 0
+    length_counter_reload: int = 0  # Value to reload length counter with
+    length_counter_reload_flag: bool = False  # Flag to reload on next half-frame clock
     linear_counter: int = 0
+    linear_counter_reload: int = 0
+    linear_counter_reload_flag: bool = False
 
 
 @dataclass
 class Noise:
-    frequency: float = 440.0
-    envelope: float = 1.0
+    timer: int = 0
+    length_counter: int = 0
+    length_counter_reload: int = 0  # Value to reload length counter with
+    length_counter_reload_flag: bool = False  # Flag to reload on next half-frame clock
+    envelope_volume: int = 15
+    envelope_decay_level: int = 0
+    envelope_start_flag: bool = False
+    envelope_loop: bool = False
+    envelope_disable: bool = False
+    shift_register: int = 1
+    mode: bool = False  # True = mode 1 (93-bit), False = mode 0 (15-bit)
 
 
 @dataclass
 class DMC:
+    timer: int = 0
     sample_address: int = 0xC000
     sample_length: int = 0
+    bytes_remaining: int = 0
+    address_counter: int = 0xC000
+    shift_register: int = 0
+    shifter_bits_remaining: int = 8
+    output_level: int = 0
+    enable_irq: bool = False
+    loop: bool = False
+    rate: int = 428
+    buffer: int = 0
+    buffer_empty: bool = True
 
 
 @dataclass
@@ -427,6 +463,76 @@ class APU:
     triangle: Triangle = field(default_factory=Triangle)
     noise: Noise = field(default_factory=Noise)
     dmc: DMC = field(default_factory=DMC)
+
+    # Frame counter and status
+    frame_counter: int = 0
+    frame_counter_mode: bool = False  # False = 4-step, True = 5-step
+    frame_counter_inhibit_irq: bool = False
+    frame_counter_reset: int = 0xFF  # Delay counter for frame counter reset
+    quarter_frame_clock: bool = False
+    half_frame_clock: bool = False
+    frame_interrupt: bool = False
+    dmc_interrupt: bool = False
+
+    # Channel enable status
+    pulse1_enabled: bool = False
+    pulse2_enabled: bool = False
+    triangle_enabled: bool = False
+    noise_enabled: bool = False
+    dmc_enabled: bool = False
+
+    # APU cycle tracking
+    apu_clock: int = 12
+    apu_put_cycle: bool = False
+
+    # Register storage
+    registers: list = field(default_factory=lambda: [0] * 0x18)
+
+    # Envelope divider
+    envelope_divider_clock: bool = False
+
+    # Length counter table
+    length_counter_lut: list = field(
+        default_factory=lambda: [
+            10,
+            254,
+            20,
+            2,
+            40,
+            4,
+            80,
+            6,
+            160,
+            8,
+            60,
+            10,
+            14,
+            12,
+            26,
+            14,
+            12,
+            16,
+            24,
+            18,
+            48,
+            20,
+            96,
+            22,
+            192,
+            24,
+            72,
+            26,
+            16,
+            28,
+            32,
+            30,
+        ]
+    )
+
+    # DMC rate lookup table
+    dmc_rate_lut: list = field(
+        default_factory=lambda: [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54]
+    )
 
 
 class Emulator:
@@ -502,6 +608,10 @@ class Emulator:
         self._ntsc_decode_signal: bool = True  # Toggle for NTSC decoding
         self._ntsc_colorburst_phase_at_dot_0: int = 0  # Phase at the start of the scanline
 
+        # APU initialization
+        self.apu: APU = APU()
+        self.irq_level_detector: bool = False
+
     @property
     def getMemory(self) -> EmulatorMemory:
         """
@@ -549,9 +659,9 @@ class Emulator:
                 raise EmulatorError(ValueError(f"Callback {callback} is not Callable"))
             callback(*args, **kwargs)
 
-    def _read(self, Address: int) -> int:
+    def _read(self, addr: int) -> int:
         """Read from CPU or PPU memory with proper mirroring."""
-        addr = int(Address) & 0xFFFF
+        addr = int(addr) & 0xFFFF
 
         # RAM ($0000-$1FFF)
         if addr < 0x2000:
@@ -567,9 +677,25 @@ class Emulator:
                 val = (self.controllers[1].read() & 1) | (self.dataBus & 0xE0)
             elif addr == 0x4017:  # Controller 2
                 val = (self.controllers[2].read() & 1) | (self.dataBus & 0xE0)
-            else:  # APU registers ($4000-$4015)
+            elif addr == 0x4015:  # APU Status
                 val = 0
-                pass
+                if self.apu.pulse1.length_counter > 0:
+                    val |= 0x01
+                if self.apu.pulse2.length_counter > 0:
+                    val |= 0x02
+                if self.apu.triangle.length_counter > 0:
+                    val |= 0x04
+                if self.apu.noise.length_counter > 0:
+                    val |= 0x08
+                if self.apu.dmc.bytes_remaining > 0:
+                    val |= 0x10
+                if self.apu.frame_interrupt:
+                    val |= 0x40
+                if self.apu.dmc_interrupt:
+                    val |= 0x80
+                self.apu.frame_interrupt = False
+            else:  # Other APU registers (read-only, return open bus)
+                val = self.dataBus
 
         # Unmapped memory ($4018-$FFFF)
         elif addr < 0x8000:
@@ -585,11 +711,6 @@ class Emulator:
                 val = self.mapper.cpu_read(addr)
             else:
                 val = int(self._memory.PRGROM[addr - 0x8000])
-
-        if hasattr(self.mapper, "tick_a12") and addr < 0x2000:
-            # A12 = bit 12 of PPU address
-            a12_state = bool(addr & 0x1000)
-            self.mapper.tick_a12(a12_state)  # type: ignore
 
         self.dataBus = val
         return val
@@ -623,8 +744,118 @@ class Emulator:
                     self.controllers[2].latch()
                 self.controllers[1].write(val)
                 self.controllers[2].write(val)
-            else:  # APU registers ($4000-$4015)
-                pass
+            elif 0x4000 <= addr <= 0x4015:  # APU registers
+                reg_idx = addr - 0x4000
+                self.apu.registers[reg_idx] = val
+
+                # Pulse 1 ($4000-$4003)
+                if addr == 0x4000:
+                    self.apu.pulse1.envelope_disable = bool(val & 0x10)
+                    self.apu.pulse1.envelope_loop = bool(val & 0x20)
+                    self.apu.pulse1.duty_cycle = (val >> 6) & 0x3
+                elif addr == 0x4001:
+                    self.apu.pulse1.sweep_enabled = bool(val & 0x80)
+                    self.apu.pulse1.sweep_period = (val >> 4) & 0x7
+                    self.apu.pulse1.sweep_negate = bool(val & 0x08)
+                    self.apu.pulse1.sweep_shift = val & 0x7
+                elif addr == 0x4002:
+                    self.apu.pulse1.timer = (self.apu.pulse1.timer & 0xFF00) | val
+                elif addr == 0x4003:
+                    if self.apu.pulse1_enabled:
+                        self.apu.pulse1.length_counter_reload = self.apu.length_counter_lut[val >> 3]
+                        self.apu.pulse1.length_counter_reload_flag = True
+                    self.apu.pulse1.timer = (self.apu.pulse1.timer & 0x00FF) | ((val & 0x7) << 8)
+                    self.apu.pulse1.envelope_start_flag = True
+
+                # Pulse 2 ($4004-$4007)
+                elif addr == 0x4004:
+                    self.apu.pulse2.envelope_disable = bool(val & 0x10)
+                    self.apu.pulse2.envelope_loop = bool(val & 0x20)
+                    self.apu.pulse2.duty_cycle = (val >> 6) & 0x3
+                elif addr == 0x4005:
+                    self.apu.pulse2.sweep_enabled = bool(val & 0x80)
+                    self.apu.pulse2.sweep_period = (val >> 4) & 0x7
+                    self.apu.pulse2.sweep_negate = bool(val & 0x08)
+                    self.apu.pulse2.sweep_shift = val & 0x7
+                elif addr == 0x4006:
+                    self.apu.pulse2.timer = (self.apu.pulse2.timer & 0xFF00) | val
+                elif addr == 0x4007:
+                    if self.apu.pulse2_enabled:
+                        self.apu.pulse2.length_counter_reload = self.apu.length_counter_lut[val >> 3]
+                        self.apu.pulse2.length_counter_reload_flag = True
+                    self.apu.pulse2.timer = (self.apu.pulse2.timer & 0x00FF) | ((val & 0x7) << 8)
+                    self.apu.pulse2.envelope_start_flag = True
+
+                # Triangle ($4008-$400B)
+                elif addr == 0x4008:
+                    self.apu.triangle.linear_counter_reload_flag = bool(val & 0x80)
+                    self.apu.triangle.linear_counter_reload = val & 0x7F
+                elif addr == 0x400A:
+                    self.apu.triangle.timer = (self.apu.triangle.timer & 0xFF00) | val
+                elif addr == 0x400B:
+                    if self.apu.triangle_enabled:
+                        self.apu.triangle.length_counter_reload = self.apu.length_counter_lut[val >> 3]
+                        self.apu.triangle.length_counter_reload_flag = True
+                    self.apu.triangle.timer = (self.apu.triangle.timer & 0x00FF) | ((val & 0x7) << 8)
+                    self.apu.triangle.linear_counter_reload_flag = True
+
+                # Noise ($400C-$400F)
+                elif addr == 0x400C:
+                    self.apu.noise.envelope_disable = bool(val & 0x10)
+                    self.apu.noise.envelope_loop = bool(val & 0x20)
+                    self.apu.noise.envelope_volume = val & 0x0F
+                elif addr == 0x400E:
+                    self.apu.noise.mode = bool(val & 0x80)
+                    period_idx = val & 0x0F
+                    noise_periods = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068]
+                    self.apu.noise.timer = noise_periods[period_idx] if period_idx < len(noise_periods) else 4
+                elif addr == 0x400F:
+                    if self.apu.noise_enabled:
+                        self.apu.noise.length_counter_reload = self.apu.length_counter_lut[val >> 3]
+                        self.apu.noise.length_counter_reload_flag = True
+                    self.apu.noise.envelope_start_flag = True
+
+                # DMC ($4010-$4013)
+                elif addr == 0x4010:
+                    self.apu.dmc.enable_irq = bool(val & 0x80)
+                    self.apu.dmc.loop = bool(val & 0x40)
+                    self.apu.dmc.rate = val & 0x0F
+                    if not self.apu.dmc.enable_irq:
+                        self.apu.dmc_interrupt = False
+                elif addr == 0x4011:
+                    self.apu.dmc.output_level = val & 0x7F
+                elif addr == 0x4012:
+                    self.apu.dmc.sample_address = 0xC000 | ((val & 0xFF) << 6)
+                elif addr == 0x4013:
+                    self.apu.dmc.sample_length = ((val & 0xFF) << 4) | 1
+
+                # Status ($4015)
+                elif addr == 0x4015:
+                    self.apu.pulse1_enabled = bool(val & 0x01)
+                    self.apu.pulse2_enabled = bool(val & 0x02)
+                    self.apu.triangle_enabled = bool(val & 0x04)
+                    self.apu.noise_enabled = bool(val & 0x08)
+                    self.apu.dmc_enabled = bool(val & 0x10)
+
+                    # Disable channels if not enabled
+                    if not self.apu.pulse1_enabled:
+                        self.apu.pulse1.length_counter = 0
+                    if not self.apu.pulse2_enabled:
+                        self.apu.pulse2.length_counter = 0
+                    if not self.apu.triangle_enabled:
+                        self.apu.triangle.length_counter = 0
+                    if not self.apu.noise_enabled:
+                        self.apu.noise.length_counter = 0
+
+                    # Handle DMC
+                    if self.apu.dmc_enabled:
+                        if self.apu.dmc.bytes_remaining == 0:
+                            self.apu.dmc.bytes_remaining = self.apu.dmc.sample_length
+                            self.apu.dmc.address_counter = self.apu.dmc.sample_address
+                    else:
+                        self.apu.dmc.bytes_remaining = 0
+
+                    self.apu.dmc_interrupt = False
 
         # OAM DMA ($4014)
         if addr == 0x4014:
@@ -1330,8 +1561,8 @@ class Emulator:
             for _ in range(3):  # [0, 1, 2]
                 self._emulate_PPU()
 
-            # Advance APU once per CPU cycle (was previously called per PPU step)
-            pass  # todo: implement APU step
+            # Advance APU once per CPU cycle
+            self._emulate_APU()
             self._emit("after_cycle", self.Architecture.Cycles)
             return True
         except MemoryError as e:
@@ -1345,7 +1576,7 @@ class Emulator:
             self._step()
         else:
             pass  # it is not possible to step cycle when halted
-    
+
     def step_Yield(self):
         while not self.Architecture.Halted:
             yield self._step()
@@ -2520,8 +2751,177 @@ class Emulator:
             if self.PPUCycles == 1:
                 self._render_Scanline()
 
-    def _emulate_APU(self):
-        raise NotImplementedError("APU emulation not implemented")
+    def _emulate_APU(self) -> None:
+        """
+        Emulate APU for one cycle. APU cycles every 12 master clock cycles.
+        Different logic runs on GET vs PUT cycles.
+        """
+        if self.apu.apu_put_cycle:
+            # PUT cycle - clock timers and handle sample playback
+
+            # Clock pulse channel timers (every GET cycle)
+            if self.apu.pulse1.timer > 0:
+                self.apu.pulse1.timer -= 1
+            if self.apu.pulse2.timer > 0:
+                self.apu.pulse2.timer -= 1
+            if self.apu.noise.timer > 0:
+                self.apu.noise.timer -= 1
+
+            # Clock DMC timer (every APU cycle, but table is in CPU cycles)
+            if self.apu.dmc.timer > 0:
+                self.apu.dmc.timer -= 1
+                self.apu.dmc.timer -= 1  # Clock twice for CPU->APU cycle conversion
+
+                if self.apu.dmc.timer == 0:
+                    self.apu.dmc.timer = self.apu.dmc_rate_lut[self.apu.dmc.rate]
+
+                    # Handle DMC sample output
+                    if self.apu.dmc.shift_register & 1:
+                        if self.apu.dmc.output_level <= 125:
+                            self.apu.dmc.output_level += 2
+                    else:
+                        if self.apu.dmc.output_level >= 2:
+                            self.apu.dmc.output_level -= 2
+
+                    self.apu.dmc.shift_register >>= 1
+                    self.apu.dmc.shifter_bits_remaining -= 1
+
+                    if self.apu.dmc.shifter_bits_remaining == 0:
+                        self.apu.dmc.shifter_bits_remaining = 8
+
+                        if self.apu.dmc.bytes_remaining > 0:
+                            # Trigger DMC DMA fetch
+                            sample_byte = self._read(self.apu.dmc.address_counter)
+                            self.apu.dmc.buffer = sample_byte
+                            self.apu.dmc.address_counter = (self.apu.dmc.address_counter + 1) | 0xC000
+                            self.apu.dmc.bytes_remaining -= 1
+
+                            if self.apu.dmc.bytes_remaining == 0:
+                                if self.apu.dmc.loop:
+                                    self.apu.dmc.bytes_remaining = self.apu.dmc.sample_length
+                                    self.apu.dmc.address_counter = self.apu.dmc.sample_address
+                                elif self.apu.dmc.enable_irq:
+                                    self.apu.dmc_interrupt = True
+
+                            self.apu.dmc.shift_register = self.apu.dmc.buffer
+        else:
+            # GET cycle - handle frame counter updates
+            pass
+
+        # Handle frame counter reset delay
+        if (self.apu.frame_counter_reset & 0x80) == 0:
+            self.apu.frame_counter_reset -= 1
+            if (self.apu.frame_counter_reset & 0x80) != 0:
+                self.apu.frame_counter = 0
+
+        self.apu.frame_counter += 1
+
+        # Frame counter sequencer - using doubled values for half-cycle timing
+        if self.apu.frame_counter_mode:
+            # 5-step mode
+            frame_events = {
+                7457: ("Q", False),  # Quarter frame
+                14913: ("QH", False),  # Quarter + Half frame
+                22371: ("Q", False),  # Quarter frame
+                29829: (None, False),  # Nothing
+                37281: ("QH", True),  # Quarter + Half frame, then reset
+            }
+        else:
+            # 4-step mode
+            frame_events = {
+                7457: ("Q", False),  # Quarter frame
+                14913: ("QH", False),  # Quarter + Half frame
+                22371: ("Q", False),  # Quarter frame
+                29828: (None, True),  # Set interrupt
+                29829: ("QH", True),  # Quarter + Half frame, set interrupt
+            }
+
+        if self.apu.frame_counter in frame_events:
+            event, reset = frame_events[self.apu.frame_counter]
+
+            if event:
+                if "Q" in event:
+                    self.apu.quarter_frame_clock = True
+                if "H" in event:
+                    self.apu.half_frame_clock = True
+
+            if not self.apu.frame_counter_mode and not reset and self.apu.frame_counter == 29828:
+                if not self.apu.frame_counter_inhibit_irq:
+                    self.apu.frame_interrupt = True
+
+            if reset:
+                self.apu.frame_counter = 0
+
+        # Quarter frame clock - envelope and linear counter reload
+        if self.apu.quarter_frame_clock:
+            self.apu.quarter_frame_clock = False
+
+            # Envelope logic
+            if self.apu.pulse1.envelope_start_flag:
+                self.apu.pulse1.envelope_start_flag = False
+                self.apu.pulse1.envelope_decay_level = 15
+            else:
+                if self.apu.pulse1.envelope_decay_level > 0:
+                    self.apu.pulse1.envelope_decay_level -= 1
+                elif self.apu.pulse1.envelope_loop:
+                    self.apu.pulse1.envelope_decay_level = 15
+
+            if self.apu.pulse2.envelope_start_flag:
+                self.apu.pulse2.envelope_start_flag = False
+                self.apu.pulse2.envelope_decay_level = 15
+            else:
+                if self.apu.pulse2.envelope_decay_level > 0:
+                    self.apu.pulse2.envelope_decay_level -= 1
+                elif self.apu.pulse2.envelope_loop:
+                    self.apu.pulse2.envelope_decay_level = 15
+
+            if self.apu.noise.envelope_start_flag:
+                self.apu.noise.envelope_start_flag = False
+                self.apu.noise.envelope_decay_level = 15
+            else:
+                if self.apu.noise.envelope_decay_level > 0:
+                    self.apu.noise.envelope_decay_level -= 1
+                elif self.apu.noise.envelope_loop:
+                    self.apu.noise.envelope_decay_level = 15
+
+            # Linear counter reload for triangle
+            if self.apu.triangle.linear_counter_reload_flag:
+                self.apu.triangle.linear_counter = self.apu.triangle.linear_counter_reload
+            else:
+                if self.apu.triangle.linear_counter > 0:
+                    self.apu.triangle.linear_counter -= 1
+
+        # Half frame clock - length counters
+        if self.apu.half_frame_clock:
+            self.apu.half_frame_clock = False
+
+            # Reload length counters
+            if not self.apu.pulse1_enabled:
+                self.apu.pulse1.length_counter = 0
+            else:
+                if self.apu.pulse1.length_counter > 0 and not self.apu.pulse1.envelope_loop:
+                    self.apu.pulse1.length_counter -= 1
+
+            if not self.apu.pulse2_enabled:
+                self.apu.pulse2.length_counter = 0
+            else:
+                if self.apu.pulse2.length_counter > 0 and not self.apu.pulse2.envelope_loop:
+                    self.apu.pulse2.length_counter -= 1
+
+            if not self.apu.triangle_enabled:
+                self.apu.triangle.length_counter = 0
+            else:
+                if self.apu.triangle.length_counter > 0 and not self.apu.triangle.linear_counter_reload_flag:
+                    self.apu.triangle.length_counter -= 1
+
+            if not self.apu.noise_enabled:
+                self.apu.noise.length_counter = 0
+            else:
+                if self.apu.noise.length_counter > 0 and not self.apu.noise.envelope_loop:
+                    self.apu.noise.length_counter -= 1
+
+        # Toggle APU cycle type
+        self.apu.apu_put_cycle = not self.apu.apu_put_cycle
 
     def _do_read_memory_PPU(self, ppu_addr: int) -> int:
         """Read from PPU memory space (for internal PPU use)"""
@@ -2593,10 +2993,7 @@ class Emulator:
             # Direct NES color code (already 0–63)
             color = palette_index & color_mask
 
-        if not np.array_equal(
-            self.FrameBuffer[self.Scanline, x],
-            rgb := self._NESPaletteToRGB(color)
-        ):
+        if not np.array_equal(self.FrameBuffer[self.Scanline, x], rgb := self._NESPaletteToRGB(color)):
             self.FrameBuffer[self.Scanline, x] = rgb
 
     def _set_bg_opaque_line(self, index: int, en: bool):
