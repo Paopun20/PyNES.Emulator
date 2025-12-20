@@ -32,9 +32,9 @@ OpCodeClass: Final[OpCodes] = OpCodes()  # can more one
 
 class EmulatorError(BaseException):
     def __init__(self, exception: BaseException):
-        self.original: Final[BaseException] = exception
-        self.exception: Final[Type[BaseException]] = type(exception)
-        self.message: Final[str] = str(exception)
+        self.original = exception
+        self.exception = type(exception)
+        self.message = str(exception)
         super().__init__(self.message)
 
 
@@ -455,7 +455,7 @@ class Emulator:
         self.Architecture: Architecture = Architecture()
         self._cycles_extra: int = 0
         self._base_addr: int = 0
-        self._bg_opaque_line: deque[bool] = deque()
+        self._bg_opaque_line: bytearray = bytearray(256)
         self.ppu_bus_latch: int = 0
         self.NTSC_Samples: List[float] = [0.0] * (257 * 8 + 16)
         self.debug: Debug = Debug()
@@ -1320,10 +1320,10 @@ class Emulator:
         if self.controllers[controller_id].strobe:
             self.controllers[controller_id].latch()
 
-    def _step(self) -> None:
+    def _step(self) -> bool:
         try:
             if self.Architecture.Halted:
-                return
+                return False
             self._emit("before_cycle", self.Architecture.Cycles)
             self._emulate_CPU()
 
@@ -1333,11 +1333,11 @@ class Emulator:
             # Advance APU once per CPU cycle (was previously called per PPU step)
             pass  # todo: implement APU step
             self._emit("after_cycle", self.Architecture.Cycles)
-
+            return True
         except MemoryError as e:
-            raise EmulatorError(MemoryError(e))
+            raise EmulatorError(e) from e
         except Exception as e:
-            raise EmulatorError(Exception(e))
+            raise EmulatorError(e) from e
 
     def step_Cycle(self) -> None:
         """Run one CPU cycle and corresponding PPU cycles."""
@@ -1345,6 +1345,10 @@ class Emulator:
             self._step()
         else:
             pass  # it is not possible to step cycle when halted
+    
+    def step_Yield(self):
+        while not self.Architecture.Halted:
+            yield self._step()
 
     def _do_run_IRQ(self) -> None:
         """Handle Interrupt Request."""
@@ -2434,8 +2438,14 @@ class Emulator:
         if not self._bg_opaque_line[x]:
             return False
 
-        # Can't occur at leftmost or rightmost pixel
-        if x in (0, 255):
+        # Check leftmost pixel clipping for sprites
+        # Sprites are clipped if sprite rendering is disabled in leftmost 8 pixels
+        clip_left = (self.PPUMASK & 0x04) == 0
+        if clip_left and x < 8:
+            return False
+
+        # Can't occur at x=255 (off-screen)
+        if x >= 255:
             return False
 
         # All conditions met
@@ -2549,7 +2559,7 @@ class Emulator:
         # Clear scanline
         self.FrameBuffer[self.Scanline, :] = 0
         # Track background opaque pixels for sprite priority on this line
-        self._bg_opaque_line = deque([False] * 256)
+        self._bg_opaque_line = bytearray(len(self._bg_opaque_line))
         # Prepare sprite List for this scanline (secondary OAM approximation)
         self._evaluate_sprites_for_scanline()
 
@@ -2560,13 +2570,35 @@ class Emulator:
         # Sprite rendering
         if self.PPUMASK & 0x10:  # Sprites enabled
             self.PPUSTATUS &= 0x9F  # Clear sprite 0 hit flag
-            self._render_Sprites(self.Scanline)
+            self._render_Sprites()
 
     @memoize(maxsize=64, policy="lru")
     def _NESPaletteToRGB(self, color_idx: int) -> int:
         """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
         tv_system_palette = ntsc_pel if self.cartridge.tv_system == "PAL" else pal_pel
         return tv_system_palette[color_idx & 0x3F]
+
+    def _draw_color(
+        self,
+        x: int,
+        palette_index: int,
+        *,
+        usePaletteRAM: bool = True,
+        color_mask: int = 0x3F,
+    ):
+        if usePaletteRAM:
+            # NES pipeline: palette index -> PaletteRAM -> 6-bit color
+            color = self.PaletteRAM[palette_index] & color_mask
+        else:
+            # Direct NES color code (already 0–63)
+            color = palette_index & color_mask
+
+        rgb = self._NESPaletteToRGB(color)
+        self.FrameBuffer[self.Scanline, x] = rgb
+
+    def _set_bg_opaque_line(self, index: int, en: bool):
+        if self._bg_opaque_line[index] != en:
+            self._bg_opaque_line[index] = en
 
     def _render_Background(self) -> None:
         """Render background for current scanline with proper mapper support."""
@@ -2580,8 +2612,8 @@ class Emulator:
 
         for x in range(256):
             if clip_left and x < 8:
-                self.FrameBuffer[self.Scanline, x] = self._NESPaletteToRGB(backdrop_color)
-                self._bg_opaque_line[x] = False
+                self._draw_color(x, backdrop_color, usePaletteRAM=False)
+                self._set_bg_opaque_line(x, False)
                 continue
 
             # Calculate tile position with scrolling
@@ -2650,7 +2682,7 @@ class Emulator:
             self.FrameBuffer[self.Scanline, x] = self._NESPaletteToRGB(color)
             self._bg_opaque_line[x] = True
 
-    def _render_Sprites(self, scanline: int) -> None:
+    def _render_Sprites(self) -> None:
         """Render sprites with proper mapper support."""
         if not self.PPUMASK & 0x10:
             return
@@ -2659,7 +2691,7 @@ class Emulator:
         clip_left = (self.PPUMASK & 0x04) == 0
         sprites_drawn = 0
 
-        if self.PPUCycles == 1 and 0 <= scanline < 240:
+        if self.PPUCycles == 1 and 0 <= self.Scanline < 240:
             self.PPUSTATUS &= ~0x40
 
         for i in range(0, 256, 4):
@@ -2668,7 +2700,7 @@ class Emulator:
             attributes = self.OAM[i + 2]
             x = self.OAM[i + 3]
 
-            if not y <= scanline < y + sprite_height:
+            if not y <= self.Scanline < y + sprite_height:
                 continue
 
             sprites_drawn += 1
@@ -2683,7 +2715,7 @@ class Emulator:
             else:
                 pattern_table_base = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
 
-            row = scanline - y
+            row = self.Scanline - y
             if attributes & 0x80:
                 row = sprite_height - 1 - row
 
@@ -2719,18 +2751,21 @@ class Emulator:
 
                 bg_pixel = self._bg_opaque_line[sx]
 
-                # Sprite 0 hit detection # it not working
-                if i == 0 and (self.PPUMASK & 0x18) == 0x18:
-                    if bg_pixel and color_idx != 0 and sx != 255:
-                        if not ((clip_left or (self.PPUMASK & 0x02) == 0) and sx < 8):
-                            self.PPUSTATUS |= 0x40
+                # Sprite 0 hit detection - use dedicated function
+                sprite_index = i // 4
+                if self._do_check_sprite_zero_hit(sx, sprite_index, color_idx):
+                    self.PPUSTATUS |= 0x40
 
                 priority = (attributes >> 5) & 1
+                palette_index = (
+                    0x10  # sprite palette base
+                    + ((attributes & 0x03) << 2)  # palette select
+                    + color_idx  # color in tile
+                ) & 0x1F  # palette mirroring
 
                 if priority == 0 or not bg_pixel:
-                    self.FrameBuffer[scanline, sx] = self._NESPaletteToRGB(
-                        self.PaletteRAM[(((0x10 + ((attributes & 0x03) << 2)) + color_idx) & 0x1F)] & 0x3F
-                    )
+                    self._draw_color(sx, palette_index, color_mask=0x3F, usePaletteRAM=True)
+                    self.FrameBuffer[self.Scanline, sx] = self._NESPaletteToRGB(self.PaletteRAM[palette_index] & 0x3F)
 
     def _evaluate_sprites_for_scanline(self) -> None:
         """
