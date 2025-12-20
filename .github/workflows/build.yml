@@ -141,9 +141,8 @@ jobs:
 
       - name: Create venv
         run: |
-          $path = uv venv .venv | tail -n 1 | cut -d' ' -f3
-          $path = $path.Trim()
-          source $path
+          path=$(uv venv .venv | tail -n 1 | sed 's/.*: //')
+          source "$path"
 
       # Install Python deps
       - name: Install Python dependencies
