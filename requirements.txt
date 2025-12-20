@@ -27,7 +27,7 @@ psutil # process and system utilities
 GPUtil # GPU monitoring (supports both NVIDIA and AMD GPUs)
 
 # Windows specific
-pywin32;platform_system=="Windows" # Windows API
+# pywin32;platform_system=="Windows" # Windows API
 
 # ui tkinter
 customtkinter
