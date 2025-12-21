@@ -174,6 +174,8 @@ python app/main.py
 | Select | `RShift` | `View` (#6) | `Share`      | `−` (Minus) |
 | Start  | `Enter`  | `Menu` (#7) | `Options`    | `+` (Plus)  |
 
+> Note: The default keyboard mapping can be changed in `config.toml`.
+
 ### Emulator Shortcuts
 
 | Action                    | Key       | Controller |
@@ -200,7 +202,3 @@ Found a vulnerability? Please follow our [Security Policy](SECURITY.md).
 ## License
 
 This project is open-source and licensed under the MIT - see the [LICENSE](LICENSE.md) file for details.
-
-<h9>
-You can find easter eggs in the emulator or the source code! Good luck searching! :3
-</h9>

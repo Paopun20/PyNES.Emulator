@@ -6,7 +6,7 @@ from enum import Enum
 from string import Template
 
 # debugger
-from typing import Any, Callable, Dict, Final, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, Final, List, Optional, Tuple
 
 import numpy as np
 from bitarray import bitarray  # type: ignore
@@ -31,6 +31,8 @@ OpCodeClass: Final[OpCodes] = OpCodes()  # can more one
 
 
 class EmulatorError(BaseException):
+    __slots__ = ("original", "exception", "message")
+
     def __init__(self, exception: BaseException):
         self.original = exception
         self.exception = type(exception)
@@ -39,6 +41,8 @@ class EmulatorError(BaseException):
 
 
 class Flags:
+    __slots__ = ("_bits",)
+
     def __init__(self):
         self._bits = bitarray(9)
         self._bits.setall(0)
@@ -388,6 +392,8 @@ class EmulatorMemory:
 
 
 class _HelperTool:
+    __slots__ = ()
+
     @staticmethod
     def flip_byte(b: int) -> int:
         """Helper function to flip the bits of a byte."""
@@ -543,6 +549,60 @@ class Emulator:
     This class is based on Object-Oriented Programming (OOP) principles.
     It can run more than one instance at a time.
     """
+
+    __slots__ = (
+        "cartridge",
+        "mapper",
+        "_events",
+        "_memory",
+        "tracelog",
+        "controllers",
+        "operationCycle",
+        "instruction_state",
+        "operationComplete",
+        "Architecture",
+        "_cycles_extra",
+        "_base_addr",
+        "_bg_opaque_line",
+        "ppu_bus_latch",
+        "NTSC_Samples",
+        "debug",
+        "addressBus",
+        "dataBus",
+        "VRAM",
+        "OAM",
+        "PaletteRAM",
+        "FrameComplete",
+        "PPUCycles",
+        "Scanline",
+        "PPUCTRL",
+        "PPUMASK",
+        "PPUSTATUS",
+        "OAMADDR",
+        "v",
+        "t",
+        "x",
+        "w",
+        "PPUSCROLL",
+        "PPUADDR",
+        "PPUDATA",
+        "AddressLatch",
+        "PPUDataBuffer",
+        "FrameBuffer",
+        "_ppu_pending_writes",
+        "ppu_bus_latch_time",
+        "_oam_dma_pending_page",
+        "oam_dma_page",
+        "NMI",
+        "IRQ",
+        "_ntsc_signal_phase",
+        "_ntsc_samples",
+        "_ntsc_sample_index",
+        "_ntsc_decode_signal",
+        "_ntsc_colorburst_phase_at_dot_0",
+        "apu",
+        "irq_level_detector",
+    )
 
     def __init__(self) -> None:
         # CPU initialization
@@ -1438,7 +1498,6 @@ class Emulator:
             raise EmulatorError(ValueError("load cartridge first and then reset the emulator"))
 
         _logger.info("Resetting emulator...")
-        self.cartridge = self.cartridge
         self._memory.PRGROM = self.cartridge.PRGROM
         self._memory.CHRROM = self.cartridge.CHRROM
 
@@ -1486,9 +1545,7 @@ class Emulator:
         self.PPUCycles = 0
         self.Scanline = 0
         self.FrameComplete = False
-
-        # debug
-        self.frame_complete_count = 0  # reset
+        self.debug.FPS.FCCount = 0
 
         _logger.debug(f"ROM Header: [{', '.join(f'{b:02X}' for b in self.cartridge.HeaderedROM[:0x10])}]")
         _logger.debug(f"Reset Vector: ${self.Architecture.ProgramCounter:04X}")
@@ -2957,7 +3014,7 @@ class Emulator:
             return
 
         # Clear scanline
-        self.FrameBuffer[self.Scanline, :] = 0
+        # self.FrameBuffer[self.Scanline, :, :] = 0
         # Track background opaque pixels for sprite priority on this line
         self._bg_opaque_line = bytearray(len(self._bg_opaque_line))
         # Prepare sprite List for this scanline (secondary OAM approximation)
@@ -2995,6 +3052,7 @@ class Emulator:
 
         if not np.array_equal(self.FrameBuffer[self.Scanline, x], rgb := self._NESPaletteToRGB(color)):
             self.FrameBuffer[self.Scanline, x] = rgb
+        del rgb
 
     def _set_bg_opaque_line(self, index: int, en: bool):
         if self._bg_opaque_line[index] != en:
