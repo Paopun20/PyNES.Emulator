@@ -1,6 +1,6 @@
 # this is on development
-dev.py
+dev.*
 
 # this is not for production
-server.py
+pysocket/*
 wstoroblox.py

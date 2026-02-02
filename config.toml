@@ -1,17 +1,21 @@
-[general]
-fps = 60
-scale = 3
-vsync = true
+# Configuration file for PyNES
+# This file contains settings for the PyNES emulator.
+# You can customize the keyboard mapping by editing the values below.
 
-[discord]
-enable = true
+[general] # General settings
+fps = 60 # Frames per second
+scale = 3 # Scale factor for the emulator window
+vsync = true # Enable vertical synchronization
 
-[keyboard]
-A = "Z"
-B = "X"
-START = "ENTER"
-SELECT = "LSHIFT"
-ARROW_UP = "UP"
-ARROW_DOWN = "DOWN"
-ARROW_LEFT = "LEFT"
-ARROW_RIGHT = "RIGHT"
+[discord] # Discord settings
+enable = true # Enable Discord Rich Presence
+
+[keyboard] # Keyboard settings
+A = "X" # Player 1 A button
+B = "Z" # Player 1 B button
+START = "ENTER" # Player 1 Start button
+SELECT = "RShift" # Player 1 Select button
+ARROW_UP = "UP" # Player 1 Up button
+ARROW_DOWN = "DOWN" # Player 1 Down button
+ARROW_LEFT = "LEFT" # Player 1 Left button
+ARROW_RIGHT = "RIGHT" # Player 1 Right button

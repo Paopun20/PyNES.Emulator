@@ -1,4 +1,16 @@
+from enum import Enum, auto
 from typing import Dict, Literal, Optional
+
+
+class ContKey(Enum):
+    A = auto()
+    B = auto()
+    SELECT = auto()
+    START = auto()
+    UP = auto()
+    DOWN = auto()
+    LEFT = auto()
+    RIGHT = auto()
 
 
 class Controller:
@@ -18,6 +30,10 @@ class Controller:
             for i, b in enumerate(["A", "B", "Select", "Start", "Up", "Down", "Left", "Right"])
             if self.buttons.get(b, False)
         )
+
+    def setButton(self, button: ContKey, pressed: bool) -> None:
+        """Set the state of a specific button."""
+        self.buttons[str(button)] = pressed
 
     def read(self) -> int:
         """Read one bit from the shift register."""

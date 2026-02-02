@@ -29,16 +29,30 @@ class Mapper:
         self.chr_rom_chunks = chr_rom_chunks
         self.open_bus = mask8(open_bus or 0)
 
-    def cpu_read(self, addr: int) -> int: raise NotImplementedError
-    def cpu_write(self, addr: int, value: int) -> None: raise NotImplementedError
-    def ppu_read(self, addr: int) -> int: raise NotImplementedError
-    def ppu_write(self, addr: int, value: int) -> None: raise NotImplementedError
-    def reset(self) -> None: raise NotImplementedError
-    def get_mirroring(self) -> int: raise NotImplementedError
+    def cpu_read(self, addr: int) -> int:
+        raise NotImplementedError
+
+    def cpu_write(self, addr: int, value: int) -> None:
+        raise NotImplementedError
+
+    def ppu_read(self, addr: int) -> int:
+        raise NotImplementedError
+
+    def ppu_write(self, addr: int, value: int) -> None:
+        raise NotImplementedError
+
+    def reset(self) -> None:
+        raise NotImplementedError
+
+    def get_mirroring(self) -> int:
+        raise NotImplementedError
+
 
 # Mapper 000 (NROM)
 class Mapper000(Mapper):
-    def __init__(self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0) -> None:
+    def __init__(
+        self, prg_rom: NDArray[np.uint8], chr_rom: NDArray[np.uint8], mirroring: int, *, open_bus: Optional[int] = 0
+    ) -> None:
         prg_chunks = max(1, len(prg_rom) // 0x4000)
         chr_chunks = max(1, len(chr_rom) // 0x2000)
         super().__init__(prg_chunks, chr_chunks, open_bus=open_bus)
@@ -48,7 +62,8 @@ class Mapper000(Mapper):
         self.prg_size = len(prg_rom)
         self.chr_size = len(chr_rom)
         self.has_chr_ram = self.chr_size == 0
-        if self.has_chr_ram: self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
+        if self.has_chr_ram:
+            self.chr_ram = np.zeros(0x2000, dtype=np.uint8)
 
     def cpu_read(self, addr: int) -> int:
         if 0x8000 <= addr <= 0xFFFF:
@@ -56,16 +71,26 @@ class Mapper000(Mapper):
             return int(self.prg_rom[offset])
         return self.open_bus
 
-    def cpu_write(self, addr: int, value: int) -> None: return None
+    def cpu_write(self, addr: int, value: int) -> None:
+        return None
+
     def ppu_read(self, addr: int) -> int:
         if 0x0000 <= addr <= 0x1FFF:
-            if self.has_chr_ram: return int(self.chr_ram[addr & 0x1FFF])
+            if self.has_chr_ram:
+                return int(self.chr_ram[addr & 0x1FFF])
             return int(self.chr_rom[addr & (self.chr_size - 1)])
         return self.open_bus
+
     def ppu_write(self, addr: int, value: int) -> None:
-        if 0x0000 <= addr <= 0x1FFF and self.has_chr_ram: self.chr_ram[addr & 0x1FFF] = mask8(value)
-    def reset(self) -> None: return None
-    def get_mirroring(self) -> int: return self.mirroring
+        if 0x0000 <= addr <= 0x1FFF and self.has_chr_ram:
+            self.chr_ram[addr & 0x1FFF] = mask8(value)
+
+    def reset(self) -> None:
+        return None
+
+    def get_mirroring(self) -> int:
+        return self.mirroring
+
 
 # Mapper 001 (MMC1)
 class Mapper001(Mapper):
@@ -163,7 +188,7 @@ class Mapper001(Mapper):
         self.mirroring = int(mirror_mode)
 
     def cpu_read(self, addr: int) -> int:
-        if 0x6000 <= addr <= 0x7FFF and self.prg_ram_present:
+        if 0x6000 <= addr <= 0x7FFF and self.prg_ram_present and self.prg_ram is not None:
             return int(self.prg_ram[addr - 0x6000])
         if 0x8000 <= addr <= 0xBFFF:
             offset = (addr - 0x8000) & 0x3FFF
@@ -175,7 +200,7 @@ class Mapper001(Mapper):
 
     def cpu_write(self, addr: int, value: int) -> None:
         value = mask8(value)
-        if 0x6000 <= addr <= 0x7FFF and self.prg_ram_present:
+        if 0x6000 <= addr <= 0x7FFF and self.prg_ram_present and self.prg_ram is not None:
             self.prg_ram[addr - 0x6000] = value
             return
 

@@ -13,11 +13,12 @@ on:
   workflow_dispatch: {}
 
 env:
-  python: 3.14.0
+  python: 3.14.2t
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    if: "!contains(github.event.head_commit.message, '@nobuild')"
     strategy:
       fail-fast: false
       matrix:
@@ -31,42 +32,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.python }}
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup UV
         uses: astral-sh/setup-uv@v7
         with:
+          python-version: ${{ env.python }}
           enable-cache: true
           cache-dependency-glob: "requirements.txt"
 
       # Linux dependencies
-      - name: Install Linux GL Deps
+      - name: Install Linux Deps
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libfreetype6-dev \
             libx11-dev \
             libxext-dev \
             libxi-dev \
             libxxf86vm-dev \
             libgl1-mesa-dev \
             mesa-common-dev \
-            libgl-dev \
-            libglu1-mesa-dev \
-            xclip \
             libasound2-dev \
-            libpulse-dev
+            libpulse-dev \
+            pkg-config
 
-      # UPX (skip macOS)
+      - name: Install macOS Deps
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          brew install \
+            sdl2 sdl2_image sdl2_mixer sdl2_ttf \
+            portmidi freetype pkg-config
+
+      # UPX
       - name: Setup UPX
         if: matrix.os != 'macos-latest'
-        uses: crazy-max/ghaction-upx@v3
+        uses: crazy-max/ghaction-upx@v3.2.0
         with:
           install-only: true
 
@@ -130,11 +139,20 @@ jobs:
             ${{ runner.os }}-build-${{ env.python }}-
             ${{ runner.os }}-build-
 
+      - name: Create venv
+        run: |
+          uv venv .venv
+          if [[ "${{ runner.os }}" == 'Windows' ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
+
       # Install Python deps
       - name: Install Python dependencies
         run: |
-          uv pip install --system --upgrade pip
-          uv pip install --system --upgrade -r requirements.txt
+          uv pip install --upgrade pip
+          uv pip install --upgrade -r requirements.txt
 
       # Prepare macOS universal environment
       - name: Prepare macOS universal build env
@@ -151,10 +169,31 @@ jobs:
         if: false # disable for now
         run: python setup.py build_ext --inplace
 
+      - name: Pre-check python files
+        run: |
+          set -o pipefail
+
+          failed=0
+          find app -type f -name "*.py" | while IFS= read -r file; do
+              if uv run python -m py_compile "$file" &>/dev/null; then
+                  echo "OK: $file"
+              else
+                  echo "FAIL: $file"
+                  failed=1
+              fi
+          done
+          if [ "$failed" -ne 0 ]; then
+              echo "❌ Python syntax check failed"
+              exit 1
+          fi
+
       # Build PyNES
       - name: Build PyNES
         id: build
         run: |
+          export PYTHON_GIL=0
+          export PYTHON_JIT=1
+
           echo "build_success=false" >> $GITHUB_OUTPUT
           UPX_DIR="${{ steps.upx.outputs.upx_path }}"
           if uv run pyinstaller pynes.spec --clean --noconfirm ${UPX_DIR:+--upx-dir "$(dirname "$UPX_DIR")"}; then
@@ -183,18 +222,18 @@ jobs:
           else
             cp dist/pynes upload/ 2>/dev/null || true
           fi
-          
+
           cp icon.ico upload/ 2>/dev/null || true
           cp config.toml upload/ 2>/dev/null || true
-          
+
           if [ -d "assets" ]; then
             cp -r assets/* upload/ 2>/dev/null || true
           fi
           if [ -d "roms" ]; then
             cp -r roms/* upload/ 2>/dev/null || true
           fi
-          
-          cp LICENSE.md upload/ 2>/dev/null || true
+
+          cp LICENSE.md upload/LICENSE 2>/dev/null || true
 
       - name: Prepare Zip Name
         id: export_name

@@ -6,10 +6,10 @@ from enum import Enum
 from string import Template
 
 # debugger
-from typing import Any, Callable, Dict, Final, List, Optional, Tuple, Type, final
+from typing import Any, Callable, Dict, Final, List, Optional, Tuple
 
 import numpy as np
-from bitarray import bitarray # type: ignore
+from bitarray import bitarray  # type: ignore
 from logger import log as _logger
 from pynes.cartridge import Cartridge
 from pynes.classes.NESPalette import ntsc as ntsc_pel
@@ -31,65 +31,99 @@ OpCodeClass: Final[OpCodes] = OpCodes()  # can more one
 
 
 class EmulatorError(BaseException):
+    __slots__ = ("original", "exception", "message")
+
     def __init__(self, exception: BaseException):
-        self.original: Final[BaseException] = exception
-        self.exception: Final[Type[BaseException]] = type(exception)
-        self.message: Final[str] = str(exception)
+        self.original = exception
+        self.exception = type(exception)
+        self.message = str(exception)
         super().__init__(self.message)
 
 
 class Flags:
+    __slots__ = ("_bits",)
+
     def __init__(self):
         self._bits = bitarray(9)
         self._bits.setall(0)
-    
-    def _g(self, i): return bool(self._bits[i])
-    def _s(self, i, v): self._bits[i] = v
-    
+
+    def _g(self, i):
+        return bool(self._bits[i])
+
+    def _s(self, i, v):
+        self._bits[i] = v
+
     @property
-    def Carry(self): return self._g(0)
+    def Carry(self):
+        return self._g(0)
+
     @Carry.setter
-    def Carry(self, v): self._s(0, v)
-    
+    def Carry(self, v):
+        self._s(0, v)
+
     @property
-    def Zero(self): return self._g(1)
+    def Zero(self):
+        return self._g(1)
+
     @Zero.setter
-    def Zero(self, v): self._s(1, v)
-    
+    def Zero(self, v):
+        self._s(1, v)
+
     @property
-    def InterruptDisable(self): return self._g(2)
+    def InterruptDisable(self):
+        return self._g(2)
+
     @InterruptDisable.setter
-    def InterruptDisable(self, v): self._s(2, v)
-    
+    def InterruptDisable(self, v):
+        self._s(2, v)
+
     @property
-    def Decimal(self): return self._g(3)
+    def Decimal(self):
+        return self._g(3)
+
     @Decimal.setter
-    def Decimal(self, v): self._s(3, v)
-    
+    def Decimal(self, v):
+        self._s(3, v)
+
     @property
-    def Overflow(self): return self._g(6)
+    def Overflow(self):
+        return self._g(6)
+
     @Overflow.setter
-    def Overflow(self, v): self._s(6, v)
-    
+    def Overflow(self, v):
+        self._s(6, v)
+
     @property
-    def Negative(self): return self._g(7)
+    def Negative(self):
+        return self._g(7)
+
     @Negative.setter
-    def Negative(self, v): self._s(7, v)
-    
+    def Negative(self, v):
+        self._s(7, v)
+
     @property
-    def Break(self): return self._g(8)
+    def Break(self):
+        return self._g(8)
+
     @Break.setter
-    def Break(self, v): self._s(8, v)
-    
+    def Break(self, v):
+        self._s(8, v)
+
     @property
-    def Unused(self): return self._g(5)
+    def Unused(self):
+        return self._g(5)
+
     @Unused.setter
-    def Unused(self, v): self._s(5, v)
-    
-    def to_byte(self): return int.from_bytes(self._bits.tobytes(), 'big')
-    def from_byte(self, v): 
+    def Unused(self, v):
+        self._s(5, v)
+
+    def to_byte(self):
+        return int.from_bytes(self._bits.tobytes(), "big")
+
+    def from_byte(self, v):
         self._bits = bitarray(bin(v)[2:].zfill(8))
         self._bits[5] = 1
+
 
 @dataclass
 class FPS:
@@ -138,7 +172,6 @@ class PendingsTask:
     BRK: bool = False
 
 
-@final
 class CurrentInstructionMode(Enum):
     """
     Current Instruction Mode
@@ -164,9 +197,9 @@ Cb16U = CByte[16, CSign.UNSIGNED]
 
 @dataclass
 class Architecture:
-    A: int = (0)
-    X: int = (0)
-    Y: int = (0)
+    A: int = 0
+    X: int = 0
+    Y: int = 0
     Cycles: int = 0
     Halted: bool = False
     StackPointer: Cb16U = Cb16U(0)
@@ -184,23 +217,150 @@ class Architecture:
 
 @dataclass
 class NameTable:
-    tiles: np.ndarray = field(
-        default_factory=lambda: np.zeros((30, 32), dtype=np.uint8)
-    )
-    attributes: np.ndarray = field(
-        default_factory=lambda: np.zeros((8, 8), dtype=np.uint8)
-    )
+    """
+    Represents a NES PPU Nametable (960 bytes tiles + 64 bytes attributes = 1KB)
+
+    The NES has 4 nametable zones arranged in a 2x2 grid:
+    - Zone (0,0) at $2000-$23FF
+    - Zone (1,0) at $2400-$27FF
+    - Zone (0,1) at $2800-$2BFF
+    - Zone (1,1) at $2C00-$2FFF
+
+    Each nametable contains:
+    - 30 rows × 32 columns of tile indices (960 bytes)
+    - 8×8 attribute table (64 bytes) for palette selection
+    """
+
+    tiles: np.ndarray = field(default_factory=lambda: np.zeros((30, 32), dtype=np.uint8))
+    attributes: np.ndarray = field(default_factory=lambda: np.zeros((8, 8), dtype=np.uint8))
     zone: Tuple[int, int] = (0, 0)
 
     @property
     def ppu_address(self) -> int:
+        """Calculate the base PPU address for this nametable zone"""
         base = 0x2000
-        return base + (self.zone[1] * 0x400) + (self.zone[0] * 0x400)
+        return base + (self.zone[1] * 0x800) + (self.zone[0] * 0x400)
+
+    def get_tile(self, row: int, col: int) -> int:
+        """Get tile index at specific row/column"""
+        if 0 <= row < 30 and 0 <= col < 32:
+            return int(self.tiles[row, col])
+        return 0
+
+    def set_tile(self, row: int, col: int, tile_index: int) -> None:
+        """Set tile index at specific row/column"""
+        if 0 <= row < 30 and 0 <= col < 32:
+            self.tiles[row, col] = tile_index & 0xFF
+
+    def get_attribute(self, row: int, col: int) -> int:
+        """Get attribute byte for a 4×4 tile block"""
+        if 0 <= row < 8 and 0 <= col < 8:
+            return int(self.attributes[row, col])
+        return 0
+
+    def set_attribute(self, row: int, col: int, value: int) -> None:
+        """Set attribute byte for a 4×4 tile block"""
+        if 0 <= row < 8 and 0 <= col < 8:
+            self.attributes[row, col] = value & 0xFF
+
+    def get_palette_for_tile(self, tile_row: int, tile_col: int) -> int:
+        """
+        Get the 2-bit palette number for a specific tile position.
+        Each attribute byte controls 4×4 tiles (16 tiles total).
+        """
+        if not (0 <= tile_row < 30 and 0 <= tile_col < 32):
+            return 0
+
+        # Calculate which attribute byte controls this tile
+        attr_row = tile_row // 4
+        attr_col = tile_col // 4
+
+        # Calculate position within the 4×4 block
+        block_row = (tile_row % 4) // 2  # 0 or 1
+        block_col = (tile_col % 4) // 2  # 0 or 1
+
+        # Get the attribute byte
+        attr_byte = self.get_attribute(attr_row, attr_col)
+
+        # Extract the 2-bit palette (each attribute byte has 4 palettes)
+        shift = (block_row * 4) + (block_col * 2)
+        palette = (attr_byte >> shift) & 0x03
+
+        return palette
+
+    def set_palette_for_tile(self, tile_row: int, tile_col: int, palette: int) -> None:
+        """Set the 2-bit palette number for a specific tile position"""
+        if not (0 <= tile_row < 30 and 0 <= tile_col < 32):
+            return
+
+        palette = palette & 0x03
+
+        # Calculate which attribute byte controls this tile
+        attr_row = tile_row // 4
+        attr_col = tile_col // 4
+
+        # Calculate position within the 4×4 block
+        block_row = (tile_row % 4) // 2
+        block_col = (tile_col % 4) // 2
+
+        # Calculate bit shift
+        shift = (block_row * 4) + (block_col * 2)
+
+        # Update the attribute byte
+        attr_byte = self.get_attribute(attr_row, attr_col)
+        attr_byte &= ~(0x03 << shift)  # Clear the 2 bits
+        attr_byte |= palette << shift  # Set new palette
+        self.set_attribute(attr_row, attr_col, attr_byte)
+
+    def clear(self) -> None:
+        """Clear all tiles and attributes to zero"""
+        self.tiles.fill(0)
+        self.attributes.fill(0)
+
+    def fill_tiles(self, tile_index: int) -> None:
+        """Fill all tiles with a specific tile index"""
+        self.tiles.fill(tile_index & 0xFF)
+
+    def copy_from(self, other: "NameTable") -> None:
+        """Copy data from another NameTable"""
+        np.copyto(self.tiles, other.tiles)
+        np.copyto(self.attributes, other.attributes)
+        self.zone = other.zone
+
+    def from_bytes(self, data: bytes) -> None:
+        """Import nametable data from a 1KB byte array"""
+        if len(data) < 1024:
+            return
+
+        # First 960 bytes are tiles (30×32)
+        tile_data = np.frombuffer(data[:960], dtype=np.uint8)
+        self.tiles = tile_data.reshape((30, 32))
+
+        # Last 64 bytes are attributes (8×8)
+        attr_data = np.frombuffer(data[960:1024], dtype=np.uint8)
+        self.attributes = attr_data.reshape((8, 8))
 
     def to_bytes(self) -> bytes:
-        """Export full 1 KB NT block"""
-        return bytes(self.tiles.flatten().tolist() +
-                     self.attributes.flatten().tolist())
+        """Export full 1 KB nametable block (960 bytes tiles + 64 bytes attributes)"""
+        tile_bytes = self.tiles.flatten().tobytes()
+        attr_bytes = self.attributes.flatten().tobytes()
+        return tile_bytes + attr_bytes
+
+    def get_tile_address(self, row: int, col: int) -> int:
+        """Get PPU address for a specific tile"""
+        if 0 <= row < 30 and 0 <= col < 32:
+            return self.ppu_address + (row * 32) + col
+        return self.ppu_address
+
+    def get_attribute_address(self, row: int, col: int) -> int:
+        """Get PPU address for a specific attribute byte"""
+        if 0 <= row < 8 and 0 <= col < 8:
+            return self.ppu_address + 0x3C0 + (row * 8) + col
+        return self.ppu_address + 0x3C0
+
+    def __repr__(self) -> str:
+        return f"NameTable(zone={self.zone}, ppu_address=0x{self.ppu_address:04X})"
+
 
 @dataclass
 class Sprite:
@@ -217,45 +377,90 @@ class PPUPendingWrites:
     value: int
     remaining_ppu_cycles: int
 
+
 @dataclass
 class EmulatorMemory:
     RAM: np.ndarray = field(default_factory=lambda: np.zeros(0x800, dtype=np.uint8))
     PRGROM: np.ndarray = field(default_factory=lambda: np.zeros(0x8000, dtype=np.uint8))
     CHRROM: np.ndarray = field(default_factory=lambda: np.zeros(0x2000, dtype=np.uint8))
 
-    def copy(self) -> 'EmulatorMemory':
+    def copy(self) -> "EmulatorMemory":
         """
         Create a copy of the emulator memory.
         """
         return EmulatorMemory(self.RAM.copy(), self.PRGROM.copy(), self.CHRROM.copy())
 
+
 class _HelperTool:
+    __slots__ = ()
+
     @staticmethod
     def flip_byte(b: int) -> int:
         """Helper function to flip the bits of a byte."""
         # Example: 0b11001010 -> 0b01010011
         return int(format(b, "08b")[::-1], 2)
 
+
 @dataclass
 class Pulse:
-    duty_cycle: float = 0.5
-    frequency: float = 440.0
-    volume: float = 1.0
+    timer: int = 0
+    duty_cycle: int = 0  # 0-3, selects duty cycle waveform
+    length_counter: int = 0
+    length_counter_reload: int = 0  # Value to reload length counter with
+    length_counter_reload_flag: bool = False  # Flag to reload on next half-frame clock
+    envelope_volume: int = 15
+    envelope_decay_level: int = 0
+    envelope_start_flag: bool = False
+    envelope_loop: bool = False
+    envelope_disable: bool = False
+    sweep_enabled: bool = False
+    sweep_period: int = 0
+    sweep_negate: bool = False
+    sweep_shift: int = 0
+
 
 @dataclass
 class Triangle:
-    frequency: float = 440.0
+    timer: int = 0
+    length_counter: int = 0
+    length_counter_reload: int = 0  # Value to reload length counter with
+    length_counter_reload_flag: bool = False  # Flag to reload on next half-frame clock
     linear_counter: int = 0
+    linear_counter_reload: int = 0
+    linear_counter_reload_flag: bool = False
+
 
 @dataclass
 class Noise:
-    frequency: float = 440.0
-    envelope: float = 1.0
+    timer: int = 0
+    length_counter: int = 0
+    length_counter_reload: int = 0  # Value to reload length counter with
+    length_counter_reload_flag: bool = False  # Flag to reload on next half-frame clock
+    envelope_volume: int = 15
+    envelope_decay_level: int = 0
+    envelope_start_flag: bool = False
+    envelope_loop: bool = False
+    envelope_disable: bool = False
+    shift_register: int = 1
+    mode: bool = False  # True = mode 1 (93-bit), False = mode 0 (15-bit)
+
 
 @dataclass
 class DMC:
+    timer: int = 0
     sample_address: int = 0xC000
     sample_length: int = 0
+    bytes_remaining: int = 0
+    address_counter: int = 0xC000
+    shift_register: int = 0
+    shifter_bits_remaining: int = 8
+    output_level: int = 0
+    enable_irq: bool = False
+    loop: bool = False
+    rate: int = 428
+    buffer: int = 0
+    buffer_empty: bool = True
+
 
 @dataclass
 class APU:
@@ -265,6 +470,77 @@ class APU:
     noise: Noise = field(default_factory=Noise)
     dmc: DMC = field(default_factory=DMC)
 
+    # Frame counter and status
+    frame_counter: int = 0
+    frame_counter_mode: bool = False  # False = 4-step, True = 5-step
+    frame_counter_inhibit_irq: bool = False
+    frame_counter_reset: int = 0xFF  # Delay counter for frame counter reset
+    quarter_frame_clock: bool = False
+    half_frame_clock: bool = False
+    frame_interrupt: bool = False
+    dmc_interrupt: bool = False
+
+    # Channel enable status
+    pulse1_enabled: bool = False
+    pulse2_enabled: bool = False
+    triangle_enabled: bool = False
+    noise_enabled: bool = False
+    dmc_enabled: bool = False
+
+    # APU cycle tracking
+    apu_clock: int = 12
+    apu_put_cycle: bool = False
+
+    # Register storage
+    registers: list = field(default_factory=lambda: [0] * 0x18)
+
+    # Envelope divider
+    envelope_divider_clock: bool = False
+
+    # Length counter table
+    length_counter_lut: list = field(
+        default_factory=lambda: [
+            10,
+            254,
+            20,
+            2,
+            40,
+            4,
+            80,
+            6,
+            160,
+            8,
+            60,
+            10,
+            14,
+            12,
+            26,
+            14,
+            12,
+            16,
+            24,
+            18,
+            48,
+            20,
+            96,
+            22,
+            192,
+            24,
+            72,
+            26,
+            16,
+            28,
+            32,
+            30,
+        ]
+    )
+
+    # DMC rate lookup table
+    dmc_rate_lut: list = field(
+        default_factory=lambda: [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54]
+    )
+
+
 class Emulator:
     """
     PyNES is an object-oriented NES emulator written in Python,
@@ -273,6 +549,60 @@ class Emulator:
     This class is based on Object-Oriented Programming (OOP) principles.
     It can run more than one instance at a time.
     """
+
+    __slots__ = (
+        "cartridge",
+        "mapper",
+        "_events",
+        "_memory",
+        "tracelog",
+        "controllers",
+        "operationCycle",
+        "instruction_state",
+        "operationComplete",
+        "Architecture",
+        "_cycles_extra",
+        "_base_addr",
+        "_bg_opaque_line",
+        "ppu_bus_latch",
+        "NTSC_Samples",
+        "debug",
+        "addressBus",
+        "dataBus",
+        "VRAM",
+        "OAM",
+        "PaletteRAM",
+        "FrameComplete",
+        "PPUCycles",
+        "Scanline",
+        "PPUCTRL",
+        "PPUMASK",
+        "PPUSTATUS",
+        "OAMADDR",
+        "v",
+        "t",
+        "x",
+        "w",
+        "PPUSCROLL",
+        "PPUADDR",
+        "PPUDATA",
+        "AddressLatch",
+        "PPUDataBuffer",
+        "FrameBuffer",
+        "_ppu_pending_writes",
+        "ppu_bus_latch_time",
+        "_oam_dma_pending_page",
+        "oam_dma_page",
+        "NMI",
+        "IRQ",
+        "_ntsc_signal_phase",
+        "_ntsc_samples",
+        "_ntsc_sample_index",
+        "_ntsc_decode_signal",
+        "_ntsc_colorburst_phase_at_dot_0",
+        "apu",
+        "irq_level_detector",
+    )
 
     def __init__(self) -> None:
         # CPU initialization
@@ -291,7 +621,7 @@ class Emulator:
         self.Architecture: Architecture = Architecture()
         self._cycles_extra: int = 0
         self._base_addr: int = 0
-        self._bg_opaque_line: deque[bool] = deque()
+        self._bg_opaque_line: bytearray = bytearray(256)
         self.ppu_bus_latch: int = 0
         self.NTSC_Samples: List[float] = [0.0] * (257 * 8 + 16)
         self.debug: Debug = Debug()
@@ -337,6 +667,10 @@ class Emulator:
         self._ntsc_sample_index: int = 0  # Current index in the sample buffer
         self._ntsc_decode_signal: bool = True  # Toggle for NTSC decoding
         self._ntsc_colorburst_phase_at_dot_0: int = 0  # Phase at the start of the scanline
+
+        # APU initialization
+        self.apu: APU = APU()
+        self.irq_level_detector: bool = False
 
     @property
     def getMemory(self) -> EmulatorMemory:
@@ -385,9 +719,9 @@ class Emulator:
                 raise EmulatorError(ValueError(f"Callback {callback} is not Callable"))
             callback(*args, **kwargs)
 
-    def _read(self, Address: int) -> int:
+    def _read(self, addr: int) -> int:
         """Read from CPU or PPU memory with proper mirroring."""
-        addr = int(Address) & 0xFFFF
+        addr = int(addr) & 0xFFFF
 
         # RAM ($0000-$1FFF)
         if addr < 0x2000:
@@ -403,9 +737,25 @@ class Emulator:
                 val = (self.controllers[1].read() & 1) | (self.dataBus & 0xE0)
             elif addr == 0x4017:  # Controller 2
                 val = (self.controllers[2].read() & 1) | (self.dataBus & 0xE0)
-            else:  # APU registers ($4000-$4015)
+            elif addr == 0x4015:  # APU Status
                 val = 0
-                pass
+                if self.apu.pulse1.length_counter > 0:
+                    val |= 0x01
+                if self.apu.pulse2.length_counter > 0:
+                    val |= 0x02
+                if self.apu.triangle.length_counter > 0:
+                    val |= 0x04
+                if self.apu.noise.length_counter > 0:
+                    val |= 0x08
+                if self.apu.dmc.bytes_remaining > 0:
+                    val |= 0x10
+                if self.apu.frame_interrupt:
+                    val |= 0x40
+                if self.apu.dmc_interrupt:
+                    val |= 0x80
+                self.apu.frame_interrupt = False
+            else:  # Other APU registers (read-only, return open bus)
+                val = self.dataBus
 
         # Unmapped memory ($4018-$FFFF)
         elif addr < 0x8000:
@@ -421,11 +771,6 @@ class Emulator:
                 val = self.mapper.cpu_read(addr)
             else:
                 val = int(self._memory.PRGROM[addr - 0x8000])
-
-        if hasattr(self.mapper, "tick_a12") and addr < 0x2000:
-            # A12 = bit 12 of PPU address
-            a12_state = bool(addr & 0x1000)
-            self.mapper.tick_a12(a12_state)  # type: ignore
 
         self.dataBus = val
         return val
@@ -459,8 +804,118 @@ class Emulator:
                     self.controllers[2].latch()
                 self.controllers[1].write(val)
                 self.controllers[2].write(val)
-            else:  # APU registers ($4000-$4015)
-                pass
+            elif 0x4000 <= addr <= 0x4015:  # APU registers
+                reg_idx = addr - 0x4000
+                self.apu.registers[reg_idx] = val
+
+                # Pulse 1 ($4000-$4003)
+                if addr == 0x4000:
+                    self.apu.pulse1.envelope_disable = bool(val & 0x10)
+                    self.apu.pulse1.envelope_loop = bool(val & 0x20)
+                    self.apu.pulse1.duty_cycle = (val >> 6) & 0x3
+                elif addr == 0x4001:
+                    self.apu.pulse1.sweep_enabled = bool(val & 0x80)
+                    self.apu.pulse1.sweep_period = (val >> 4) & 0x7
+                    self.apu.pulse1.sweep_negate = bool(val & 0x08)
+                    self.apu.pulse1.sweep_shift = val & 0x7
+                elif addr == 0x4002:
+                    self.apu.pulse1.timer = (self.apu.pulse1.timer & 0xFF00) | val
+                elif addr == 0x4003:
+                    if self.apu.pulse1_enabled:
+                        self.apu.pulse1.length_counter_reload = self.apu.length_counter_lut[val >> 3]
+                        self.apu.pulse1.length_counter_reload_flag = True
+                    self.apu.pulse1.timer = (self.apu.pulse1.timer & 0x00FF) | ((val & 0x7) << 8)
+                    self.apu.pulse1.envelope_start_flag = True
+
+                # Pulse 2 ($4004-$4007)
+                elif addr == 0x4004:
+                    self.apu.pulse2.envelope_disable = bool(val & 0x10)
+                    self.apu.pulse2.envelope_loop = bool(val & 0x20)
+                    self.apu.pulse2.duty_cycle = (val >> 6) & 0x3
+                elif addr == 0x4005:
+                    self.apu.pulse2.sweep_enabled = bool(val & 0x80)
+                    self.apu.pulse2.sweep_period = (val >> 4) & 0x7
+                    self.apu.pulse2.sweep_negate = bool(val & 0x08)
+                    self.apu.pulse2.sweep_shift = val & 0x7
+                elif addr == 0x4006:
+                    self.apu.pulse2.timer = (self.apu.pulse2.timer & 0xFF00) | val
+                elif addr == 0x4007:
+                    if self.apu.pulse2_enabled:
+                        self.apu.pulse2.length_counter_reload = self.apu.length_counter_lut[val >> 3]
+                        self.apu.pulse2.length_counter_reload_flag = True
+                    self.apu.pulse2.timer = (self.apu.pulse2.timer & 0x00FF) | ((val & 0x7) << 8)
+                    self.apu.pulse2.envelope_start_flag = True
+
+                # Triangle ($4008-$400B)
+                elif addr == 0x4008:
+                    self.apu.triangle.linear_counter_reload_flag = bool(val & 0x80)
+                    self.apu.triangle.linear_counter_reload = val & 0x7F
+                elif addr == 0x400A:
+                    self.apu.triangle.timer = (self.apu.triangle.timer & 0xFF00) | val
+                elif addr == 0x400B:
+                    if self.apu.triangle_enabled:
+                        self.apu.triangle.length_counter_reload = self.apu.length_counter_lut[val >> 3]
+                        self.apu.triangle.length_counter_reload_flag = True
+                    self.apu.triangle.timer = (self.apu.triangle.timer & 0x00FF) | ((val & 0x7) << 8)
+                    self.apu.triangle.linear_counter_reload_flag = True
+
+                # Noise ($400C-$400F)
+                elif addr == 0x400C:
+                    self.apu.noise.envelope_disable = bool(val & 0x10)
+                    self.apu.noise.envelope_loop = bool(val & 0x20)
+                    self.apu.noise.envelope_volume = val & 0x0F
+                elif addr == 0x400E:
+                    self.apu.noise.mode = bool(val & 0x80)
+                    period_idx = val & 0x0F
+                    noise_periods = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068]
+                    self.apu.noise.timer = noise_periods[period_idx] if period_idx < len(noise_periods) else 4
+                elif addr == 0x400F:
+                    if self.apu.noise_enabled:
+                        self.apu.noise.length_counter_reload = self.apu.length_counter_lut[val >> 3]
+                        self.apu.noise.length_counter_reload_flag = True
+                    self.apu.noise.envelope_start_flag = True
+
+                # DMC ($4010-$4013)
+                elif addr == 0x4010:
+                    self.apu.dmc.enable_irq = bool(val & 0x80)
+                    self.apu.dmc.loop = bool(val & 0x40)
+                    self.apu.dmc.rate = val & 0x0F
+                    if not self.apu.dmc.enable_irq:
+                        self.apu.dmc_interrupt = False
+                elif addr == 0x4011:
+                    self.apu.dmc.output_level = val & 0x7F
+                elif addr == 0x4012:
+                    self.apu.dmc.sample_address = 0xC000 | ((val & 0xFF) << 6)
+                elif addr == 0x4013:
+                    self.apu.dmc.sample_length = ((val & 0xFF) << 4) | 1
+
+                # Status ($4015)
+                elif addr == 0x4015:
+                    self.apu.pulse1_enabled = bool(val & 0x01)
+                    self.apu.pulse2_enabled = bool(val & 0x02)
+                    self.apu.triangle_enabled = bool(val & 0x04)
+                    self.apu.noise_enabled = bool(val & 0x08)
+                    self.apu.dmc_enabled = bool(val & 0x10)
+
+                    # Disable channels if not enabled
+                    if not self.apu.pulse1_enabled:
+                        self.apu.pulse1.length_counter = 0
+                    if not self.apu.pulse2_enabled:
+                        self.apu.pulse2.length_counter = 0
+                    if not self.apu.triangle_enabled:
+                        self.apu.triangle.length_counter = 0
+                    if not self.apu.noise_enabled:
+                        self.apu.noise.length_counter = 0
+
+                    # Handle DMC
+                    if self.apu.dmc_enabled:
+                        if self.apu.dmc.bytes_remaining == 0:
+                            self.apu.dmc.bytes_remaining = self.apu.dmc.sample_length
+                            self.apu.dmc.address_counter = self.apu.dmc.sample_address
+                    else:
+                        self.apu.dmc.bytes_remaining = 0
+
+                    self.apu.dmc_interrupt = False
 
         # OAM DMA ($4014)
         if addr == 0x4014:
@@ -1043,7 +1498,6 @@ class Emulator:
             raise EmulatorError(ValueError("load cartridge first and then reset the emulator"))
 
         _logger.info("Resetting emulator...")
-        self.cartridge = self.cartridge
         self._memory.PRGROM = self.cartridge.PRGROM
         self._memory.CHRROM = self.cartridge.CHRROM
 
@@ -1091,9 +1545,7 @@ class Emulator:
         self.PPUCycles = 0
         self.Scanline = 0
         self.FrameComplete = False
-
-        # debug
-        self.frame_complete_count = 0  # reset
+        self.debug.FPS.FCCount = 0
 
         _logger.debug(f"ROM Header: [{', '.join(f'{b:02X}' for b in self.cartridge.HeaderedROM[:0x10])}]")
         _logger.debug(f"Reset Vector: ${self.Architecture.ProgramCounter:04X}")
@@ -1156,31 +1608,35 @@ class Emulator:
         if self.controllers[controller_id].strobe:
             self.controllers[controller_id].latch()
 
-    def _step(self) -> None:
+    def _step(self) -> bool:
         try:
             if self.Architecture.Halted:
-                return
+                return False
             self._emit("before_cycle", self.Architecture.Cycles)
             self._emulate_CPU()
 
             for _ in range(3):  # [0, 1, 2]
                 self._emulate_PPU()
 
-            # Advance APU once per CPU cycle (was previously called per PPU step)
-            pass  # todo: implement APU step
+            # Advance APU once per CPU cycle
+            self._emulate_APU()
             self._emit("after_cycle", self.Architecture.Cycles)
-
+            return True
         except MemoryError as e:
-            raise EmulatorError(MemoryError(e))
+            raise EmulatorError(e) from e
         except Exception as e:
-            raise EmulatorError(Exception(e))
+            raise EmulatorError(e) from e
 
     def step_Cycle(self) -> None:
         """Run one CPU cycle and corresponding PPU cycles."""
         if not self.Architecture.Halted:
             self._step()
         else:
-            pass # it is not possible to step cycle when halted
+            pass  # it is not possible to step cycle when halted
+
+    def step_Yield(self):
+        while not self.Architecture.Halted:
+            yield self._step()
 
     def _do_run_IRQ(self) -> None:
         """Handle Interrupt Request."""
@@ -1219,7 +1675,7 @@ class Emulator:
             self._do_run_IRQ()
             return
 
-        if hasattr(self.mapper, "irq_pending") and self.mapper.irq_pending: # type: ignore
+        if hasattr(self.mapper, "irq_pending") and self.mapper.irq_pending:  # type: ignore
             if not self.Architecture.flags.InterruptDisable:
                 self.mapper.irq_pending = False  # type: ignore
                 self._do_run_IRQ()
@@ -1351,69 +1807,69 @@ class Emulator:
             # LOAD INSTRUCTIONS - LDA
             case 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 as sub_opcode:
                 if sub_opcode == 0xA9:  # LDA Immediate
-                    self.Architecture.A = (self._read(self.Architecture.ProgramCounter))
+                    self.Architecture.A = self._read(self.Architecture.ProgramCounter)
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA5:  # LDA Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xB5:  # LDA Zero Page,X
                     self._do_read_operands_ZeroPage_XIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xAD:  # LDA Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xBD:  # LDA Absolute,X
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xB9:  # LDA Absolute,Y
                     self._do_read_operands_AbsoluteAddressed_YIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xA1:  # LDA (Indirect,X)
                     self._do_read_operands_IndirectAddressed_XIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 elif sub_opcode == 0xB1:  # LDA (Indirect),Y
                     self._do_read_operands_IndirectAddressed_YIndexed()
-                    self.Architecture.A = (self._read(self.addressBus))
+                    self.Architecture.A = self._read(self.addressBus)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 return self._make_end_execute_opcode()
 
             # LOAD INSTRUCTIONS - LDX
             case 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE as sub_opcode:
                 if sub_opcode == 0xA2:  # LDX Immediate
-                    self.Architecture.X = (self._read(self.Architecture.ProgramCounter))
+                    self.Architecture.X = self._read(self.Architecture.ProgramCounter)
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA6:  # LDX Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.X = (self._read(self.addressBus))
+                    self.Architecture.X = self._read(self.addressBus)
                 elif sub_opcode == 0xB6:  # LDX Zero Page,Y
                     self._do_read_operands_ZeroPage_YIndexed()
-                    self.Architecture.X = (self._read(self.addressBus))
+                    self.Architecture.X = self._read(self.addressBus)
                 elif sub_opcode == 0xAE:  # LDX Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.X = (self._read(self.addressBus))
+                    self.Architecture.X = self._read(self.addressBus)
                 elif sub_opcode == 0xBE:  # LDX Absolute,Y
                     self._do_read_operands_AbsoluteAddressed_YIndexed()
-                    self.Architecture.X = (self._read(self.addressBus))
+                    self.Architecture.X = self._read(self.addressBus)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.X)
                 return self._make_end_execute_opcode()
 
             # LOAD INSTRUCTIONS - LDY
             case 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC as sub_opcode:
                 if sub_opcode == 0xA0:  # LDY Immediate
-                    self.Architecture.Y = (self._read(self.Architecture.ProgramCounter))
+                    self.Architecture.Y = self._read(self.Architecture.ProgramCounter)
                     self.Architecture.ProgramCounter += 1
                 elif sub_opcode == 0xA4:  # LDY Zero Page
                     self._do_read_operands_ZeroPage()
-                    self.Architecture.Y = (self._read(self.addressBus))
+                    self.Architecture.Y = self._read(self.addressBus)
                 elif sub_opcode == 0xB4:  # LDY Zero Page,X
                     self._do_read_operands_ZeroPage_XIndexed()
-                    self.Architecture.Y = (self._read(self.addressBus))
+                    self.Architecture.Y = self._read(self.addressBus)
                 elif sub_opcode == 0xAC:  # LDY Absolute
                     self._do_read_operands_AbsoluteAddressed()
-                    self.Architecture.Y = (self._read(self.addressBus))
+                    self.Architecture.Y = self._read(self.addressBus)
                 elif sub_opcode == 0xBC:  # LDY Absolute,X
                     self._do_read_operands_AbsoluteAddressed_XIndexed()
-                    self.Architecture.Y = (self._read(self.addressBus))
+                    self.Architecture.Y = self._read(self.addressBus)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.Y)
                 return self._make_end_execute_opcode()
 
@@ -1479,7 +1935,7 @@ class Emulator:
                     self.Architecture.A = self.Architecture.Y
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0xBA:  # TSX
-                    self.Architecture.X = (self.Architecture.StackPointer)
+                    self.Architecture.X = self.Architecture.StackPointer
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.X)
                 elif sub_opcode == 0x9A:  # TXS
                     self.Architecture.StackPointer = Cb16U(self.Architecture.X)
@@ -1490,7 +1946,7 @@ class Emulator:
                 if sub_opcode == 0x48:  # PHA
                     self._do_push(self.Architecture.A)
                 elif sub_opcode == 0x68:  # PLA
-                    self.Architecture.A = (self._do_pop())
+                    self.Architecture.A = self._do_pop()
                     self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 elif sub_opcode == 0x08:  # PHP
                     self._do_push(self._get_processor_status() | 0x10)
@@ -2223,7 +2679,7 @@ class Emulator:
                 """LAS - AND memory with stack pointer, transfer to A, X, and SP"""
                 self._do_read_operands_AbsoluteAddressed_YIndexed()
                 value = self._read(self.addressBus) & self.Architecture.StackPointer
-                self.Architecture.A = self.Architecture.X = (value & 0xFF)
+                self.Architecture.A = self.Architecture.X = value & 0xFF
                 self.Architecture.StackPointer = Cb16U(value & 0xFF)
                 self._do_update_zero_and_negative_status_flags_on_cpu_register_value_change(self.Architecture.A)
                 return self._make_end_execute_opcode()
@@ -2270,8 +2726,14 @@ class Emulator:
         if not self._bg_opaque_line[x]:
             return False
 
-        # Can't occur at leftmost or rightmost pixel
-        if x in (0, 255):
+        # Check leftmost pixel clipping for sprites
+        # Sprites are clipped if sprite rendering is disabled in leftmost 8 pixels
+        clip_left = (self.PPUMASK & 0x04) == 0
+        if clip_left and x < 8:
+            return False
+
+        # Can't occur at x=255 (off-screen)
+        if x >= 255:
             return False
 
         # All conditions met
@@ -2346,8 +2808,177 @@ class Emulator:
             if self.PPUCycles == 1:
                 self._render_Scanline()
 
-    def _emulate_APU(self):
-        raise NotImplementedError("APU emulation not implemented")
+    def _emulate_APU(self) -> None:
+        """
+        Emulate APU for one cycle. APU cycles every 12 master clock cycles.
+        Different logic runs on GET vs PUT cycles.
+        """
+        if self.apu.apu_put_cycle:
+            # PUT cycle - clock timers and handle sample playback
+
+            # Clock pulse channel timers (every GET cycle)
+            if self.apu.pulse1.timer > 0:
+                self.apu.pulse1.timer -= 1
+            if self.apu.pulse2.timer > 0:
+                self.apu.pulse2.timer -= 1
+            if self.apu.noise.timer > 0:
+                self.apu.noise.timer -= 1
+
+            # Clock DMC timer (every APU cycle, but table is in CPU cycles)
+            if self.apu.dmc.timer > 0:
+                self.apu.dmc.timer -= 1
+                self.apu.dmc.timer -= 1  # Clock twice for CPU->APU cycle conversion
+
+                if self.apu.dmc.timer == 0:
+                    self.apu.dmc.timer = self.apu.dmc_rate_lut[self.apu.dmc.rate]
+
+                    # Handle DMC sample output
+                    if self.apu.dmc.shift_register & 1:
+                        if self.apu.dmc.output_level <= 125:
+                            self.apu.dmc.output_level += 2
+                    else:
+                        if self.apu.dmc.output_level >= 2:
+                            self.apu.dmc.output_level -= 2
+
+                    self.apu.dmc.shift_register >>= 1
+                    self.apu.dmc.shifter_bits_remaining -= 1
+
+                    if self.apu.dmc.shifter_bits_remaining == 0:
+                        self.apu.dmc.shifter_bits_remaining = 8
+
+                        if self.apu.dmc.bytes_remaining > 0:
+                            # Trigger DMC DMA fetch
+                            sample_byte = self._read(self.apu.dmc.address_counter)
+                            self.apu.dmc.buffer = sample_byte
+                            self.apu.dmc.address_counter = (self.apu.dmc.address_counter + 1) | 0xC000
+                            self.apu.dmc.bytes_remaining -= 1
+
+                            if self.apu.dmc.bytes_remaining == 0:
+                                if self.apu.dmc.loop:
+                                    self.apu.dmc.bytes_remaining = self.apu.dmc.sample_length
+                                    self.apu.dmc.address_counter = self.apu.dmc.sample_address
+                                elif self.apu.dmc.enable_irq:
+                                    self.apu.dmc_interrupt = True
+
+                            self.apu.dmc.shift_register = self.apu.dmc.buffer
+        else:
+            # GET cycle - handle frame counter updates
+            pass
+
+        # Handle frame counter reset delay
+        if (self.apu.frame_counter_reset & 0x80) == 0:
+            self.apu.frame_counter_reset -= 1
+            if (self.apu.frame_counter_reset & 0x80) != 0:
+                self.apu.frame_counter = 0
+
+        self.apu.frame_counter += 1
+
+        # Frame counter sequencer - using doubled values for half-cycle timing
+        if self.apu.frame_counter_mode:
+            # 5-step mode
+            frame_events = {
+                7457: ("Q", False),  # Quarter frame
+                14913: ("QH", False),  # Quarter + Half frame
+                22371: ("Q", False),  # Quarter frame
+                29829: (None, False),  # Nothing
+                37281: ("QH", True),  # Quarter + Half frame, then reset
+            }
+        else:
+            # 4-step mode
+            frame_events = {
+                7457: ("Q", False),  # Quarter frame
+                14913: ("QH", False),  # Quarter + Half frame
+                22371: ("Q", False),  # Quarter frame
+                29828: (None, True),  # Set interrupt
+                29829: ("QH", True),  # Quarter + Half frame, set interrupt
+            }
+
+        if self.apu.frame_counter in frame_events:
+            event, reset = frame_events[self.apu.frame_counter]
+
+            if event:
+                if "Q" in event:
+                    self.apu.quarter_frame_clock = True
+                if "H" in event:
+                    self.apu.half_frame_clock = True
+
+            if not self.apu.frame_counter_mode and not reset and self.apu.frame_counter == 29828:
+                if not self.apu.frame_counter_inhibit_irq:
+                    self.apu.frame_interrupt = True
+
+            if reset:
+                self.apu.frame_counter = 0
+
+        # Quarter frame clock - envelope and linear counter reload
+        if self.apu.quarter_frame_clock:
+            self.apu.quarter_frame_clock = False
+
+            # Envelope logic
+            if self.apu.pulse1.envelope_start_flag:
+                self.apu.pulse1.envelope_start_flag = False
+                self.apu.pulse1.envelope_decay_level = 15
+            else:
+                if self.apu.pulse1.envelope_decay_level > 0:
+                    self.apu.pulse1.envelope_decay_level -= 1
+                elif self.apu.pulse1.envelope_loop:
+                    self.apu.pulse1.envelope_decay_level = 15
+
+            if self.apu.pulse2.envelope_start_flag:
+                self.apu.pulse2.envelope_start_flag = False
+                self.apu.pulse2.envelope_decay_level = 15
+            else:
+                if self.apu.pulse2.envelope_decay_level > 0:
+                    self.apu.pulse2.envelope_decay_level -= 1
+                elif self.apu.pulse2.envelope_loop:
+                    self.apu.pulse2.envelope_decay_level = 15
+
+            if self.apu.noise.envelope_start_flag:
+                self.apu.noise.envelope_start_flag = False
+                self.apu.noise.envelope_decay_level = 15
+            else:
+                if self.apu.noise.envelope_decay_level > 0:
+                    self.apu.noise.envelope_decay_level -= 1
+                elif self.apu.noise.envelope_loop:
+                    self.apu.noise.envelope_decay_level = 15
+
+            # Linear counter reload for triangle
+            if self.apu.triangle.linear_counter_reload_flag:
+                self.apu.triangle.linear_counter = self.apu.triangle.linear_counter_reload
+            else:
+                if self.apu.triangle.linear_counter > 0:
+                    self.apu.triangle.linear_counter -= 1
+
+        # Half frame clock - length counters
+        if self.apu.half_frame_clock:
+            self.apu.half_frame_clock = False
+
+            # Reload length counters
+            if not self.apu.pulse1_enabled:
+                self.apu.pulse1.length_counter = 0
+            else:
+                if self.apu.pulse1.length_counter > 0 and not self.apu.pulse1.envelope_loop:
+                    self.apu.pulse1.length_counter -= 1
+
+            if not self.apu.pulse2_enabled:
+                self.apu.pulse2.length_counter = 0
+            else:
+                if self.apu.pulse2.length_counter > 0 and not self.apu.pulse2.envelope_loop:
+                    self.apu.pulse2.length_counter -= 1
+
+            if not self.apu.triangle_enabled:
+                self.apu.triangle.length_counter = 0
+            else:
+                if self.apu.triangle.length_counter > 0 and not self.apu.triangle.linear_counter_reload_flag:
+                    self.apu.triangle.length_counter -= 1
+
+            if not self.apu.noise_enabled:
+                self.apu.noise.length_counter = 0
+            else:
+                if self.apu.noise.length_counter > 0 and not self.apu.noise.envelope_loop:
+                    self.apu.noise.length_counter -= 1
+
+        # Toggle APU cycle type
+        self.apu.apu_put_cycle = not self.apu.apu_put_cycle
 
     def _do_read_memory_PPU(self, ppu_addr: int) -> int:
         """Read from PPU memory space (for internal PPU use)"""
@@ -2383,9 +3014,9 @@ class Emulator:
             return
 
         # Clear scanline
-        self.FrameBuffer[self.Scanline, :] = 0
+        # self.FrameBuffer[self.Scanline, :, :] = 0
         # Track background opaque pixels for sprite priority on this line
-        self._bg_opaque_line = deque([False] * 256)
+        self._bg_opaque_line = bytearray(len(self._bg_opaque_line))
         # Prepare sprite List for this scanline (secondary OAM approximation)
         self._evaluate_sprites_for_scanline()
 
@@ -2396,13 +3027,36 @@ class Emulator:
         # Sprite rendering
         if self.PPUMASK & 0x10:  # Sprites enabled
             self.PPUSTATUS &= 0x9F  # Clear sprite 0 hit flag
-            self._render_Sprites(self.Scanline)
+            self._render_Sprites()
 
     @memoize(maxsize=64, policy="lru")
     def _NESPaletteToRGB(self, color_idx: int) -> int:
         """Convert NES palette index (0–63) to RGB numpy array (uint8)."""
         tv_system_palette = ntsc_pel if self.cartridge.tv_system == "PAL" else pal_pel
         return tv_system_palette[color_idx & 0x3F]
+
+    def _draw_color(
+        self,
+        x: int,
+        palette_index: int,
+        *,
+        usePaletteRAM: bool = True,
+        color_mask: int = 0x3F,
+    ):
+        if usePaletteRAM:
+            # NES pipeline: palette index -> PaletteRAM -> 6-bit color
+            color = self.PaletteRAM[palette_index] & color_mask
+        else:
+            # Direct NES color code (already 0–63)
+            color = palette_index & color_mask
+
+        if not np.array_equal(self.FrameBuffer[self.Scanline, x], rgb := self._NESPaletteToRGB(color)):
+            self.FrameBuffer[self.Scanline, x] = rgb
+        del rgb
+
+    def _set_bg_opaque_line(self, index: int, en: bool):
+        if self._bg_opaque_line[index] != en:
+            self._bg_opaque_line[index] = en
 
     def _render_Background(self) -> None:
         """Render background for current scanline with proper mapper support."""
@@ -2416,8 +3070,8 @@ class Emulator:
 
         for x in range(256):
             if clip_left and x < 8:
-                self.FrameBuffer[self.Scanline, x] = self._NESPaletteToRGB(backdrop_color)
-                self._bg_opaque_line[x] = False
+                self._draw_color(x, backdrop_color, usePaletteRAM=False)
+                self._set_bg_opaque_line(x, False)
                 continue
 
             # Calculate tile position with scrolling
@@ -2449,7 +3103,7 @@ class Emulator:
             # Call tick_a12 for MMC3
             if hasattr(self.mapper, "tick_a12"):
                 a12_state = bool(tile_addr & 0x1000)
-                self.mapper.tick_a12(a12_state) # type: ignore
+                self.mapper.tick_a12(a12_state)  # type: ignore
 
             if self.mapper and hasattr(self.mapper, "ppu_read"):
                 plane1 = self.mapper.ppu_read(tile_addr + tile_row)
@@ -2486,7 +3140,7 @@ class Emulator:
             self.FrameBuffer[self.Scanline, x] = self._NESPaletteToRGB(color)
             self._bg_opaque_line[x] = True
 
-    def _render_Sprites(self, scanline: int) -> None:
+    def _render_Sprites(self) -> None:
         """Render sprites with proper mapper support."""
         if not self.PPUMASK & 0x10:
             return
@@ -2495,7 +3149,7 @@ class Emulator:
         clip_left = (self.PPUMASK & 0x04) == 0
         sprites_drawn = 0
 
-        if self.PPUCycles == 1 and 0 <= scanline < 240:
+        if self.PPUCycles == 1 and 0 <= self.Scanline < 240:
             self.PPUSTATUS &= ~0x40
 
         for i in range(0, 256, 4):
@@ -2504,7 +3158,7 @@ class Emulator:
             attributes = self.OAM[i + 2]
             x = self.OAM[i + 3]
 
-            if not y <= scanline < y + sprite_height:
+            if not y <= self.Scanline < y + sprite_height:
                 continue
 
             sprites_drawn += 1
@@ -2519,7 +3173,7 @@ class Emulator:
             else:
                 pattern_table_base = 0x1000 if (self.PPUCTRL & 0x08) else 0x0000
 
-            row = scanline - y
+            row = self.Scanline - y
             if attributes & 0x80:
                 row = sprite_height - 1 - row
 
@@ -2552,21 +3206,24 @@ class Emulator:
                     continue
                 if clip_left and sx < 8:
                     continue
-                
+
                 bg_pixel = self._bg_opaque_line[sx]
 
-                # Sprite 0 hit detection # it not working
-                if i == 0 and (self.PPUMASK & 0x18) == 0x18:
-                    if bg_pixel and color_idx != 0 and sx != 255:
-                        if not ((clip_left or (self.PPUMASK & 0x02) == 0) and sx < 8):
-                            self.PPUSTATUS |= 0x40
+                # Sprite 0 hit detection - use dedicated function
+                sprite_index = i // 4
+                if self._do_check_sprite_zero_hit(sx, sprite_index, color_idx):
+                    self.PPUSTATUS |= 0x40
 
                 priority = (attributes >> 5) & 1
+                palette_index = (
+                    0x10  # sprite palette base
+                    + ((attributes & 0x03) << 2)  # palette select
+                    + color_idx  # color in tile
+                ) & 0x1F  # palette mirroring
 
                 if priority == 0 or not bg_pixel:
-                    self.FrameBuffer[scanline, sx] = self._NESPaletteToRGB(
-                        self.PaletteRAM[(((0x10 + ((attributes & 0x03) << 2)) + color_idx) & 0x1F)] & 0x3F
-                    )
+                    self._draw_color(sx, palette_index, color_mask=0x3F, usePaletteRAM=True)
+                    self.FrameBuffer[self.Scanline, sx] = self._NESPaletteToRGB(self.PaletteRAM[palette_index] & 0x3F)
 
     def _evaluate_sprites_for_scanline(self) -> None:
         """

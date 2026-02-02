@@ -2,10 +2,6 @@ import ctypes
 import sys
 from typing import Optional
 
-import cython
-
-
-@cython.cclass
 class pyWindowColorMode:
     """
     Class to manage Windows dark/light theme for any window.
