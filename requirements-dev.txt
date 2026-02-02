@@ -12,7 +12,7 @@ gputil==1.4.0
 idna==3.11
 iniconfig==2.3.0
 jaraco-classes==3.4.0
-jaraco-context==6.0.1
+jaraco-context==6.0.2
 jaraco-functools==4.3.0
 keyring==25.7.0
 llvmlite==0.46.0
@@ -34,7 +34,7 @@ pybind11-stubgen==2.5.5
 pygame-ce==2.5.6
 pygments==2.19.2
 pyinstaller==6.17.0
-pyinstaller-hooks-contrib==2025.10
+pyinstaller-hooks-contrib==2025.11
 pypresence==4.6.1
 pytest==9.0.2
 python-dotenv==1.2.1
