@@ -59,15 +59,13 @@ sprite: Optional[RenderSprite] = None
 cpu_monitor: Optional[ThreadCPUMonitor] = None
 gpu_monitor: Optional[GPUMonitor] = None
 presence: Optional[Presence] = None
-hwnd: Optional[int] = None
 pyWindow: Optional[Any] = None
-process: Optional[psutil.Process] = None
 
 
 def _platform_safe_cleanup() -> None:
     """Platform-aware resource cleanup"""
     _log.info("Starting cleanup")
-    global sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow
+    global sprite, cpu_monitor, gpu_monitor, presence, pyWindow
 
     if sprite is not None:
         try:
@@ -99,22 +97,11 @@ def _platform_safe_cleanup() -> None:
         except Exception as e:
             _log.error(f"Discord presence close failed: {e}", exc_info=_extract_exc_info(e))
 
-    # Platform-specific window cleanup
-    if IS_WINDOWS and hwnd is not None:
-        try:
-            import ctypes
-
-            ctypes.windll.user32.DestroyWindow(hwnd)
-            _log.info("Windows handle destroyed")
-        except Exception as e:
-            _log.warning(f"Window destruction failed: {e}")
-
     # Clear references
     sprite = None
     cpu_monitor = None
     gpu_monitor = None
     presence = None
-    hwnd = None
     pyWindow = None
 
 
@@ -169,7 +156,7 @@ def _extract_exc_info(e: E) -> Tuple[Type[E], E, Optional[TracebackType]]:
 
 
 def main() -> None:
-    global running, _thread_list, sprite, cpu_monitor, gpu_monitor, presence, hwnd, pyWindow, process
+    global running, _thread_list, sprite, cpu_monitor, gpu_monitor, presence, pyWindow
 
     debug_txt: Optional[str] = None
     # Load config
@@ -181,10 +168,7 @@ def main() -> None:
 
     # PLATFORM-SAFE PRIORITY ADJUSTMENT
     try:
-        if IS_WINDOWS:
-            process.nice(psutil.HIGH_PRIORITY_CLASS)
-        else:
-            process.nice(10)
+        process.nice(psutil.HIGH_PRIORITY_CLASS)
         _log.info("Process priority set successfully")
     except (psutil.AccessDenied, AttributeError) as e:
         _log.warning(f"Could not set process priority: {e}")
@@ -266,12 +250,10 @@ def main() -> None:
         pygame.display.set_icon(icon_surface)
 
     # WINDOW HANDLING
-    hwnd = None
     pyWindow = None
     if IS_WINDOWS:
         try:
-            hwnd = pygame.display.get_wm_info()["window"]
-            pyWindow = pyWindowColorMode(hwnd)
+            pyWindow = pyWindowColorMode(pygame.display.get_wm_info()["window"])
             pyWindow.dark_mode = True
         except Exception as e:
             _log.warning(f"Failed to set dark mode: {e}", exc_info=_extract_exc_info(e))
@@ -303,7 +285,7 @@ def main() -> None:
         assert len(data) == width * height * 4, f"Data size mismatch: {len(data)} != {width * height * 4}"
         return data
 
-    _log.info("Starting sprite renderer")
+    _log.info("Starting render engine")
     sprite = RenderSprite(ctx, width=NES_WIDTH, height=NES_HEIGHT, scale=SCALE)
     debugtxt = RenderSprite(
         ctx,
@@ -675,7 +657,7 @@ def main() -> None:
 
     def subpro(_log) -> None:
         global running
-        gen = nes_emu.step_Yield()
+        gen = nes_emu.stepYield()
 
         while running:
             run_event.wait()
@@ -688,15 +670,14 @@ def main() -> None:
             except StopIteration:
                 _log.info("Emulator halted")
                 break
+            
+            except ExitException:
+                break
 
             except EmulatorError as e:
                 _log.error("Emulator Error", exc_info=_extract_exc_info(e))
                 if debug_mode:
                     raise
-                break
-
-            except ExitException as e:
-                _log.error("Exit Exception", exc_info=_extract_exc_info(e))
                 break
 
     with CoreThread() as core_thread:

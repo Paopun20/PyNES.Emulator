@@ -58,10 +58,23 @@ _shader_cache: WeakValueDictionary[int, moderngl.Program] = WeakValueDictionary(
 
 class RenderSprite:
     __slots__ = (
-        "ctx", "width", "height", "scale", "W", "H", "_shclass",
-        "fragment_shader", "_expected_shape", "_expected_bytes",
-        "fast_mode", "program", "vbo", "ibo", "vao", "texture",
-        "_resolution_tuple"
+        "ctx",
+        "width",
+        "height",
+        "scale",
+        "W",
+        "H",
+        "_shclass",
+        "fragment_shader",
+        "_expected_shape",
+        "_expected_bytes",
+        "fast_mode",
+        "program",
+        "vbo",
+        "ibo",
+        "vao",
+        "texture",
+        "_resolution_tuple",
     )
 
     def __init__(
@@ -98,7 +111,7 @@ class RenderSprite:
     def _init_program(self) -> None:
         """Initialize shader program"""
         shader_hash = hash(self.fragment_shader)
-        
+
         # Check cache first
         if shader_hash in _shader_cache:
             self.program = _shader_cache[shader_hash]
@@ -120,10 +133,22 @@ class RenderSprite:
         # Create vertices once as bytes
         vertices = np.array(
             [
-                0.0, 0.0, 0.0, 0.0,
-                float(self.W), 0.0, 1.0, 0.0,
-                float(self.W), float(self.H), 1.0, 1.0,
-                0.0, float(self.H), 0.0, 1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                float(self.W),
+                0.0,
+                1.0,
+                0.0,
+                float(self.W),
+                float(self.H),
+                1.0,
+                1.0,
+                0.0,
+                float(self.H),
+                0.0,
+                1.0,
             ],
             dtype="f4",
         )
@@ -165,9 +190,7 @@ class RenderSprite:
         if not self.fast_mode:
             data_len = len(data)
             if data_len != self._expected_bytes:
-                raise ValueError(
-                    f"Invalid RGBA byte size: got {data_len}, expected {self._expected_bytes}"
-                )
+                raise ValueError(f"Invalid RGBA byte size: got {data_len}, expected {self._expected_bytes}")
         self.texture.write(data)
 
     def set_fragment_shader(self, shaderclass: Shader) -> bool:
@@ -177,7 +200,7 @@ class RenderSprite:
             return False
 
         shader_hash = hash(shaderclass.code)
-        
+
         # Check cache
         if shader_hash in _shader_cache:
             new_program = _shader_cache[shader_hash]
@@ -206,7 +229,7 @@ class RenderSprite:
         # Clean up old resources
         old_vao = self.vao
         old_program = self.program
-        
+
         # Update state
         self.program = new_program
         self.vao = new_vao
@@ -215,7 +238,7 @@ class RenderSprite:
 
         # Release old VAO (program stays in cache)
         old_vao.release()
-        
+
         # Only release old program if not in cache
         if hash(self.fragment_shader) not in _shader_cache:
             old_program.release()
@@ -265,4 +288,3 @@ class RenderSprite:
             self.ibo.release()
         if hasattr(self, "texture") and self.texture:
             self.texture.release()
-        # Program is managed by cache, don't release manually
