@@ -17,7 +17,7 @@ jaraco-functools==4.4.0
 keyring==25.7.0
 llvmlite==0.46.0
 markdown-it-py==4.0.0
-maturin==1.11.5
+maturin==1.12.0
 mdurl==0.1.2
 moderngl==5.12.0
 more-itertools==10.8.0
