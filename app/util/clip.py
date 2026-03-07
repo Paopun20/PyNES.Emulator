@@ -107,8 +107,6 @@ class Clip:
             proc = subprocess.Popen(["xclip", "-selection", "clipboard", "-t", "image/png", "-i"], stdin=subprocess.PIPE)
         elif tool == "xsel":
             proc = subprocess.Popen(["xsel", "--clipboard", "--input"], stdin=subprocess.PIPE)
-        elif tool == "xsel":
-            proc = subprocess.Popen(["xsel", "--clipboard", "--input"], stdin=subprocess.PIPE)
         else:
             raise RuntimeError(f"Unsupported tool: {tool}")
 
