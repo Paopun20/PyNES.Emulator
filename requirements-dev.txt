@@ -33,7 +33,7 @@ pybind11==3.0.1
 pybind11-stubgen==2.5.5
 pygame-ce==2.5.6
 pygments==2.19.2
-pyinstaller==6.18.0
+pyinstaller==6.19.0
 pyinstaller-hooks-contrib==2026.0
 pypresence==4.6.1
 pytest==9.0.2
