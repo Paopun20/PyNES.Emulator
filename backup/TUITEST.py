@@ -109,7 +109,7 @@ def run_emulator_process(rom_path: str, log_queue=None):
         nonlocal running
         while running:
             while not emulator.FrameComplete and running:
-                emulator.step_Cycle()
+                emulator.stepCycle()
             time.sleep(1 / cpu_clock)
 
     threading.Thread(target=cycle_loop, daemon=True).start()

@@ -18,9 +18,9 @@ from pynes.controller import Controller
 from pynes.mapper import Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004
 from pynes.util.Bype import Bype as CByte
 from pynes.util.Bype import Sign as CSign
+from pynes.util.CyclesTimer import CyclesSystem, CyclesTimer, CyclesType
 from pynes.util.OpCodes import OpCodes
 from util.memoize import memoize
-from util.timer import Timer
 
 # Template
 TEMPLATE: Final[Template] = Template(
@@ -206,10 +206,10 @@ class Architecture:
     ProgramCounter: Cb16U = Cb16U(0)
     OpCode: int = 0
     Bus: int = 0
-    current_instruction_mode: CurrentInstructionMode = CurrentInstructionMode.Undefined
+    CurrentInstructionMode: CurrentInstructionMode = CurrentInstructionMode.Undefined
     page_boundary_crossed: bool = False
     page_boundary_crossed_just_happened: bool = False
-    Bus_latch_timer: Timer = Timer()
+    Bus_latch_timer: CyclesTimer = CyclesTimer(CyclesSystem.NTSC, CyclesType.CPU)
     flags: Flags = field(default_factory=Flags)
     PendingsTask: PendingsTask = field(default_factory=PendingsTask)
     DoTask: DoTask = field(default_factory=DoTask)
@@ -550,60 +550,6 @@ class Emulator:
     It can run more than one instance at a time.
     """
 
-    __slots__ = (
-        "cartridge",
-        "mapper",
-        "_events",
-        "_memory",
-        "tracelog",
-        "controllers",
-        "operationCycle",
-        "instruction_state",
-        "operationComplete",
-        "Architecture",
-        "_cycles_extra",
-        "_base_addr",
-        "_bg_opaque_line",
-        "ppu_bus_latch",
-        "NTSC_Samples",
-        "debug",
-        "addressBus",
-        "dataBus",
-        "VRAM",
-        "OAM",
-        "PaletteRAM",
-        "FrameComplete",
-        "PPUCycles",
-        "Scanline",
-        "PPUCTRL",
-        "PPUMASK",
-        "PPUSTATUS",
-        "OAMADDR",
-        "v",
-        "t",
-        "x",
-        "w",
-        "PPUSCROLL",
-        "PPUADDR",
-        "PPUDATA",
-        "AddressLatch",
-        "PPUDataBuffer",
-        "FrameBuffer",
-        "_ppu_pending_writes",
-        "ppu_bus_latch_time",
-        "_oam_dma_pending_page",
-        "oam_dma_page",
-        "NMI",
-        "IRQ",
-        "_ntsc_signal_phase",
-        "_ntsc_samples",
-        "_ntsc_sample_index",
-        "_ntsc_decode_signal",
-        "_ntsc_colorburst_phase_at_dot_0",
-        "apu",
-        "irq_level_detector",
-    )
-
     def __init__(self) -> None:
         # CPU initialization
         self.cartridge: Cartridge = Cartridge.EmptyCartridge()
@@ -652,7 +598,7 @@ class Emulator:
         self._ppu_pending_writes: deque[PPUPendingWrites] = deque()
 
         # PPU open bus decay timer
-        self.ppu_bus_latch_time: Final[Timer] = Timer()
+        self.ppu_bus_latch_time: Final[CyclesTimer] = CyclesTimer(CyclesSystem.NTSC, CyclesType.PPU)
         # OAM DMA pending page (execute after instruction completes)
         self._oam_dma_pending_page: int | None = None
         self.oam_dma_page: int = 0
@@ -761,9 +707,7 @@ class Emulator:
         elif addr < 0x8000:
             # Open bus behavior: return last value on data bus
             # with decay after ~0.9 seconds
-            self.Architecture.Bus_latch_timer.start()
             val = self._cpu_open_bus_value()
-            self.Architecture.Bus_latch_timer.stop()
 
         # ROM ($8000-$FFFF)
         else:
@@ -928,20 +872,18 @@ class Emulator:
     def _ppu_open_bus_value(self) -> int:
         """Return current PPU open-bus value with decay before 1 second passes."""
         # If more than ~0.9s has passed without activity, decay to 0
-        if self.ppu_bus_latch_time.get_elapsed_time() / 1000 > 0.9:
+        if self.ppu_bus_latch_time.isDecayed():
+            self.ppu_bus_latch_time.resetCycles()
             self.ppu_bus_latch = 0
-            self.ppu_bus_latch_time.reset()
         return self.ppu_bus_latch
 
     def _cpu_open_bus_value(self) -> int:
         """Return current CPU open-bus value with decay before 1 second passes."""
         # Simulate bus decay: after ~0.9 seconds, the value decays to 0
         # Real NES capacitors discharge the bus, but we simplify this
-        self.Architecture.Bus_latch_timer.stop()  # await for read timer
-        if (self.Architecture.Bus_latch_timer.get_elapsed_time()) / 1000 > 0.9:
+        if self.Architecture.Bus_latch_timer.isDecayed():
+            self.Architecture.Bus_latch_timer.resetCycles()
             self.dataBus = 0
-            self.Architecture.Bus_latch_timer.reset()
-            self.Architecture.Bus_latch_timer.start()
         return self.dataBus
 
     def _read_PPU_register(self, addr: int) -> int:
@@ -967,7 +909,7 @@ class Emulator:
                 self.w = False
                 self.AddressLatch = False
                 self.ppu_bus_latch = result
-                self.ppu_bus_latch_time.reset()
+                self.ppu_bus_latch_time.resetCycles()
                 return result
 
             case 0x04:  # OAMDATA
@@ -994,7 +936,7 @@ class Emulator:
                 if (self.PPUMASK & 0x18) and (self.OAMADDR & 0x03) == 0x02:
                     result &= 0xC3  # keep bits 7-6 and 1-0
                 self.ppu_bus_latch = result
-                self.ppu_bus_latch_time.reset()
+                self.ppu_bus_latch_time.resetCycles()
                 return result
 
             case 0x07:  # PPUDATA
@@ -1028,7 +970,7 @@ class Emulator:
                 self.v = (self.v + increment) & 0x7FFF
 
                 self.ppu_bus_latch = result
-                self.ppu_bus_latch_time.reset()
+                self.ppu_bus_latch_time.resetCycles()
                 return result
 
             # Unreadable registers return PPU open bus
@@ -1086,6 +1028,7 @@ class Emulator:
 
         # Update PPU bus latch for open bus behavior
         self.ppu_bus_latch = val
+        self.ppu_bus_latch_time.resetCycles()
 
         # Delayed case for PPUCTRL (0x00)
         if reg == 0x00:
@@ -1162,7 +1105,7 @@ class Emulator:
 
     def _do_read_operands_AbsoluteAddressed(self) -> None:
         """Read 16-bit absolute address (little endian)."""
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.Absolute
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.Absolute
         low = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
         high = self._read(self.Architecture.ProgramCounter)
@@ -1171,7 +1114,7 @@ class Emulator:
 
     def _do_read_operands_AbsoluteAddressed_YIndexed(self) -> None:
         """Read absolute address and add Y (Y is NOT modified)."""
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.AbsoluteIndexed
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.AbsoluteIndexed
         low = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
         high = self._read(self.Architecture.ProgramCounter)
@@ -1196,27 +1139,27 @@ class Emulator:
 
     def _do_read_operands_ZeroPage(self) -> None:
         """Read zero page address."""
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.ZeroPage
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.ZeroPage
         self.addressBus = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
 
     def _do_read_operands_ZeroPage_XIndexed(self) -> None:
         """Read zero page address and add X."""
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.ZeroPageIndexd
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.ZeroPageIndexd
         addr = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
         self.addressBus = (addr + self.Architecture.X) & 0xFF
 
     def _do_read_operands_ZeroPage_YIndexed(self) -> None:
         """Read zero page address and add Y."""
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.ZeroPageIndexd
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.ZeroPageIndexd
         addr = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
         self.addressBus = (addr + self.Architecture.Y) & 0xFF
 
     def _do_read_operands_IndirectAddressed_YIndexed(self) -> None:
         """Indirect indexed addressing (zero page),Y."""
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.IndirectIndexed
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.IndirectIndexed
         zp_addr = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
         low = self._read(zp_addr)
@@ -1241,7 +1184,7 @@ class Emulator:
 
     def _do_read_operands_IndirectAddressed_XIndexed(self) -> None:
         """Indexed indirect addressing (zero page,X)."""
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.IndexedIndirect
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.IndexedIndirect
         zp_addr = (self._read(self.Architecture.ProgramCounter) + self.Architecture.X) & 0xFF
         self.Architecture.ProgramCounter += 1
         low = self._read(zp_addr)
@@ -1250,7 +1193,7 @@ class Emulator:
 
     def _do_read_operands_AbsoluteAddressed_XIndexed(self) -> None:
         """Read absolute address and add X (X is NOT modified)."""
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.AbsoluteIndexed
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.AbsoluteIndexed
         low = self._read(self.Architecture.ProgramCounter)
         self.Architecture.ProgramCounter += 1
         high = self._read(self.Architecture.ProgramCounter)
@@ -1518,8 +1461,7 @@ class Emulator:
                 raise EmulatorError(NotImplementedError(f"Mapper {mapper_id} not supported."))
 
         # Reset CPU
-        self.Architecture.Bus_latch_timer.stop()
-        self.Architecture.Bus_latch_timer.reset()
+        self.Architecture.Bus_latch_timer.resetCycles()
         self.Architecture = Architecture(Bus_latch_timer=self.Architecture.Bus_latch_timer)
         self.Architecture.flags = Flags()
         self.Architecture.flags.InterruptDisable = True
@@ -1627,14 +1569,14 @@ class Emulator:
         except Exception as e:
             raise EmulatorError(e) from e
 
-    def step_Cycle(self) -> None:
+    def stepCycle(self) -> None:
         """Run one CPU cycle and corresponding PPU cycles."""
         if not self.Architecture.Halted:
             self._step()
         else:
             pass  # it is not possible to step cycle when halted
 
-    def step_Yield(self):
+    def stepYield(self):
         while not self.Architecture.Halted:
             yield self._step()
 
@@ -1657,7 +1599,7 @@ class Emulator:
 
     def _emulate_CPU(self) -> None:
         # Reset instruction mode at the start of each cycle
-        self.Architecture.current_instruction_mode = CurrentInstructionMode.Undefined
+        self.Architecture.CurrentInstructionMode = CurrentInstructionMode.Undefined
         self._cycles_extra = 0  # reset
 
         # If an interrupt (NMI) was requested, handle it before fetching
@@ -1723,6 +1665,7 @@ class Emulator:
             self.Architecture.Cycles = OpCodeClass.GetCycles(self.Architecture.OpCode)
         else:
             self.Architecture.Cycles = set_cycles
+        self.Architecture.Bus_latch_timer.addCycles(self.Architecture.Cycles)
         return self.Architecture.Cycles
 
     def _do_execute_opcode(self) -> int | None:
@@ -2770,6 +2713,7 @@ class Emulator:
 
         # Advance one PPU cycle
         self.PPUCycles += 1
+        self.ppu_bus_latch_time.addCycles(1)
 
         # Apply delayed CPU->PPU writes (e.g. $2000)
         # This ensures that when CPU writes PPUCTRL, the PPU sees the old value
