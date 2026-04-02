@@ -6,7 +6,7 @@ colorama==0.4.6
 customtkinter==5.2.2
 cython==3.2.4
 darkdetect==0.8.0
-dearpygui==2.1.1
+dearpygui==2.2
 glcontext==3.0.0
 gputil==1.4.0
 idna==3.11
