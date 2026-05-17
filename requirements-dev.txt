@@ -34,7 +34,7 @@ pygments==2.19.2
 pyinstaller==6.19.0
 pyinstaller-hooks-contrib==2026.4
 pypresence==4.6.1
-pytest==9.0.2
+pytest==9.0.3
 pywin32-ctypes==0.2.3
 requests==2.33.0
 returns==0.26.0
