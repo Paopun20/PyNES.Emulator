@@ -1,12 +1,12 @@
 name: "CodeQL Security Analysis"
 on:
   push:
-    branches: ["main", "dev"]
+    branches: ["dev"]
     paths:
       - 'app/**'
       - '.github/workflows/codeql.yml'
   pull_request:
-    branches: ["main", "dev"]
+    branches: ["dev"]
     paths:
       - 'app/**'
       - '.github/workflows/codeql.yml'
