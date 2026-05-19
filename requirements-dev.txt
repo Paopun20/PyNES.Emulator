@@ -37,7 +37,7 @@ pypresence==4.6.1
 pytest==9.0.3
 pywin32-ctypes==0.2.3
 requests==2.33.0
-returns==0.26.0
+returns==0.27.0
 rich==14.3.2
 semantic-version==2.10.0
 setuptools==82.0.0
